@@ -85,7 +85,7 @@ for path in FILES:
             trelloUrl=c.get('url'), archived=bool(c.get('closed')), originalColumnId=c['idList'],
             trelloStart=c.get('start'), trelloLastActivity=c.get('dateLastActivity')))
     board=dict(id='trello-'+raw['id'], trelloId=raw['id'], name=raw['name'], description=raw.get('desc') or '',
-               color='#455f56', columns=columns, cards=cards, labelDefinitions=definitions,
+               color='#455f56', archived=raw['name'] in ('2027長團', '2027 長團', 'Illustration'), columns=columns, cards=cards, labelDefinitions=definitions,
                sourceFile=path.name, trelloUrl=raw.get('url'))
     state['boards'].append(board)
     reports.append(dict(file=path.name, board=raw['name'], cards=len(cards),
@@ -96,7 +96,7 @@ for path in FILES:
         commentCountInBadges=sum(c.get('badges',{}).get('comments',0) for c in raw['cards']),
         exportedActions=len(raw.get('actions',[]))))
 state['users']=list(users.values())
-state['activeBoard']=state['boards'][0]['id']
+state['activeBoard']=next((b['id'] for b in state['boards'] if not b.get('archived')), state['boards'][0]['id'])
 state['trelloImportVersion']=1
 state['removedDemoUsersVersion']=1
 state['removedDmUserVersion']=1

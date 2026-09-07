@@ -80,7 +80,7 @@
       "shortName": "哲"
     }
   ],
-  "activeBoard": "trello-6a3280329f4fd67336cde777",
+  "activeBoard": "trello-6a9d131faa1bde81b1df381b",
   "boards": [
     {
       "id": "trello-6a3280329f4fd67336cde777",
@@ -821,7 +821,8 @@
         }
       },
       "sourceFile": "2027長團.json",
-      "trelloUrl": "https://trello.com/b/moC0cjoq/2027%E9%95%B7%E5%9C%98"
+      "trelloUrl": "https://trello.com/b/moC0cjoq/2027%E9%95%B7%E5%9C%98",
+      "archived": true
     },
     {
       "id": "trello-6a9d131faa1bde81b1df381b",
@@ -1533,7 +1534,8 @@
         }
       },
       "sourceFile": "3d.json",
-      "trelloUrl": "https://trello.com/b/7G06X3Nv/3d"
+      "trelloUrl": "https://trello.com/b/7G06X3Nv/3d",
+      "archived": false
     },
     {
       "id": "trello-681b877e8920026ceb2afbb0",
@@ -3391,7 +3393,8 @@
         }
       },
       "sourceFile": "design.json",
-      "trelloUrl": "https://trello.com/b/7hsTblYs/design"
+      "trelloUrl": "https://trello.com/b/7hsTblYs/design",
+      "archived": false
     },
     {
       "id": "trello-6625041a86fa488a53b5b8cc",
@@ -17743,7 +17746,8 @@
         }
       },
       "sourceFile": "illustration.json",
-      "trelloUrl": "https://trello.com/b/lCXYumpA/illustration"
+      "trelloUrl": "https://trello.com/b/lCXYumpA/illustration",
+      "archived": true
     },
     {
       "id": "trello-6a6f71e7e14faf9f5524d132",
@@ -17952,7 +17956,8 @@
         }
       },
       "sourceFile": "map.json",
-      "trelloUrl": "https://trello.com/b/zJZIwn98/map"
+      "trelloUrl": "https://trello.com/b/zJZIwn98/map",
+      "archived": false
     },
     {
       "id": "trello-662503ba1857a00dd6c1d21a",
@@ -24256,7 +24261,8 @@
         }
       },
       "sourceFile": "world-building.json",
-      "trelloUrl": "https://trello.com/b/U5osEeOf/world-building"
+      "trelloUrl": "https://trello.com/b/U5osEeOf/world-building",
+      "archived": false
     }
   ],
   "rosterVersion": 1,
