@@ -1,0 +1,88 @@
+{
+  "boards": [
+    {
+      "file": "2027長團.json",
+      "board": "2027長團",
+      "cards": 21,
+      "archived": 1,
+      "lists": 7,
+      "checklistItems": 0,
+      "comments": 19,
+      "attachmentLinks": 0,
+      "commentsOnAbsentCards": 0,
+      "commentCountInBadges": 19,
+      "exportedActions": 307
+    },
+    {
+      "file": "3d.json",
+      "board": "3D",
+      "cards": 10,
+      "archived": 0,
+      "lists": 7,
+      "checklistItems": 0,
+      "comments": 0,
+      "attachmentLinks": 38,
+      "commentsOnAbsentCards": 0,
+      "commentCountInBadges": 0,
+      "exportedActions": 92
+    },
+    {
+      "file": "design.json",
+      "board": "Design",
+      "cards": 24,
+      "archived": 2,
+      "lists": 3,
+      "checklistItems": 80,
+      "comments": 9,
+      "attachmentLinks": 36,
+      "commentsOnAbsentCards": 0,
+      "commentCountInBadges": 9,
+      "exportedActions": 261
+    },
+    {
+      "file": "illustration.json",
+      "board": "Illustration",
+      "cards": 527,
+      "archived": 192,
+      "lists": 9,
+      "checklistItems": 4,
+      "comments": 23,
+      "attachmentLinks": 139,
+      "commentsOnAbsentCards": 0,
+      "commentCountInBadges": 41,
+      "exportedActions": 1000
+    },
+    {
+      "file": "map.json",
+      "board": "Map",
+      "cards": 5,
+      "archived": 0,
+      "lists": 4,
+      "checklistItems": 0,
+      "comments": 1,
+      "attachmentLinks": 2,
+      "commentsOnAbsentCards": 0,
+      "commentCountInBadges": 1,
+      "exportedActions": 39
+    },
+    {
+      "file": "world-building.json",
+      "board": "World Building",
+      "cards": 71,
+      "archived": 1,
+      "lists": 4,
+      "checklistItems": 397,
+      "comments": 19,
+      "attachmentLinks": 67,
+      "commentsOnAbsentCards": 0,
+      "commentCountInBadges": 19,
+      "exportedActions": 569
+    }
+  ],
+  "notes": [
+    "附件只保留原始網址；未下載二進位檔案。",
+    "只匯入備份中存在的留言；缺少的歷史動作無法由此備份還原。",
+    "已封存卡片移至「已封存卡片」欄，保留原階段 ID；封存階段另有名稱標記。",
+    "Trello 成員以原 ID 保留，僅完全同名者對應現有成員，未推測身分。"
+  ]
+}
