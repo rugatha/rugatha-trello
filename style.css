@@ -659,3 +659,31 @@ aside > .sidebar-boards {
   white-space: nowrap;
 }
 
+
+.archived-boards {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.archived-boards summary {
+  cursor: pointer;
+  padding: 10px 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 8px;
+}
+.archived-boards summary:hover {
+  background: #e9eee8;
+}
+.archived-boards summary:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+.archived-boards summary .count {
+  margin-left: 6px;
+}
+@media (max-width: 600px) {
+  .archived-boards summary { padding: 10px 3px; font-size: 10px; }
+  .archived-boards summary .count { display: none; }
+}

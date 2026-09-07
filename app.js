@@ -20,7 +20,18 @@ function overdue(c){return c.due&&!c.done&&new Date(c.due)<new Date()}
 function formatDate(s,full=false){return new Intl.DateTimeFormat('zh-TW',full?{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}:{month:'short',day:'numeric'}).format(new Date(s))}
 
 function safeImage(a){return /^data:image\/(png|jpeg|gif|webp|avif|bmp);base64,/i.test(a.data)}
-function render(){const b=board();$('#boardTitle').textContent=b.name;$('#crumb').textContent=b.name;$('#boardDescription').textContent=b.description||'為團隊整理任務，讓進度清楚可見。';$('#starBoard').textContent=b.starred?'★':'☆';$('#starBoard').style.color=b.starred?'#c8b58f':'';$('#currentUser').innerHTML=avatar(me())+`<span class="user-name">${esc(me()?.name||'選擇身分')}</span><span class="muted">⌄</span>`;$('#headerMembers').innerHTML=state.users.slice(0,5).map(avatar).join('');$('#boardNav').innerHTML=state.boards.map(x=>`<button class="nav-button ${x.id===b.id?'active':''}" data-board="${x.id}" title="${esc(x.name)}"><span class="board-dot" style="background:${boardColors.includes(x.color)?x.color:boardColors[0]}"></span><span class="nav-text grow">${esc(x.name)}</span>${x.starred?'<span class="nav-text">★</span>':''}</button>`).join('');const q=$('#search').value.trim().toLowerCase(),filter=$('#dueFilter').value;const visible=b.cards.filter(c=>(!q||(c.title+' '+c.description).toLowerCase().includes(q))&&(!mine||c.assignees.includes(userId()))&&(filter==='all'||filter==='none'&&!c.due||filter==='overdue'&&overdue(c)||filter==='week'&&c.due&&!c.done&&new Date(c.due)>=new Date()&&new Date(c.due)<=new Date(Date.now()+7*86400000)));$('#mineFilter').classList.toggle('filter-active',mine);$('#clearFilters').classList.toggle('hidden',!mine&&!q&&filter==='all');$('#boardStats').textContent=`${b.columns.length} 個階段 · ${b.cards.length} 張卡片${visible.length!==b.cards.length?' · 顯示 '+visible.length+' 張':''}`;$('#columns').innerHTML=b.columns.map((col,i)=>`<section class="column" data-col="${col.id}"><div class="column-head"><span class="board-dot" style="background:${['#9ba6b6','#455f56','#c8b58f','#8fa697'][i%4]}"></span><span class="grow">${esc(col.name)}</span><span class="count">${visible.filter(c=>c.columnId===col.id).length}</span><button data-edit-col="${col.id}" aria-label="編輯階段 ${esc(col.name)}" style="padding:2px 5px">⋯</button></div><div class="cards">${visible.filter(c=>c.columnId===col.id).map(cardHTML).join('')||'<div class="empty">'+(q||mine||filter!=='all'?'沒有符合篩選的卡片':'把想法放在這裡<br><br>拖曳卡片至此，或新增卡片')+'</div>'}</div><button class="add-card" data-add-card="${col.id}">＋ &nbsp; 新增卡片</button></section>`).join('')+'<button class="add-column" id="addColumn">＋ &nbsp; 新增階段</button>';bindBoard()}
+function renderBoardNavigation(active) {
+  const expanded = $('#archivedBoards')?.open || false;
+  const boardButton = x=>`<button class="nav-button ${x.id===active.id?'active':''}" data-board="${x.id}" title="${esc(x.name)}"><span class="board-dot" style="background:${boardColors.includes(x.color)?x.color:boardColors[0]}"></span><span class="nav-text grow">${esc(x.name)}</span>${x.starred?'<span class="nav-text">★</span>':''}</button>`;
+  const current = state.boards.filter(board => !board.archived);
+  const archived = state.boards.filter(board => board.archived);
+  $('#boardNav').innerHTML = current.map(boardButton).join('') + (archived.length ?
+    `<details id="archivedBoards" class="archived-boards" ${expanded?'open':''}>
+      <summary title="展開封存看板"><span>封存看板</span><span class="count">${archived.length}</span></summary>
+      <div>${archived.map(boardButton).join('')}</div>
+    </details>` : '');
+}
+function render(){const b=board();$('#boardTitle').textContent=b.name;$('#crumb').textContent=b.name;$('#boardDescription').textContent=b.description||'為團隊整理任務，讓進度清楚可見。';$('#starBoard').textContent=b.starred?'★':'☆';$('#starBoard').style.color=b.starred?'#c8b58f':'';$('#currentUser').innerHTML=avatar(me())+`<span class="user-name">${esc(me()?.name||'選擇身分')}</span><span class="muted">⌄</span>`;$('#headerMembers').innerHTML=state.users.slice(0,5).map(avatar).join('');renderBoardNavigation(b);const q=$('#search').value.trim().toLowerCase(),filter=$('#dueFilter').value;const visible=b.cards.filter(c=>(!q||(c.title+' '+c.description).toLowerCase().includes(q))&&(!mine||c.assignees.includes(userId()))&&(filter==='all'||filter==='none'&&!c.due||filter==='overdue'&&overdue(c)||filter==='week'&&c.due&&!c.done&&new Date(c.due)>=new Date()&&new Date(c.due)<=new Date(Date.now()+7*86400000)));$('#mineFilter').classList.toggle('filter-active',mine);$('#clearFilters').classList.toggle('hidden',!mine&&!q&&filter==='all');$('#boardStats').textContent=`${b.columns.length} 個階段 · ${b.cards.length} 張卡片${visible.length!==b.cards.length?' · 顯示 '+visible.length+' 張':''}`;$('#columns').innerHTML=b.columns.map((col,i)=>`<section class="column" data-col="${col.id}"><div class="column-head"><span class="board-dot" style="background:${['#9ba6b6','#455f56','#c8b58f','#8fa697'][i%4]}"></span><span class="grow">${esc(col.name)}</span><span class="count">${visible.filter(c=>c.columnId===col.id).length}</span><button data-edit-col="${col.id}" aria-label="編輯階段 ${esc(col.name)}" style="padding:2px 5px">⋯</button></div><div class="cards">${visible.filter(c=>c.columnId===col.id).map(cardHTML).join('')||'<div class="empty">'+(q||mine||filter!=='all'?'沒有符合篩選的卡片':'把想法放在這裡<br><br>拖曳卡片至此，或新增卡片')+'</div>'}</div><button class="add-card" data-add-card="${col.id}">＋ &nbsp; 新增卡片</button></section>`).join('')+'<button class="add-column" id="addColumn">＋ &nbsp; 新增階段</button>';bindBoard()}
 // Imported labels retain their names while using the existing readable palette.
 function labelOptions() {
   return {...Object.fromEntries(Object.entries(colors).map(([id,name])=>[id,{name,color:id}])),
@@ -127,6 +138,12 @@ async function initialize() {
       if ((merged.changed || shortNamesChanged) && db) save();
     } catch {
       toast('暫時無法同步成員與簡稱，保留目前設定；請重新整理再試');
+    }
+    if (archiveSelectedBoards(state) && db) save();
+    // Start with an unarchived board; archived content is opened explicitly.
+    if (board().archived) {
+      const first = state.boards.find(board => !board.archived);
+      if (first) { state.activeBoard = first.id; if (db) save(); }
     }
     render();
     surfaces.forEach(element => element.inert = false);

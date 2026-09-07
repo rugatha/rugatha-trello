@@ -172,3 +172,15 @@ function mergeUserAliases(workspace, configured, currentUserId) {
   if (users.length !== workspace.users.length) { workspace.users = users; changed = true; }
   return {changed, currentUserId: redirects.get(currentUserId)?.id || null};
 }
+
+function archiveSelectedBoards(workspace) {
+  if (workspace.archivedSelectedBoardsVersion === 1) return false;
+  for (const board of workspace.boards) {
+    if (['2027長團', '2027 長團', 'Illustration'].includes(board.name) ||
+        ['6a3280329f4fd67336cde777', '6625041a86fa488a53b5b8cc'].includes(board.trelloId)) {
+      board.archived = true;
+    }
+  }
+  workspace.archivedSelectedBoardsVersion = 1;
+  return true;
+}
