@@ -1,0 +1,120 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function workspacePath(workspaceId) {
+      return /databases/$(database)/documents/workspaces/$(workspaceId);
+    }
+
+    function memberPath(workspaceId) {
+      return /databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid);
+    }
+
+    function isBootstrapOwner(workspaceId) {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email == get(workspacePath(workspaceId)).data.ownerEmail;
+    }
+
+    function isMember(workspaceId) {
+      return request.auth != null
+        && exists(memberPath(workspaceId))
+        && get(memberPath(workspaceId)).data.status == 'active';
+    }
+
+    function canEdit(workspaceId) {
+      return isMember(workspaceId)
+        && get(memberPath(workspaceId)).data.role in ['owner', 'admin', 'editor'];
+    }
+
+    function isAdmin(workspaceId) {
+      return isMember(workspaceId)
+        && get(memberPath(workspaceId)).data.role in ['owner', 'admin'];
+    }
+
+    match /workspaces/{workspaceId} {
+      allow get: if isMember(workspaceId) || isBootstrapOwner(workspaceId);
+      allow list, write: if false;
+
+      match /members/{memberId} {
+        allow get: if request.auth != null
+          && (request.auth.uid == memberId || isMember(workspaceId));
+        allow list: if isMember(workspaceId);
+        // The confirmed owner can claim their UID once after Google sign-in.
+        allow create: if isBootstrapOwner(workspaceId)
+          && request.auth.uid == memberId
+          && request.resource.data.email == request.auth.token.email
+          && request.resource.data.role == 'owner'
+          && request.resource.data.status == 'active'
+          && request.resource.data.keys().hasOnly(['email', 'displayName', 'role', 'status', 'joinedAt']);
+        // All other membership changes are managed by trusted server code.
+        allow update, delete: if false;
+      }
+
+      match /legacyMembers/{legacyId} {
+        allow read: if isMember(workspaceId);
+        allow write: if false;
+      }
+
+      match /boards/{boardId} {
+        allow read: if isMember(workspaceId);
+        allow create, update: if canEdit(workspaceId)
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 80;
+        // A server operation must remove descendants and files together.
+        allow delete: if false;
+
+        match /columns/{columnId} {
+          allow read: if isMember(workspaceId);
+          allow create, update: if canEdit(workspaceId)
+            && request.resource.data.name is string
+            && request.resource.data.name.size() > 0
+            && request.resource.data.name.size() <= 50;
+          allow delete: if isAdmin(workspaceId);
+        }
+
+        match /cards/{cardId} {
+          allow read: if isMember(workspaceId);
+          allow create: if canEdit(workspaceId)
+            && request.resource.data.title is string
+            && request.resource.data.title.size() > 0
+            && request.resource.data.title.size() <= 150
+            && request.resource.data.createdBy == request.auth.uid;
+          allow update: if canEdit(workspaceId)
+            && request.resource.data.title is string
+            && request.resource.data.title.size() > 0
+            && request.resource.data.title.size() <= 150
+            && request.resource.data.get('createdBy', null) == resource.data.get('createdBy', null)
+            && request.resource.data.updatedBy == request.auth.uid;
+          allow delete: if false;
+
+          match /comments/{commentId} {
+            allow read: if isMember(workspaceId);
+            allow create: if canEdit(workspaceId)
+              && request.resource.data.authorUid == request.auth.uid
+              && request.resource.data.text is string
+              && request.resource.data.text.size() > 0
+              && request.resource.data.text.size() <= 5000;
+            allow update: if canEdit(workspaceId)
+              && resource.data.authorUid == request.auth.uid
+              && request.resource.data.authorUid == resource.data.authorUid;
+            allow delete: if canEdit(workspaceId)
+              && resource.data.authorUid == request.auth.uid;
+          }
+
+          match /checklist/{itemId} {
+            allow read: if isMember(workspaceId);
+            allow create, update, delete: if canEdit(workspaceId);
+          }
+
+          match /attachments/{attachmentId} {
+            allow read: if isMember(workspaceId);
+            allow create, update: if canEdit(workspaceId);
+            allow delete: if false;
+          }
+        }
+      }
+    }
+  }
+}

@@ -42,6 +42,14 @@ python3 -m http.server 8000
 - 截止日期依使用者的本地時間判斷；留言時間以 ISO 時間戳保存並以本地時間顯示。完成狀態獨立於自訂階段名稱，請勾選「已完成任務」以停止逾期提示。
 - 首次開啟會載入已轉換的 Trello 看板。
 
+## Firebase 後端準備狀態
+
+Firebase 專案為 `rugatha-trello`（專案編號 `913221850736`）。已在台灣 `asia-east1` 建立 Firestore `(default)` 資料庫，啟用 Firebase Authentication 的 Google 登入，並註冊 `rugatha-trello-web` 網頁應用程式。
+
+`scripts/migrate_firestore.py` 將 `data.json` 的版本化資料匯入 `workspaces/main`。目前 Firestore 內有 13 筆 `legacyMembers`、6 個看板、38 個階段、658 張牌卡、481 個待辦事項、71 則留言與 282 筆附件網址紀錄。舊成員的 ID 和指派關係保留，但尚未對應 Google 帳號或 Firebase Auth UID；不要把舊成員暱稱視為登入身分。工作空間的預定 Owner 信箱是 `owner-test@example.com`。
+
+`firestore.rules` 已部署，定義成員角色與牌卡權限；`firebase.json` 指向此規則檔。經驗證的 `owner-test@example.com` 首次以 Google 登入後，可建立自己的 Owner 成員紀錄；其他舊成員不會自動取得存取權。前端目前**仍使用 IndexedDB**，尚未接上 Google 登入或 Firestore，因此網站目前的操作不會寫入雲端。附件只匯入原始外部網址，沒有把圖片檔案搬進 Firebase Storage；Storage bucket 也尚未建立。啟用 Storage 需由專案擁有者先處理 Firebase 計費方案。完成後仍需實作上傳流程與 Storage Rules。
+
 ## 驗證
 
 已檢查 JavaScript 語法、示範資料結構、備份 JSON 往返、無效階段／標籤拒絕與 HTML 字元跳脫。開發環境無可用瀏覽器，尚未完成實際視覺與拖曳操作驗證。
