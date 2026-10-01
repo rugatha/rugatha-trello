@@ -2,18 +2,16 @@
 'use strict';
 const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])), uid=()=>crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2);
 const colors={purple:'設計',blue:'開發',green:'內容',orange:'規劃',pink:'行銷'}, boardColors=['#455f56','#c8b58f','#8fa697','#bca582','#ad9790'];
-let state,db,currentCard=null,mine=false,dragged=null,toastTimer;const sessionKey='boardly-user-v1';
+let state,db,currentCard=null,mine=false,dragged=null,toastTimer,googleAccount=null;
 function toast(s){$('#toast').textContent=s;$('#toast').classList.remove('hidden');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.add('hidden'),4000)}
 
-function userId(){try{return sessionStorage.getItem(sessionKey)}catch{return window.tempUser}}
-
-function setUser(id){try{sessionStorage.setItem(sessionKey,id)}catch{window.tempUser=id}}
+function userId(){return googleAccount?.memberId || null}
 
 function me(){return state.users.find(u=>u.id===userId())}
 
 function board(){return state.boards.find(b=>b.id===state.activeBoard)||state.boards[0]}
 
-function avatar(u){return u?`<span class="avatar" style="background:${boardColors.includes(u.color)?u.color:['#e4e9dd','#e8dfcc','#efe7db'].includes(u.color)?u.color:'#e4e9dd'}" title="${esc(u.name)}">${esc(typeof u.shortName==='string'&&u.shortName.trim()?u.shortName.trim():[...u.name].slice(0,1).join(''))}</span>`:''}
+function avatar(u){return u?`<span class="avatar" style="background:#e4e9dd" title="${esc(u.name)}">${esc([...u.name].slice(0,1).join(''))}</span>`:''}
 
 function overdue(c){return c.due&&!c.done&&new Date(c.due)<new Date()}
 
@@ -60,13 +58,34 @@ function $$(s,root=document){return [...root.querySelectorAll(s)]}
 
 function requireUser(action){if(me())action();else openUsers()}
 
-function openUsers(){$('#userList').innerHTML=state.users.map(u=>`<button class="user-option" data-user="${u.id}">${avatar(u)}<span class="grow">${esc(u.name)}</span>${u.id===userId()?'<span class="badge">目前身分</span>':'<span class="muted">→</span>'}</button>`).join('');$$('[data-user]').forEach(el=>el.onclick=()=>{setUser(el.dataset.user);$('#userDialog').close();render();if(currentCard&&$('#editor').open)openCard(currentCard);toast('已切換為 '+me().name)});if(!$('#userDialog').open)$('#userDialog').showModal()}
-$('#newUserForm').onsubmit=e=>{e.preventDefault();const name=$('#newUsername').value.trim();if(!name)return;let u=state.users.find(u=>u.name.toLocaleLowerCase()===name.toLocaleLowerCase());if(u){toast('此 username 已存在，請從清單選擇');return}u={id:uid(),name,shortName:[...name][0],color:['#e4e9dd','#e8dfcc','#efe7db'][state.users.length%3]};state.users.push(u);setUser(u.id);save();$('#newUsername').value='';$('#userDialog').close();render();toast('歡迎，'+name)};
+function openUsers(){
+  $('#googleAccountPanel').hidden=!googleAccount;
+  $('#localUserPanel').hidden=Boolean(googleAccount);
+  $('#userDialogTitle').textContent=googleAccount?'Google 帳號':'Google 登入';
+  if(googleAccount){
+    $('#googleAccountSummary').textContent=`${googleAccount.displayName} · ${googleAccount.email}`;
+    const roleNames={owner:'Owner',admin:'Admin',editor:'Editor',viewer:'Viewer'};
+    $('#workspaceAccess').textContent=googleAccount.workspaceRole
+      ?`工作空間權限：${roleNames[googleAccount.workspaceRole]||googleAccount.workspaceRole}`
+      :'Google 登入成功；此帳號尚未取得工作空間成員權限。';
+  }
+  if(!$('#userDialog').open)$('#userDialog').showModal();
+}
+function applyGoogleAccount(account){
+  googleAccount=account;
+  state.users=account?.roster || [];
+  if($('#userDialog').open)$('#userDialog').close();
+  render();
+  if(currentCard&&$('#editor').open)openCard(currentCard);
+}
+window.addEventListener('boardly-auth-changed',event=>{
+  if(state)applyGoogleAccount(event.detail);
+});
 function simple(title,body,onSubmit){const d=$('#simpleDialog');d.innerHTML=`<form id="simpleForm"><div class="modal-head"><h2>${esc(title)}</h2><button type="button" data-close-simple aria-label="關閉">✕</button></div><div class="modal-body">${body}<div class="row" style="justify-content:flex-end;margin-top:22px"><button type="button" data-close-simple>取消</button><button class="primary" type="submit">儲存</button></div></div></form>`;$$('[data-close-simple]').forEach(el=>el.onclick=()=>d.close());$('#simpleForm').onsubmit=e=>{e.preventDefault();if(onSubmit()!==false)d.close()};d.showModal()}
 function editBoard(isNew=false){const b=board();simple(isNew?'新增專案看板':'看板設定',`<div class="field"><label for="boardNameInput">看板名稱</label><input id="boardNameInput" class="full" required maxlength="80" value="${isNew?'':esc(b.name)}" placeholder="例如：新產品開發"></div><div class="field"><label for="boardDescInput">專案說明</label><textarea id="boardDescInput">${isNew?'':esc(b.description)}</textarea></div>${!isNew?'<button type="button" id="deleteBoard" class="danger">刪除整個看板</button>':''}`,()=>{const name=$('#boardNameInput').value.trim();if(!name)return false;if(isNew){const n={id:uid(),name,description:$('#boardDescInput').value,color:boardColors[state.boards.length%5],columns:['待辦','進行中','已完成'].map(name=>({id:uid(),name})),cards:[]};state.boards.push(n);state.activeBoard=n.id}else{b.name=name;b.description=$('#boardDescInput').value}save();render()});if(!isNew)$('#deleteBoard').onclick=()=>{if(state.boards.length===1){toast('至少保留一個看板');return}if(confirm(`刪除「${b.name}」及其所有卡片？此操作無法復原。`)){state.boards=state.boards.filter(x=>x.id!==b.id);state.activeBoard=state.boards[0].id;save();render();$('#simpleDialog').close()}}}
 function editColumn(id){const b=board(),col=b.columns.find(x=>x.id===id);simple(col?'編輯階段':'新增階段',`<div class="field"><label for="columnName">階段名稱</label><input id="columnName" class="full" required maxlength="50" value="${esc(col?.name||'')}"></div>${col?`<div class="field"><label for="columnPosition">欄位順序</label><select id="columnPosition" class="full">${b.columns.map((x,i)=>`<option value="${i}" ${x.id===id?'selected':''}>第 ${i+1} 欄</option>`).join('')}</select></div><button type="button" id="deleteColumn" class="danger">刪除此階段</button>`:''}`,()=>{const name=$('#columnName').value.trim();if(!name)return false;if(col){col.name=name;const pos=Number($('#columnPosition').value);b.columns=b.columns.filter(x=>x.id!==id);b.columns.splice(pos,0,col)}else b.columns.push({id:uid(),name});save();render()});if(col)$('#deleteColumn').onclick=()=>{if(b.columns.length===1){toast('至少保留一個階段');return}if(b.cards.some(c=>c.columnId===id)){toast('請先移動或刪除這個階段內的卡片');return}b.columns=b.columns.filter(x=>x.id!==id);save();render();$('#simpleDialog').close()}}
 function createCard(col){requireUser(()=>{simple('新增卡片',`<div class="field"><label for="newCardTitle">卡片標題</label><input id="newCardTitle" class="full" required maxlength="150" placeholder="接下來想完成什麼？"></div>`,()=>{const title=$('#newCardTitle').value.trim();if(!title)return false;const c={id:uid(),title,columnId:col||board().columns[0].id,description:'',labels:[],assignees:[],due:'',done:false,checklist:[],attachments:[],comments:[],createdAt:new Date().toISOString()};board().cards.push(c);save();render();setTimeout(()=>openCard(c.id),0)})})}
-function openCard(id){const c=board().cards.find(x=>x.id===id);if(!c)return;currentCard=id;const d=$('#editor');d.innerHTML=`<div class="modal-head"><span class="muted">▤</span><input id="cardTitleInput" class="title-input" aria-label="卡片標題" maxlength="150" value="${esc(c.title)}"><button id="closeCard" aria-label="關閉卡片">✕</button></div><div class="modal-body"><div class="detail-grid"><div><div class="field"><label for="cardDescription">≡ &nbsp; 說明</label><textarea id="cardDescription" placeholder="加入更詳細的說明…">${esc(c.description)}</textarea></div><div class="field"><h3>☑ &nbsp; 待辦事項 <span id="checkCount" class="muted"></span></h3><div id="checklist"></div><form id="checkForm" class="row"><input id="checkText" class="grow" placeholder="新增待辦事項…" required maxlength="200"><button>＋</button></form></div><div class="field"><h3>♧ &nbsp; 附件</h3><div id="attachments"></div><label class="file-label" for="attachmentInput">＋ 選擇檔案或照片（每個上限 15 MB）</label><input id="attachmentInput" type="file" multiple></div><div class="field"><h3>☏ &nbsp; 留言與討論</h3><form id="commentForm"><textarea id="commentText" placeholder="分享進度或留下你的想法…" required maxlength="5000" style="min-height:75px"></textarea><div class="row between" style="margin-top:8px"><span class="small muted">以 ${esc(me()?.name||'尚未選擇身分')} 的身分留言</span><button class="primary">送出留言</button></div></form><div id="comments"></div></div></div><div class="detail-side"><div class="field"><label for="cardStage">所在階段</label><select id="cardStage" class="full">${board().columns.map(col=>`<option value="${col.id}" ${c.columnId===col.id?'selected':''}>${esc(col.name)}</option>`).join('')}</select></div><div class="field"><h3>負責人</h3>${state.users.map(u=>`<label class="row" style="margin:8px 0;font-weight:400"><input type="checkbox" data-assignee="${u.id}" ${c.assignees.includes(u.id)?'checked':''}>${avatar(u)}<span>${esc(u.name)}</span></label>`).join('')}</div><div class="field"><label for="cardDue">截止日期</label><input id="cardDue" class="full" type="datetime-local" value="${esc(localDue(c.due))}"><label class="row" style="margin-top:10px;font-weight:400"><input id="cardDone" type="checkbox" ${c.done?'checked':''}>已完成任務</label></div><div class="field"><h3>標籤</h3>${Object.entries(labelOptions()).map(([key,label])=>`<label class="row" style="margin:7px 0;font-weight:400"><input type="checkbox" data-label="${key}" ${c.labels.includes(key)?'checked':''}><span class="tag ${esc(label.color)}">${esc(label.name)}</span></label>`).join('')}</div><div class="field"><h3>操作</h3><button id="copyCard" class="full pill" style="margin-bottom:8px">▣ 複製卡片</button><button id="deleteCard" class="full danger pill">刪除卡片</button></div><p class="help-note">變更會自動儲存。<br>建立於 ${formatDate(c.createdAt,true)}</p></div></div></div>`;const update=()=>{save();render()};$('#cardTitleInput').onchange=e=>{const title=e.target.value.trim();if(!title){e.target.value=c.title;toast('標題不可為空');return}c.title=title;update()};$('#cardDescription').oninput=e=>{c.description=e.target.value;update()};$('#cardStage').onchange=e=>{c.columnId=e.target.value;update()};$('#cardDue').onchange=e=>{c.due=e.target.value;update()};$('#cardDone').onchange=e=>{c.done=e.target.checked;update()};$$('[data-assignee]').forEach(el=>el.onchange=()=>{c.assignees=el.checked?[...c.assignees,el.dataset.assignee]:c.assignees.filter(id=>id!==el.dataset.assignee);update()});$$('[data-label]').forEach(el=>el.onchange=()=>{c.labels=el.checked?[...c.labels,el.dataset.label]:c.labels.filter(l=>l!==el.dataset.label);update()});$('#closeCard').onclick=()=>d.close();$('#checkForm').onsubmit=e=>{e.preventDefault();const text=$('#checkText').value.trim();if(!text)return;c.checklist.push({id:uid(),text,done:false});$('#checkText').value='';renderChecklist(c);update()};$('#commentForm').onsubmit=e=>{e.preventDefault();requireUser(()=>{const text=$('#commentText').value.trim();if(!text)return;c.comments.push({id:uid(),userId:me().id,username:me().name,text,at:new Date().toISOString()});$('#commentText').value='';renderComments(c);update()})};$('#attachmentInput').onchange=e=>uploadFiles(c,[...e.target.files]);$('#deleteCard').onclick=()=>{if(confirm(`刪除「${c.title}」？此操作無法復原。`)){board().cards=board().cards.filter(x=>x.id!==c.id);update();d.close()}};$('#copyCard').onclick=()=>{const n=structuredClone(c);n.id=uid();n.title+='（副本）';n.comments=[];n.createdAt=new Date().toISOString();board().cards.push(n);update();openCard(n.id);toast('已複製卡片')};renderChecklist(c);renderAttachments(c);renderComments(c);if(!d.open)d.showModal()}
+function openCard(id){const c=board().cards.find(x=>x.id===id);if(!c)return;currentCard=id;const d=$('#editor');d.innerHTML=`<div class="modal-head"><span class="muted">▤</span><input id="cardTitleInput" class="title-input" aria-label="卡片標題" maxlength="150" value="${esc(c.title)}"><button id="closeCard" aria-label="關閉卡片">✕</button></div><div class="modal-body"><div class="detail-grid"><div><div class="field"><label for="cardDescription">≡ &nbsp; 說明</label><textarea id="cardDescription" placeholder="加入更詳細的說明…">${esc(c.description)}</textarea></div><div class="field"><h3>☑ &nbsp; 待辦事項 <span id="checkCount" class="muted"></span></h3><div id="checklist"></div><form id="checkForm" class="row"><input id="checkText" class="grow" placeholder="新增待辦事項…" required maxlength="200"><button>＋</button></form></div><div class="field"><h3>♧ &nbsp; 附件</h3><div id="attachments"></div><label class="file-label" for="attachmentInput">＋ 選擇檔案或照片（每個上限 15 MB）</label><input id="attachmentInput" type="file" multiple></div><div class="field"><h3>☏ &nbsp; 留言與討論</h3><form id="commentForm"><textarea id="commentText" placeholder="分享進度或留下你的想法…" required maxlength="5000" style="min-height:75px"></textarea><div class="row between" style="margin-top:8px"><span class="small muted">以 ${esc(me()?.name||'尚未選擇身分')} 的身分留言</span><button class="primary">送出留言</button></div></form><div id="comments"></div></div></div><div class="detail-side"><div class="field"><label for="cardStage">所在階段</label><select id="cardStage" class="full">${board().columns.map(col=>`<option value="${col.id}" ${c.columnId===col.id?'selected':''}>${esc(col.name)}</option>`).join('')}</select></div><div class="field"><h3>負責人</h3>${state.users.map(u=>`<label class="row" style="margin:8px 0;font-weight:400"><input type="checkbox" data-assignee="${u.id}" ${c.assignees.includes(u.id)?'checked':''}>${avatar(u)}<span>${esc(u.name)}</span></label>`).join('')}</div><div class="field"><label for="cardDue">截止日期</label><input id="cardDue" class="full" type="datetime-local" value="${esc(localDue(c.due))}"><label class="row" style="margin-top:10px;font-weight:400"><input id="cardDone" type="checkbox" ${c.done?'checked':''}>已完成任務</label></div><div class="field"><h3>標籤</h3>${Object.entries(labelOptions()).map(([key,label])=>`<label class="row" style="margin:7px 0;font-weight:400"><input type="checkbox" data-label="${key}" ${c.labels.includes(key)?'checked':''}><span class="tag ${esc(label.color)}">${esc(label.name)}</span></label>`).join('')}</div><div class="field"><h3>操作</h3><button id="copyCard" class="full pill" style="margin-bottom:8px">▣ 複製卡片</button><button id="deleteCard" class="full danger pill">刪除卡片</button></div><p class="help-note">變更會自動儲存。<br>建立於 ${formatDate(c.createdAt,true)}</p></div></div></div>`;const update=()=>{save();render()};$('#cardTitleInput').onchange=e=>{const title=e.target.value.trim();if(!title){e.target.value=c.title;toast('標題不可為空');return}c.title=title;update()};$('#cardDescription').oninput=e=>{c.description=e.target.value;update()};$('#cardStage').onchange=e=>{c.columnId=e.target.value;update()};$('#cardDue').onchange=e=>{c.due=e.target.value;update()};$('#cardDone').onchange=e=>{c.done=e.target.checked;update()};$$('[data-assignee]').forEach(el=>el.onchange=()=>{c.assignees=el.checked?[...c.assignees,el.dataset.assignee]:c.assignees.filter(id=>id!==el.dataset.assignee);update()});$$('[data-label]').forEach(el=>el.onchange=()=>{c.labels=el.checked?[...c.labels,el.dataset.label]:c.labels.filter(l=>l!==el.dataset.label);update()});$('#closeCard').onclick=()=>d.close();$('#checkForm').onsubmit=e=>{e.preventDefault();const text=$('#checkText').value.trim();if(!text)return;c.checklist.push({id:uid(),text,done:false});$('#checkText').value='';renderChecklist(c);update()};$('#commentForm').onsubmit=e=>{e.preventDefault();requireUser(()=>{const text=$('#commentText').value.trim();if(!text)return;c.comments.push({id:uid(),userId:me().id,text,at:new Date().toISOString()});$('#commentText').value='';renderComments(c);update()})};$('#attachmentInput').onchange=e=>uploadFiles(c,[...e.target.files]);$('#deleteCard').onclick=()=>{if(confirm(`刪除「${c.title}」？此操作無法復原。`)){board().cards=board().cards.filter(x=>x.id!==c.id);update();d.close()}};$('#copyCard').onclick=()=>{const n=structuredClone(c);n.id=uid();n.title+='（副本）';n.comments=[];n.createdAt=new Date().toISOString();board().cards.push(n);update();openCard(n.id);toast('已複製卡片')};renderChecklist(c);renderAttachments(c);renderComments(c);if(!d.open)d.showModal()}
 function renderChecklist(c){const done=c.checklist.filter(x=>x.done).length;$('#checkCount').textContent=`${done}/${c.checklist.length}`;$('#checklist').innerHTML=`${c.checklist.length?`<div class="progress"><i style="width:${done/c.checklist.length*100}%"></i></div>`:''}`+c.checklist.map(t=>`<div class="check-item ${t.done?'checked':''}"><input type="checkbox" data-check="${t.id}" ${t.done?'checked':''} aria-label="${esc(t.text)}"><span>${t.group?`<small class="muted">${esc(t.group)} · </small>`:''}${esc(t.text)}</span><button data-remove-check="${t.id}" aria-label="刪除待辦事項">×</button></div>`).join('');$$('[data-check]').forEach(el=>el.onchange=()=>{c.checklist.find(t=>t.id===el.dataset.check).done=el.checked;save();render();renderChecklist(c)});$$('[data-remove-check]').forEach(el=>el.onclick=()=>{c.checklist=c.checklist.filter(t=>t.id!==el.dataset.removeCheck);save();render();renderChecklist(c)})}
 async function uploadFiles(c,files){for(const f of files){if(f.size>15*1024*1024){toast(f.name+' 超過 15 MB，未加入');continue}try{const data=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(f)});c.attachments.push({id:uid(),name:f.name,type:f.type,size:f.size,data});save();render();if(currentCard===c.id&&$('#editor').open)renderAttachments(c)}catch{toast('無法讀取 '+f.name)}}if($('#attachmentInput'))$('#attachmentInput').value=''}
 function renderAttachments(c) {
@@ -90,10 +109,10 @@ function renderAttachments(c) {
     if(c.coverId===el.dataset.removeFile)c.coverId=null;save();render();renderAttachments(c);
   });
 }
-function renderComments(c){$('#comments').innerHTML=[...c.comments].reverse().map(x=>`<div class="comment">${avatar(state.users.find(u=>u.id===x.userId)||{name:x.username})}<div class="grow"><strong class="small">${esc(x.username)}</strong><time datetime="${esc(x.at)}">${formatDate(x.at,true)}</time><p>${esc(x.text)}</p></div></div>`).join('')}
+function renderComments(c){$('#comments').innerHTML=[...c.comments].reverse().map(x=>{const user=state.users.find(u=>u.id===x.userId),name=user?.name||'未知成員';return `<div class="comment">${avatar(user)}<div class="grow"><strong class="small">${esc(name)}</strong><time datetime="${esc(x.at)}">${formatDate(x.at,true)}</time><p>${esc(x.text)}</p></div></div>`}).join('')}
 $('#editor').onclose=()=>currentCard=null;$('#currentUser').onclick=openUsers;$('#membersBtn').onclick=openUsers;$('#inviteBtn').onclick=openUsers;$('#closeUser').onclick=()=>$('#userDialog').close();$('#addBoard').onclick=()=>editBoard(true);$('#editBoard').onclick=()=>editBoard();$('#starBoard').onclick=()=>{board().starred=!board().starred;save();render()};$('#quickCreate').onclick=()=>createCard();$('#workspaceNav').onclick=()=>{mine=false;$('#search').value='';$('#dueFilter').value='all';render()};$('#search').oninput=render;$('#mineFilter').onclick=()=>requireUser(()=>{mine=!mine;render()});$('#dueFilter').onchange=render;$('#clearFilters').onclick=()=>{mine=false;$('#search').value='';$('#dueFilter').value='all';render()};
-function validateImport(s){const str=(v,max=200000)=>typeof v==='string'&&v.length<=max;const id=v=>str(v,100)&&/^[a-zA-Z0-9_-]+$/.test(v);const arr=Array.isArray;const unique=xs=>new Set(xs.map(x=>x.id)).size===xs.length;const validDate=v=>str(v,40)&&!isNaN(new Date(v).getTime());if(!s||s.version!==1||!arr(s.users)||!s.users.length||!unique(s.users)||!s.users.every(u=>id(u.id)&&str(u.name,40)&&u.name.trim()&&(u.shortName===undefined||str(u.shortName,40)))||!arr(s.boards)||!s.boards.length||!unique(s.boards))return false;return s.boards.every(b=>id(b.id)&&str(b.name,80)&&str(b.description)&&(!b.labelDefinitions||Object.entries(b.labelDefinitions).every(([key,l])=>id(key)&&l&&str(l.name,200)&&Object.hasOwn(colors,l.color)))&&arr(b.columns)&&b.columns.length&&unique(b.columns)&&b.columns.every(c=>id(c.id)&&str(c.name,50))&&arr(b.cards)&&unique(b.cards)&&b.cards.every(c=>id(c.id)&&str(c.title,150)&&str(c.description)&&b.columns.some(col=>col.id===c.columnId)&&arr(c.labels)&&c.labels.every(l=>Object.hasOwn(colors,l)||(id(l)&&b.labelDefinitions&&Object.hasOwn(b.labelDefinitions,l)))&&arr(c.assignees)&&c.assignees.every(id=>s.users.some(u=>u.id===id))&&str(c.due,40)&&(!c.due||validDate(c.due))&&typeof c.done==='boolean'&&validDate(c.createdAt)&&arr(c.checklist)&&c.checklist.every(t=>id(t.id)&&str(t.text)&&typeof t.done==='boolean')&&arr(c.comments)&&c.comments.every(x=>id(x.id)&&id(x.userId)&&str(x.username,40)&&str(x.text)&&validDate(x.at))&&arr(c.attachments)&&c.attachments.every(a=>id(a.id)&&str(a.name,300)&&typeof a.size==='number'&&a.size>=0&&((str(a.data,23*1024*1024)&&/^data:[^,]*;base64,[A-Za-z0-9+/=]*$/.test(a.data))||(safeExternalURL(a.url)&&str(a.type,200))))))}
-$('#importInput').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{const s=JSON.parse(await file.text());if(!validateImport(s))throw Error('備份格式不正確或資料不完整');if(confirm('匯入將取代目前所有看板與成員。建議先匯出備份。確定繼續？')){state=s;state.activeBoard=state.boards.some(b=>b.id===s.activeBoard)?s.activeBoard:s.boards[0].id;mine=false;$('#search').value='';$('#dueFilter').value='all';save();render();if(!me())openUsers();toast('備份匯入完成')}}catch(err){toast('匯入失敗：'+err.message)}e.target.value=''};
+function validateImport(s){return Boolean(s&&s.version===1&&Array.isArray(s.boards)&&s.boards.length&&s.boards.every(b=>b&&typeof b.id==='string'&&typeof b.name==='string'&&Array.isArray(b.columns)&&Array.isArray(b.cards)))}
+$('#importInput').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{const s=JSON.parse(await file.text());if(!validateImport(s))throw Error('備份格式不正確或資料不完整');if(confirm('匯入將取代目前本機看板。建議先匯出備份。確定繼續？')){state={...s,users:googleAccount?.roster||[]};delete state.userAliases;state.activeBoard=state.boards.some(b=>b.id===s.activeBoard)?s.activeBoard:s.boards[0].id;mine=false;$('#search').value='';$('#dueFilter').value='all';save();render();toast('備份匯入完成')}}catch(err){toast('匯入失敗：'+err.message)}e.target.value=''};
 // Initialize saved workspaces before consulting the seed file.
 async function initialize() {
   const surfaces = [$('.topbar'), $('.layout')];
@@ -111,43 +130,15 @@ async function initialize() {
       state = await loadInitialData();
       if (db) save();
     }
-    if (!state.rosterVersion) {
-      try {
-        const defaults = await loadInitialData();
-        if (syncRoster(state, defaults) && db) save();
-      } catch {
-        toast('暫時無法更新預設成員，已保留現有資料；請重新整理再試');
-      }
-    }
-    if ((state.trelloImportVersion || 0) < 1) {
-      try {
-        const imported = await loadInitialData();
-        if (mergeTrelloImport(state, imported) && db) save();
-      } catch {
-        toast('Trello 匯入資料暫時無法載入，已保留現有資料；請重新整理再試');
-      }
-    }
-    if (removeRetiredDmUser(state) && db) save();
-    if (removeDemoUsers(state) && db) save();
-    if (removeStarterBoards(state) && db) save();
-    try {
-      const configured = await loadInitialData();
-      const merged = mergeUserAliases(state, configured, userId());
-      if (merged.currentUserId) setUser(merged.currentUserId);
-      const shortNamesChanged = syncUserShortNames(state, configured);
-      if ((merged.changed || shortNamesChanged) && db) save();
-    } catch {
-      toast('暫時無法同步成員與簡稱，保留目前設定；請重新整理再試');
-    }
-    if (archiveSelectedBoards(state) && db) save();
+    state.users=[];
     // Start with an unarchived board; archived content is opened explicitly.
     if (board().archived) {
       const first = state.boards.find(board => !board.archived);
       if (first) { state.activeBoard = first.id; if (db) save(); }
     }
     render();
+    if (window.boardlyGoogleUser) applyGoogleAccount(window.boardlyGoogleUser);
     surfaces.forEach(element => element.inert = false);
-    if (!me()) openUsers();
   } catch (error) {
     const message = document.createElement('p');
     message.className = 'startup-error';
@@ -159,5 +150,7 @@ async function initialize() {
   }
 }
 
+$('#dialogGoogleSignIn').onclick=()=>{$('#userDialog').close();$('#googleSignIn').click()};
+$('#editGoogleName').onclick=()=>{$('#userDialog').close();window.boardlyGoogleAuth?.editName()};
+$('#googleSignOut').onclick=async()=>{try{await window.boardlyGoogleAuth.signOut()}catch(error){toast('登出失敗：'+error.message)}};
 initialize();
-

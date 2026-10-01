@@ -1,0 +1,4 @@
+# Private roster exports must never be committed.
+member_info.csv
+member_*.csv
+__pycache__/

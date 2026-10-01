@@ -48,6 +48,69 @@ button:focus-visible{
   color:white}
 .primary:hover{
   background:#344a42}
+.google-sign-in{
+  display:inline-flex;
+  align-items:center;
+  gap:9px;
+  border:1px solid var(--line);
+  background:white;
+  white-space:nowrap;
+  font-weight:600}
+.google-sign-in:hover{
+  background:#f4f6f3}
+.google-sign-in:disabled{
+  opacity:.6;
+  cursor:wait}
+.google-mark{
+  font-weight:800;
+  font-size:18px;
+  color:#4285f4}
+.modal.name-dialog{
+  width:460px}
+.modal.cloud-dialog{
+  width:min(900px,calc(100vw - 32px));
+  max-height:90vh}
+.cloud-toolbar{
+  gap:10px;
+  flex-wrap:wrap;
+  margin:14px 0}
+.cloud-toolbar select{
+  min-width:130px}
+.cloud-cards{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  gap:12px;
+  max-height:340px;
+  overflow:auto}
+.cloud-column{
+  padding:12px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  background:#f8f9f7}
+.cloud-column h3{
+  margin:0 0 10px;
+  font-size:14px}
+.cloud-card-row{
+  display:block;
+  width:100%;
+  margin:6px 0;
+  text-align:left;
+  background:white}
+.cloud-card-detail{
+  margin-top:20px;
+  padding-top:16px;
+  border-top:1px solid var(--line)}
+.cloud-card-detail label{
+  display:block;
+  margin:12px 0 5px}
+.cloud-comment{
+  display:flex;
+  gap:10px;
+  align-items:baseline}
+.cloud-comment span{
+  white-space:pre-wrap}
+[hidden]{
+  display:none!important}
 .muted{
   color:var(--muted)}
 .small{
