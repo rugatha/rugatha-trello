@@ -7,6 +7,11 @@ const fixture=()=>({boards:[{id:'b',name:'Board',columns:[{id:'col',name:'Todo'}
 }]}]});
 const diff=(a,b)=>changes(documents(a),documents(b));
 test('unchanged workspace produces no writes',()=>assert.deepEqual(diff(fixture(),fixture()),[]));
+test('archive lists are UI state and never written to Firestore',()=>{
+ const item=fixture();item.boards[0].archivedCards=[{id:'old',title:'Old'}];
+ item.boards[0].cards[0].archivedAttachments=[{id:'file',name:'Old file'}];
+ assert.deepEqual(diff(fixture(),item),[]);
+});
 test('maps member references and stores children separately',()=>{
  const docs=documents(fixture()),card=docs.get('workspaces/main/boards/b/cards/c');
  assert.deepEqual(card.assigneeIds,['member-01']);assert.equal(card.checklist,undefined);

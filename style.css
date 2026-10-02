@@ -685,6 +685,9 @@ input[type=checkbox]{
 }
 
 .attachment-link { padding: 0; color: var(--primary); text-align: left; overflow-wrap: anywhere; }
+.archive-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid #e5e8e1; }
+.archive-row span { min-width: 0; overflow-wrap: anywhere; }
+.archive-row button { flex: none; }
 
 /* Let a long board list scroll within the available sidebar height. */
 .layout {

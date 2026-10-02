@@ -18,12 +18,12 @@ Trello 風格的看板網站。Google 登入使用 Firebase Authentication；正
 
 編輯採 Firestore transaction，只寫入變更欄位，檢查同欄位是否被其他成員修改；離線、衝突或權限錯誤時顯示失敗並還原畫面。交易行為參考 [Firebase 官方文件](https://firebase.google.com/docs/firestore/manage-data/transactions)。
 
-看板可封存／復原，牌卡與附件移除採 `archived: true`，保留子文件；牌卡與附件復原目前需可信任的管理流程。Viewer 僅可閱讀；Owner／Admin／Editor 可編輯，刪除空欄位僅限 Owner／Admin。看板建立及牌卡負責人變更仍由管理流程處理，附件上傳暫緩。
+看板可封存／復原，牌卡與附件移除採 `archived: true`，保留子文件。每個看板的「封存項目」列出已封存牌卡與附件；Owner／Admin／Editor 可復原，Viewer 僅可閱讀。刪除空欄位僅限 Owner／Admin。看板建立及牌卡負責人變更仍由管理流程處理，附件上傳暫緩。
 
 已移除 `data.json`、IndexedDB 看板讀寫與匯入流程，以及獨立雲端視窗。網站不會載入或覆蓋舊瀏覽器看板。Firebase 登入偏好仍使用 localStorage，並非看板資料。Git 歷史與既有瀏覽器儲存不在此次清理範圍；正式站部署後仍需確認舊 `data.json` URL 不再提供內容。
 
 ## 驗證
 
-執行 `node --experimental-vm-modules --test tests/*.test.mjs`。測試涵蓋資料映射、子文件保留、差異寫入、衝突／離線失敗及超過 50 張牌卡的載入；Firebase 呼叫以模擬介面驗證，並非正式 Firestore 權限測試。
+執行 `node --experimental-vm-modules --test tests/*.test.mjs`。測試涵蓋資料映射、子文件保留、差異寫入、封存復原、衝突／離線失敗及超過 50 張牌卡的載入；Firebase 呼叫以模擬介面驗證，並非正式 Firestore 權限測試。
 
 尚待正式站 Google 登入、各角色實際讀寫、雙帳號衝突及部署後 URL 檢查。完整後續工作見 `to-do.md`。

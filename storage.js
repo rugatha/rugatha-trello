@@ -15,10 +15,12 @@ export async function loadWorkspace(account) {
     const [columns, cards] = await Promise.all([rows(`${path}/columns`), rows(`${path}/cards`)]);
     // Fetch in small groups to avoid flooding the connection with subcollection requests.
     const visible = cards.filter(card => !card.archived);
+    const archivedCards = cards.filter(card => card.archived).map(({id,title,columnId}) => ({id,title,columnId}));
     for (let start=0; start<visible.length; start+=10) {
       await Promise.all(visible.slice(start,start+10).map(async card => {
         [card.checklist, card.comments, card.attachments] = await Promise.all(
           ['checklist','comments','attachments'].map(type => rows(`${path}/cards/${card.id}/${type}`)));
+        card.archivedAttachments = card.attachments.filter(item => item.archived).map(({id,name}) => ({id,name}));
         card.attachments = card.attachments.filter(item => !item.archived);
         card.comments.sort((a,b)=>String(a.at).localeCompare(String(b.at)));
         card.comments.forEach(item => { item.userId = item.memberId; });
@@ -26,9 +28,32 @@ export async function loadWorkspace(account) {
         card.labels ||= []; card.description ||= ''; card.due ||= '';
       }));
     }
-    return {...snapshot.data(), id, columns, cards:visible};
+    return {...snapshot.data(), id, columns, cards:visible, archivedCards};
   }));
   return {version:1, users:account.roster || [], boards:ordered(boards.filter(Boolean)), activeBoard:null};
+}
+export async function restoreCard(boardId, cardId, memberId) {
+  const ref = doc(firestore, `${root}/${boardId}/cards/${cardId}`);
+  await runTransaction(firestore, async transaction => {
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists() || snapshot.data().archived !== true) throw new Error('牌卡已變更，請重新整理');
+    transaction.update(ref, {archived:false, updatedBy:memberId, updatedAt:new Date().toISOString()});
+  });
+}
+export async function restoreAttachment(boardId, cardId, attachmentId, memberId) {
+  const cardRef = doc(firestore, `${root}/${boardId}/cards/${cardId}`);
+  const attachmentRef = doc(firestore, `${root}/${boardId}/cards/${cardId}/attachments/${attachmentId}`);
+  await runTransaction(firestore, async transaction => {
+    const [card, attachment] = await Promise.all([transaction.get(cardRef), transaction.get(attachmentRef)]);
+    if (!card.exists() || card.data().archived || !attachment.exists() || attachment.data().archived !== true) {
+      throw new Error('附件或牌卡已變更，請重新整理');
+    }
+    transaction.update(attachmentRef, {archived:false});
+    transaction.update(cardRef, {
+      attachmentCount: (card.data().attachmentCount || 0) + 1,
+      updatedBy:memberId, updatedAt:new Date().toISOString()
+    });
+  });
 }
 export async function persistWorkspace(before, after, memberId) {
   const operations = changes(documents(before), documents(after));
@@ -49,7 +74,7 @@ export async function persistWorkspace(before, after, memberId) {
     operations.forEach(op => {
       const ref = doc(firestore, op.path);
       if (!op.after) {
-        if (op.path.includes('/cards/') && !op.path.includes('/checklist/')) {
+        if (/\/cards\/[^/]+(?:\/attachments\/[^/]+)?$/.test(op.path)) {
           transaction.update(ref, {archived:true, updatedBy:memberId});
         } else transaction.delete(ref);
       } else {
