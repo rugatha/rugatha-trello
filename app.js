@@ -101,7 +101,7 @@ function renderAttachments(c) {
   });
   $$('[data-remove-file]').forEach(el=>el.onclick=()=>{
     if(!confirm('封存此附件？可從封存項目復原。'))return;const file=c.attachments.find(a=>a.id===el.dataset.removeFile);c.archivedAttachments||=[];c.archivedAttachments.push({id:file.id,name:file.name});c.attachments=c.attachments.filter(a=>a.id!==el.dataset.removeFile);
-    if(c.coverId===el.dataset.removeFile)c.coverId=null;save();render();renderAttachments(c);applyPermissions();
+    save();render();renderAttachments(c);applyPermissions();
   });
 }
 function renderComments(c){$('#comments').innerHTML=[...c.comments].reverse().map(x=>{const user=state.users.find(u=>u.id===x.userId),name=user?.name||'未知成員';return `<div class="comment">${avatar(user)}<div class="grow"><strong class="small">${esc(name)}</strong><time datetime="${esc(x.at)}">${formatDate(x.at,true)}</time><p>${esc(x.text)}</p></div></div>`}).join('')}
@@ -187,8 +187,14 @@ async function save(){
   const version=generation,before=baseline,after=structuredClone(state);
   saving=true;applyPermissions();syncStatus('正在儲存至 Firebase…');
   try{
-    await persistWorkspace(before,after,userId());
+    const committedCards=await persistWorkspace(before,after,userId());
     if(version!==generation)return;
+    for(const {boardId,cardId,updatedAt,createdBy} of committedCards){
+      for(const workspace of [after,state]){
+        const card=workspace.boards.find(board=>board.id===boardId)?.cards.find(card=>card.id===cardId);
+        if(card){card.updatedBy=userId();card.updatedAt=updatedAt;if(createdBy)card.createdBy=createdBy;}
+      }
+    }
     baseline=after;syncStatus('已儲存至 Firebase');
   }catch(error){
     if(version!==generation)return;
