@@ -1,5 +1,5 @@
 import { firestore } from './auth.js';
-import { collection, doc, getDocFromServer, getDocsFromServer, runTransaction } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
+import { collection, doc, getDocFromServer, getDocsFromServer, onSnapshot, runTransaction } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import { documents, changes } from './workspace-data.js';
 const root = 'workspaces/main/boards';
 const ordered = items => items.sort((a,b) => String(a.orderKey || '').localeCompare(String(b.orderKey || '')));
@@ -32,6 +32,21 @@ export async function loadWorkspace(account) {
   }));
   return {version:1, users:account.roster || [], boards:ordered(boards.filter(Boolean)), activeBoard:null};
 }
+export function subscribeWorkspace(account, onChange, onError) {
+  const unsubscribe = [];
+  for (const id of new Set(account.accessboard || [])) {
+    const path = `${root}/${id}`;
+    for (const ref of [doc(firestore,path),collection(firestore,`${path}/columns`),collection(firestore,`${path}/cards`)]) {
+      let initial = true;
+      unsubscribe.push(onSnapshot(ref, snapshot => {
+        if (snapshot.metadata.hasPendingWrites) return;
+        if (initial) { initial = false; return; }
+        onChange();
+      }, onError));
+    }
+  }
+  return () => unsubscribe.forEach(stop => stop());
+}
 export async function restoreCard(boardId, cardId, memberId) {
   const ref = doc(firestore, `${root}/${boardId}/cards/${cardId}`);
   await runTransaction(firestore, async transaction => {
@@ -57,6 +72,17 @@ export async function restoreAttachment(boardId, cardId, attachmentId, memberId)
 }
 export async function persistWorkspace(before, after, memberId) {
   const operations = changes(documents(before), documents(after));
+  // Child-only edits must notify the card listener too.
+  const parentPaths = new Set(operations.map(op => op.path));
+  const beforeDocs = documents(before), afterDocs = documents(after);
+  for (const op of [...operations]) {
+    const match = op.path.match(/^(.*\/cards\/[^/]+)\/(?:checklist|comments|attachments)\/[^/]+$/);
+    const path = match?.[1];
+    if (path && !parentPaths.has(path) && afterDocs.has(path)) {
+      operations.push({path,before:beforeDocs.get(path),after:afterDocs.get(path),patch:{updatedAt:beforeDocs.get(path)?.updatedAt}});
+      parentPaths.add(path);
+    }
+  }
   if (!operations.length) return [];
   if (operations.length > 400) throw new Error('此次變更過大，請分次操作');
   const updatedAt = new Date().toISOString();
