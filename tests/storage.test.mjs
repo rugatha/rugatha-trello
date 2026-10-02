@@ -3,17 +3,18 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import fs from 'node:fs/promises';
 import {documents,changes} from '../workspace-data.js';
+import {compareOrderKey} from '../order-key.js';
 async function setup(remote,fail=false){
- const writes=[],listeners=[];
+ const writes=[],listeners=[],reads=[];
  const context=vm.createContext({console,Set,Map,Date,JSON,Promise,Error});
- const deps={firestore:{},documents,changes,collection:(_,path)=>path,doc:(_,path)=>path,
- getDocFromServer:async path=>({exists:()=>remote.has(path),data:()=>remote.get(path)}),
- getDocsFromServer:async path=>({docs:[...remote].filter(([key])=>key.startsWith(path+'/')&&key.split('/').length===path.split('/').length+1).map(([key,value])=>({id:key.split('/').at(-1),data:()=>value}))}),
+ const deps={firestore:{},documents,changes,compareOrderKey,collection:(_,path)=>path,doc:(_,path)=>path,
+ getDocFromServer:async path=>{reads.push(path);return {exists:()=>remote.has(path),data:()=>remote.get(path)}},
+ getDocsFromServer:async path=>{reads.push(path);return {docs:[...remote].filter(([key])=>key.startsWith(path+'/')&&key.split('/').length===path.split('/').length+1).map(([key,value])=>({id:key.split('/').at(-1),data:()=>value}))}},
  onSnapshot:(path,next,error)=>{const listener={path,next,error,active:true};listeners.push(listener);return()=>{listener.active=false}},
  runTransaction:async(_,fn)=>{const pending=[];await fn({get:async path=>({exists:()=>remote.has(path),data:()=>remote.get(path)}),update:(...v)=>pending.push(['update',...v]),set:(...v)=>pending.push(['set',...v]),delete:(...v)=>pending.push(['delete',...v])});if(fail)throw Error('offline');writes.push(...pending);}};
  const mod=new vm.SourceTextModule(await fs.readFile(new URL('../storage.js',import.meta.url),'utf8'),{context});
  await mod.link(async()=>new vm.SyntheticModule(Object.keys(deps),function(){for(const [k,v]of Object.entries(deps))this.setExport(k,v);},{context}));await mod.evaluate();
- return {api:mod.namespace,writes,listeners};
+ return {api:mod.namespace,writes,listeners,reads};
 }
 const fixture=()=>({boards:[{id:'b',name:'Board',columns:[],cards:[{id:'c',title:'Card',assignees:[],checklist:[],comments:[],attachments:[]}]}]});
 test('persists changed fields with author metadata',async()=>{
@@ -79,6 +80,21 @@ test('loads only authorized boards and all cards beyond 50',async()=>{
  assert.equal(loaded.boards[0].archivedCards[0].id,'archived');
  assert.equal(loaded.boards[0].cards[0].archivedAttachments[0].id,'old');
  assert.equal(loaded.boards[0].cards[0].attachments.length,0);
+});
+test('scoped reload keeps other boards and skips known empty child collections',async()=>{
+ const remote=new Map([
+   ['workspaces/main/boards/a',{name:'A'}],['workspaces/main/boards/b',{name:'B'}],
+   ['workspaces/main/boards/a/cards/c',{title:'Before',checklistCount:0,commentCount:0,attachmentCount:0}],
+   ['workspaces/main/boards/b/cards/d',{title:'Other',checklistCount:0,commentCount:0,attachmentCount:0}]
+ ]);
+ const {api,reads}=await setup(remote),account={accessboard:['a','b'],roster:[]};
+ const previous=await api.loadWorkspace(account);reads.length=0;
+ remote.get('workspaces/main/boards/a/cards/c').title='After';
+ const loaded=await api.loadWorkspace(account,{previous,boardIds:['a']});
+ assert.equal(loaded.boards.find(board=>board.id==='a').cards[0].title,'After');
+ assert.equal(loaded.boards.find(board=>board.id==='b').cards[0].title,'Other');
+ assert.ok(reads.every(path=>path.startsWith('workspaces/main/boards/a')));
+ assert.ok(reads.every(path=>!path.endsWith('/checklist')&&!path.endsWith('/comments')));
 });
 test('restores an archived card without touching its children',async()=>{
  const remote=new Map([['workspaces/main/boards/b/cards/c',{title:'Card',archived:true}]]);
