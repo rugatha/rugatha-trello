@@ -4,15 +4,16 @@ import vm from 'node:vm';
 import fs from 'node:fs/promises';
 import {documents,changes} from '../workspace-data.js';
 async function setup(remote,fail=false){
- const writes=[];
+ const writes=[],listeners=[];
  const context=vm.createContext({console,Set,Map,Date,JSON,Promise,Error});
  const deps={firestore:{},documents,changes,collection:(_,path)=>path,doc:(_,path)=>path,
  getDocFromServer:async path=>({exists:()=>remote.has(path),data:()=>remote.get(path)}),
  getDocsFromServer:async path=>({docs:[...remote].filter(([key])=>key.startsWith(path+'/')&&key.split('/').length===path.split('/').length+1).map(([key,value])=>({id:key.split('/').at(-1),data:()=>value}))}),
+ onSnapshot:(path,next,error)=>{const listener={path,next,error,active:true};listeners.push(listener);return()=>{listener.active=false}},
  runTransaction:async(_,fn)=>{const pending=[];await fn({get:async path=>({exists:()=>remote.has(path),data:()=>remote.get(path)}),update:(...v)=>pending.push(['update',...v]),set:(...v)=>pending.push(['set',...v]),delete:(...v)=>pending.push(['delete',...v])});if(fail)throw Error('offline');writes.push(...pending);}};
  const mod=new vm.SourceTextModule(await fs.readFile(new URL('../storage.js',import.meta.url),'utf8'),{context});
  await mod.link(async()=>new vm.SyntheticModule(Object.keys(deps),function(){for(const [k,v]of Object.entries(deps))this.setExport(k,v);},{context}));await mod.evaluate();
- return {api:mod.namespace,writes};
+ return {api:mod.namespace,writes,listeners};
 }
 const fixture=()=>({boards:[{id:'b',name:'Board',columns:[],cards:[{id:'c',title:'Card',assignees:[],checklist:[],comments:[],attachments:[]}]}]});
 test('persists changed fields with author metadata',async()=>{
@@ -47,6 +48,26 @@ test('attachment removal archives the file and updates the parent count',async()
  assert.equal(writes.length,2);
  assert.equal(writes.find(write=>write[1].endsWith('/attachments/file'))[2].archived,true);
  assert.equal(writes.find(write=>write[1].endsWith('/cards/c'))[2].attachmentCount,0);
+});
+test('child-only edit touches its parent card for realtime listeners',async()=>{
+ const a=fixture(),b=fixture();a.boards[0].cards[0].checklist=[{id:'item',text:'Task',done:false}];
+ b.boards[0].cards[0].checklist=[{id:'item',text:'Task',done:true}];
+ const {api,writes}=await setup(documents(a));await api.persistWorkspace(a,b,'m');
+ assert.equal(writes.length,2);
+ assert.equal(writes.find(write=>write[1].endsWith('/cards/c'))[2].updatedBy,'m');
+ assert.equal(writes.find(write=>write[1].endsWith('/checklist/item'))[2].done,true);
+});
+test('realtime subscription watches authorized boards and can be stopped',async()=>{
+ const {api,listeners}=await setup(new Map());let changed=0;
+ const stop=api.subscribeWorkspace({accessboard:['b','b']},()=>changed++,()=>{});
+ assert.equal(listeners.length,3);
+ for(const listener of listeners)listener.next({metadata:{hasPendingWrites:false}});
+ assert.equal(changed,0);
+ listeners[2].next({metadata:{hasPendingWrites:true}});
+ assert.equal(changed,0);
+ listeners[2].next({metadata:{hasPendingWrites:false}});
+ assert.equal(changed,1);
+ stop();assert.ok(listeners.every(listener=>!listener.active));
 });
 test('loads only authorized boards and all cards beyond 50',async()=>{
  const remote=new Map([['workspaces/main/boards/b',{name:'Board'}],['workspaces/main/boards/private',{name:'Private'}]]);

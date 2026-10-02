@@ -1,4 +1,4 @@
-import { loadWorkspace, persistWorkspace, restoreCard, restoreAttachment } from './storage.js';
+import { loadWorkspace, subscribeWorkspace, persistWorkspace, restoreCard, restoreAttachment } from './storage.js';
 // UI rendering, interaction handlers, and workspace state.
 'use strict';
 const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])), uid=()=>crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2);
@@ -73,6 +73,7 @@ function openUsers(){
   if(!$('#userDialog').open)$('#userDialog').showModal();
 }
 async function applyGoogleAccount(account){
+  stopLiveSync();
   googleAccount=account;
   await refreshWorkspace();
 }
@@ -140,8 +141,25 @@ async function restoreArchived(type,id,cardId){
     $$('#archiveDialog [data-restore-card], #archiveDialog [data-restore-attachment]').forEach(button=>button.disabled=!canEdit());
   }
 }
-$('#editor').onclose=()=>currentCard=null;$('#currentUser').onclick=openUsers;$('#membersBtn').onclick=openUsers;$('#inviteBtn').onclick=openUsers;$('#closeUser').onclick=()=>$('#userDialog').close();$('#addBoard').onclick=()=>editBoard(true);$('#editBoard').onclick=()=>editBoard();$('#starBoard').onclick=()=>{board().starred=!board().starred;save();render()};$('#quickCreate').onclick=()=>createCard();$('#workspaceNav').onclick=()=>{mine=false;$('#search').value='';$('#dueFilter').value='all';render()};$('#search').oninput=render;$('#mineFilter').onclick=()=>requireUser(()=>{mine=!mine;render()});$('#dueFilter').onchange=render;$('#clearFilters').onclick=()=>{mine=false;$('#search').value='';$('#dueFilter').value='all';render()};
+$('#editor').onclose=()=>{currentCard=null;flushLiveSync()};$('#currentUser').onclick=openUsers;$('#membersBtn').onclick=openUsers;$('#inviteBtn').onclick=openUsers;$('#closeUser').onclick=()=>$('#userDialog').close();$('#addBoard').onclick=()=>editBoard(true);$('#editBoard').onclick=()=>editBoard();$('#starBoard').onclick=()=>{board().starred=!board().starred;save();render()};$('#quickCreate').onclick=()=>createCard();$('#workspaceNav').onclick=()=>{mine=false;$('#search').value='';$('#dueFilter').value='all';render()};$('#search').oninput=render;$('#mineFilter').onclick=()=>requireUser(()=>{mine=!mine;render()});$('#dueFilter').onchange=render;$('#clearFilters').onclick=()=>{mine=false;$('#search').value='';$('#dueFilter').value='all';render()};
 let baseline=null, loading=false, saving=false, generation=0;
+let stopSubscription=null, livePending=false, liveTimer=null;
+function stopLiveSync(){
+  stopSubscription?.();stopSubscription=null;
+  clearTimeout(liveTimer);liveTimer=null;livePending=false;
+}
+function flushLiveSync(){
+  if(!livePending||liveTimer||saving||loading||$('#editor').open||$('#simpleDialog').open||$('#archiveDialog').open)return;
+  liveTimer=setTimeout(()=>{
+    liveTimer=null;
+    if(saving||loading||$('#editor').open||$('#simpleDialog').open||$('#archiveDialog').open)return;
+    livePending=false;
+    refreshWorkspace();
+  },250);
+}
+function queueLiveSync(){livePending=true;flushLiveSync()}
+$('#simpleDialog').onclose=flushLiveSync;
+$('#archiveDialog').onclose=flushLiveSync;
 function canEdit(){return !loading && !saving && Boolean(baseline) && ['owner','admin','editor'].includes(googleAccount?.workspaceRole)}
 function renderEmpty(){
   $('#boardTitle').textContent=loading?'正在讀取 Firebase…':googleAccount?.workspaceRole?'沒有可存取的看板':'請先使用 Google 登入';
@@ -169,6 +187,7 @@ function applyPermissions(){
 function syncStatus(message){$('#syncStatus').textContent=message;}
 async function refreshWorkspace(){
   const version=++generation,account=googleAccount,active=state.activeBoard;
+  clearTimeout(liveTimer);liveTimer=null;livePending=false;
   baseline=null;loading=true;
   state={version:1,boards:[],users:account?.roster||[]};
   $('#editor').close();$('#simpleDialog').close();$('#archiveDialog').close();render();
@@ -179,8 +198,11 @@ async function refreshWorkspace(){
     if(version!==generation)return;
     state=loaded;state.activeBoard=loaded.boards.some(b=>b.id===active)?active:(loaded.boards.find(b=>!b.archived)||loaded.boards[0])?.id;
     baseline=structuredClone(state);syncStatus('已從 Firebase 載入');
+    if(!stopSubscription)stopSubscription=subscribeWorkspace(account,queueLiveSync,error=>{
+      stopLiveSync();syncStatus('即時同步中斷：'+error.message+'；請重新整理重試');
+    });
   }catch(error){if(version===generation)syncStatus('讀取失敗：'+error.message+'；請重新整理重試');}
-  finally{if(version===generation){loading=false;render();}}
+  finally{if(version===generation){loading=false;render();flushLiveSync();}}
 }
 async function save(){
   if(!canEdit()){if(baseline){state=structuredClone(baseline);render();}return;}
@@ -200,7 +222,7 @@ async function save(){
     if(version!==generation)return;
     state=structuredClone(before);$('#editor').close();$('#simpleDialog').close();
     syncStatus('儲存失敗，畫面已還原：'+error.message);toast('未儲存，請重新整理後再試');
-  }finally{saving=false;if(version===generation){render();applyPermissions();}}
+  }finally{saving=false;if(version===generation){render();applyPermissions();flushLiveSync();}}
 }
 // Block mutations while a write is in flight; navigation/account controls stay usable.
 document.addEventListener('click',event=>{
