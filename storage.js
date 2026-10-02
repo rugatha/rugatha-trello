@@ -1,47 +1,67 @@
-"use strict";
-
-// Browser storage holds draft boards and cards only. Firestore owns all member profiles.
-function openDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open('boardly-workspace', 1);
-    req.onupgradeneeded = () => req.result.createObjectStore('data');
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+import { firestore } from './auth.js';
+import { collection, doc, getDocFromServer, getDocsFromServer, runTransaction } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
+import { documents, changes } from './workspace-data.js';
+const root = 'workspaces/main/boards';
+const ordered = items => items.sort((a,b) => String(a.orderKey || '').localeCompare(String(b.orderKey || '')));
+async function rows(path) {
+  const snapshot = await getDocsFromServer(collection(firestore, path));
+  return ordered(snapshot.docs.map(item => ({...item.data(), id:item.id})));
 }
-
-function readDB() {
-  return new Promise((resolve, reject) => {
-    const req = db.transaction('data').objectStore('data').get('workspace');
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-function save() {
-  if (!db) {
-    toast('無法儲存：請先匯出備份，並允許瀏覽器儲存資料');
-    return;
-  }
-  const draft = structuredClone({...state, users: []});
-  delete draft.userAliases;
-  for (const board of draft.boards) {
-    for (const card of board.cards) {
-      for (const comment of card.comments) {
-        delete comment.username;
-        delete comment.originalUsername;
-      }
+export async function loadWorkspace(account) {
+  const boards = await Promise.all([...new Set(account.accessboard || [])].map(async id => {
+    const path = `${root}/${id}`;
+    const snapshot = await getDocFromServer(doc(firestore, path));
+    if (!snapshot.exists()) return null;
+    const [columns, cards] = await Promise.all([rows(`${path}/columns`), rows(`${path}/cards`)]);
+    // Fetch in small groups to avoid flooding the connection with subcollection requests.
+    const visible = cards.filter(card => !card.archived);
+    for (let start=0; start<visible.length; start+=10) {
+      await Promise.all(visible.slice(start,start+10).map(async card => {
+        [card.checklist, card.comments, card.attachments] = await Promise.all(
+          ['checklist','comments','attachments'].map(type => rows(`${path}/cards/${card.id}/${type}`)));
+        card.attachments = card.attachments.filter(item => !item.archived);
+        card.comments.sort((a,b)=>String(a.at).localeCompare(String(b.at)));
+        card.comments.forEach(item => { item.userId = item.memberId; });
+        card.assignees = card.assigneeIds || [];
+        card.labels ||= []; card.description ||= ''; card.due ||= '';
+      }));
     }
-  }
-  const transaction = db.transaction('data', 'readwrite');
-  transaction.objectStore('data').put(draft, 'workspace');
-  transaction.onerror = () => toast('儲存失敗，可能空間不足。請匯出備份。');
+    return {...snapshot.data(), id, columns, cards:visible};
+  }));
+  return {version:1, users:account.roster || [], boards:ordered(boards.filter(Boolean)), activeBoard:null};
 }
-
-async function loadInitialData() {
-  const response = await fetch('./data.json', {cache: 'no-cache'});
-  if (!response.ok) throw new Error(`無法載入 data.json（HTTP ${response.status}）`);
-  const data = await response.json();
-  if (!validateImport(data)) throw new Error('data.json 格式不正確或資料不完整');
-  return data;
+export async function persistWorkspace(before, after, memberId) {
+  const operations = changes(documents(before), documents(after));
+  if (!operations.length) return;
+  if (operations.length > 400) throw new Error('此次變更過大，請分次操作');
+  await runTransaction(firestore, async transaction => {
+    const snapshots = await Promise.all(operations.map(op => transaction.get(doc(firestore, op.path))));
+    operations.forEach((op,index) => {
+      const snapshot = snapshots[index];
+      if (op.before ? !snapshot.exists() : snapshot.exists()) throw new Error('資料已變更，請重新整理後再試');
+      const remote = snapshot.data() || {};
+      for (const key of Object.keys(op.patch || op.before || {})) {
+        if (op.before && JSON.stringify(remote[key]) !== JSON.stringify(op.before[key])) {
+          throw new Error('其他成員已修改此資料，請重新整理後再試');
+        }
+      }
+    });
+    operations.forEach(op => {
+      const ref = doc(firestore, op.path);
+      if (!op.after) {
+        if (op.path.includes('/cards/') && !op.path.includes('/checklist/')) {
+          transaction.update(ref, {archived:true, updatedBy:memberId});
+        } else transaction.delete(ref);
+      } else {
+        const payload = {...op.patch};
+        if (/\/cards\/[^/]+$/.test(op.path)) {
+          payload.updatedBy = memberId;
+          payload.updatedAt = new Date().toISOString();
+          if (!op.before) payload.createdBy = memberId;
+        }
+        if (op.before) transaction.update(ref,payload);
+        else transaction.set(ref,payload);
+      }
+    });
+  });
 }

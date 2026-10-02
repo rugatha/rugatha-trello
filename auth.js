@@ -35,7 +35,6 @@ function publish(user, member = null) {
     memberId: member?.status === 'active' ? member.id : null,
     workspaceRole: member?.status === 'active' ? member.role : null,
     accessboard: member?.accessboard || [],
-    cardincharge: member?.cardincharge || [],
     roster: member?.roster || []
   } : null;
   window.dispatchEvent(new CustomEvent('boardly-auth-changed', { detail: window.boardlyGoogleUser }));
