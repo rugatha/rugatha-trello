@@ -17,7 +17,17 @@ async function setup(remote,fail=false){
 const fixture=()=>({boards:[{id:'b',name:'Board',columns:[],cards:[{id:'c',title:'Card',assignees:[],checklist:[],comments:[],attachments:[]}]}]});
 test('persists changed fields with author metadata',async()=>{
  const a=fixture(),b=fixture();b.boards[0].cards[0].title='New';const {api,writes}=await setup(documents(a));
- await api.persistWorkspace(a,b,'member-01');assert.equal(writes.length,1);assert.equal(writes[0][2].title,'New');assert.equal(writes[0][2].updatedBy,'member-01');assert.equal(writes[0][2].assigneeIds,undefined);
+ const committed=await api.persistWorkspace(a,b,'member-01');assert.equal(writes.length,1);assert.equal(writes[0][2].title,'New');assert.equal(writes[0][2].updatedBy,'member-01');assert.equal(writes[0][2].assigneeIds,undefined);
+ assert.equal(committed[0].boardId,'b');assert.equal(committed[0].cardId,'c');assert.equal(committed[0].updatedAt,writes[0][2].updatedAt);
+});
+test('returned metadata supports a second edit without a false conflict',async()=>{
+ const a=fixture(),b=fixture(),remote=documents(a);b.boards[0].cards[0].coverId='file';
+ const first=await setup(remote);const [committed]=await first.api.persistWorkspace(a,b,'m');
+ Object.assign(remote.get('workspaces/main/boards/b/cards/c'),first.writes[0][2]);
+ Object.assign(b.boards[0].cards[0],{updatedBy:'m',updatedAt:committed.updatedAt});
+ const c=structuredClone(b);c.boards[0].cards[0].title='Next edit';
+ const second=await setup(remote);await second.api.persistWorkspace(b,c,'m');
+ assert.equal(second.writes.length,1);
 });
 test('conflicting remote edit rejects without writes',async()=>{
  const a=fixture(),b=fixture(),remote=documents(a);b.boards[0].cards[0].title='New';remote.get('workspaces/main/boards/b/cards/c').title='Someone else';

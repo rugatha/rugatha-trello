@@ -29,6 +29,14 @@ test('adding checklist item updates its parent count atomically',()=>{
  const a=fixture(),b=fixture();b.boards[0].cards[0].checklist.push({id:'new',text:'New',done:false});
  const ops=diff(a,b);assert.equal(ops.length,2);assert.deepEqual(ops[0].patch,{checklistCount:2});
 });
+test('archiving a cover attachment retains its cover selection for restoration',()=>{
+ const a=fixture(),b=fixture();
+ for(const workspace of [a,b])workspace.boards[0].cards[0].coverId='a';
+ b.boards[0].cards[0].attachments=[];
+ const ops=diff(a,b);
+ assert.deepEqual(ops.find(op=>op.path.endsWith('/cards/c')).patch,{attachmentCount:0});
+ assert.equal(ops.find(op=>op.path.endsWith('/attachments/a')).after,undefined);
+});
 test('removing checklist item does not remove card',()=>{
  const a=fixture(),b=fixture();b.boards[0].cards[0].checklist=[];
  const ops=diff(a,b);assert.equal(ops.length,2);assert.ok(ops.find(op=>op.path.endsWith('/checklist/t')&&!op.after));

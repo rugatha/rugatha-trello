@@ -57,8 +57,12 @@ export async function restoreAttachment(boardId, cardId, attachmentId, memberId)
 }
 export async function persistWorkspace(before, after, memberId) {
   const operations = changes(documents(before), documents(after));
-  if (!operations.length) return;
+  if (!operations.length) return [];
   if (operations.length > 400) throw new Error('此次變更過大，請分次操作');
+  const updatedAt = new Date().toISOString();
+  const committedCards = operations.filter(op=>op.after && /\/cards\/[^/]+$/.test(op.path))
+    .map(op=>({boardId:op.path.split('/')[3],cardId:op.path.split('/')[5],updatedAt,
+      createdBy:op.before?null:memberId}));
   await runTransaction(firestore, async transaction => {
     const snapshots = await Promise.all(operations.map(op => transaction.get(doc(firestore, op.path))));
     operations.forEach((op,index) => {
@@ -81,7 +85,7 @@ export async function persistWorkspace(before, after, memberId) {
         const payload = {...op.patch};
         if (/\/cards\/[^/]+$/.test(op.path)) {
           payload.updatedBy = memberId;
-          payload.updatedAt = new Date().toISOString();
+          payload.updatedAt = updatedAt;
           if (!op.before) payload.createdBy = memberId;
         }
         if (op.before) transaction.update(ref,payload);
@@ -89,4 +93,5 @@ export async function persistWorkspace(before, after, memberId) {
       }
     });
   });
+  return committedCards;
 }
