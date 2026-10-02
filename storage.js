@@ -1,14 +1,18 @@
 import { firestore } from './auth.js';
 import { collection, doc, getDocFromServer, getDocsFromServer, onSnapshot, runTransaction } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import { documents, changes } from './workspace-data.js';
+import { compareOrderKey } from './order-key.js';
 const root = 'workspaces/main/boards';
-const ordered = items => items.sort((a,b) => String(a.orderKey || '').localeCompare(String(b.orderKey || '')));
+const ordered = items => items.sort((a,b) => compareOrderKey(a.orderKey,b.orderKey));
 async function rows(path) {
   const snapshot = await getDocsFromServer(collection(firestore, path));
   return ordered(snapshot.docs.map(item => ({...item.data(), id:item.id})));
 }
-export async function loadWorkspace(account) {
+export async function loadWorkspace(account, {previous,boardIds}={}) {
+  const saved = new Map(previous?.boards?.map(board => [board.id,board]) || []);
+  const reload = boardIds ? new Set(boardIds) : null;
   const boards = await Promise.all([...new Set(account.accessboard || [])].map(async id => {
+    if(reload && !reload.has(id) && saved.has(id))return saved.get(id);
     const path = `${root}/${id}`;
     const snapshot = await getDocFromServer(doc(firestore, path));
     if (!snapshot.exists()) return null;
@@ -19,7 +23,9 @@ export async function loadWorkspace(account) {
     for (let start=0; start<visible.length; start+=10) {
       await Promise.all(visible.slice(start,start+10).map(async card => {
         [card.checklist, card.comments, card.attachments] = await Promise.all(
-          ['checklist','comments','attachments'].map(type => rows(`${path}/cards/${card.id}/${type}`)));
+          ['checklist','comments','attachments'].map(type =>
+            type==='checklist' && card.checklistCount===0 || type==='comments' && card.commentCount===0
+              ? [] : rows(`${path}/cards/${card.id}/${type}`)));
         card.archivedAttachments = card.attachments.filter(item => item.archived).map(({id,name}) => ({id,name}));
         card.attachments = card.attachments.filter(item => !item.archived);
         card.comments.sort((a,b)=>String(a.at).localeCompare(String(b.at)));
@@ -41,7 +47,7 @@ export function subscribeWorkspace(account, onChange, onError) {
       unsubscribe.push(onSnapshot(ref, snapshot => {
         if (snapshot.metadata.hasPendingWrites) return;
         if (initial) { initial = false; return; }
-        onChange();
+        onChange(id);
       }, onError));
     }
   }

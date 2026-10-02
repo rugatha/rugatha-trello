@@ -1,4 +1,5 @@
 import { loadWorkspace, subscribeWorkspace, persistWorkspace, restoreCard, restoreAttachment } from './storage.js';
+import { assignMovedOrderKey } from './order-key.js';
 // UI rendering, interaction handlers, and workspace state.
 'use strict';
 const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])), uid=()=>crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2);
@@ -54,7 +55,7 @@ function localDue(value) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}T${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 function cardHTML(c){const cover=c.attachments.find(a=>a.id===c.coverId&&attachmentImage(a)),checked=c.checklist.filter(t=>t.done).length;return `<article class="card" draggable="true" tabindex="0" role="button" aria-label="開啟卡片：${esc(c.title)}" data-card="${c.id}">${cover?`<img class="cover" src="${esc(attachmentImage(cover))}" loading="lazy" referrerpolicy="no-referrer" alt="${esc(cover.name)}">`:c.demoCover?'<div class="design-cover"><div class="mini-window"><b>MAKE ROOM FOR IDEAS.</b><div class="mini-grid"><i></i><i></i><i></i></div></div></div>':''}<div>${c.labels.map(labelHTML).join('')}</div><div class="card-title">${esc(c.title)}</div>${c.description?`<p class="card-desc">${esc(c.description.slice(0,65))}${c.description.length>65?'…':''}</p>`:''}<div class="card-footer">${c.due?`<span class="due ${overdue(c)?'overdue':''} ${c.done?'done':''}">${c.done?'✓':'◷'} ${formatDate(c.due)}</span>`:''}${c.checklist.length?`<span title="待辦事項">☑ ${checked}/${c.checklist.length}</span>`:''}${c.comments.length?`<span title="留言">☏ ${c.comments.length}</span>`:''}${c.attachments.length?`<span title="附件">♧ ${c.attachments.length}</span>`:''}<span class="grow"></span>${c.assignees.map(id=>avatar(state.users.find(u=>u.id===id))).join('')}</div></article>`}
-function bindBoard(){$$('[data-board]').forEach(el=>el.onclick=()=>{state.activeBoard=el.dataset.board;mine=false;$('#search').value='';$('#dueFilter').value='all';render()});$$('[data-card]').forEach(el=>{el.onclick=()=>openCard(el.dataset.card);el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openCard(el.dataset.card)}};el.ondragstart=e=>{dragged=el.dataset.card;e.dataTransfer.setData('text/plain',dragged);e.dataTransfer.effectAllowed='move';el.classList.add('dragging')};el.ondragend=()=>{dragged=null;$$('.drag-over').forEach(e=>e.classList.remove('drag-over'));el.classList.remove('dragging')}});$$('[data-col]').forEach(el=>{el.ondragover=e=>{if(dragged){e.preventDefault();e.dataTransfer.dropEffect='move';el.classList.add('drag-over')}};el.ondragleave=e=>{if(!el.contains(e.relatedTarget))el.classList.remove('drag-over')};el.ondrop=e=>{e.preventDefault();if(!dragged||!canEdit())return;const b=board(),c=b.cards.find(c=>c.id===dragged);if(!c)return;const target=e.target.closest('[data-card]');if(target?.dataset.card===c.id){el.classList.remove('drag-over');return}b.cards=b.cards.filter(x=>x.id!==c.id);c.columnId=el.dataset.col;let index=target?b.cards.findIndex(x=>x.id===target.dataset.card):-1;if(index>=0){if(e.clientY>target.getBoundingClientRect().top+target.getBoundingClientRect().height/2)index++;b.cards.splice(index,0,c)}else b.cards.push(c);b.cards.forEach((item,i)=>item.orderKey=String(i).padStart(12,'0'));save();render()}});$$('[data-add-card]').forEach(el=>el.onclick=()=>createCard(el.dataset.addCard));$$('[data-edit-col]').forEach(el=>el.onclick=()=>editColumn(el.dataset.editCol));$('#addColumn').onclick=()=>editColumn()}
+function bindBoard(){$$('[data-board]').forEach(el=>el.onclick=()=>{state.activeBoard=el.dataset.board;mine=false;$('#search').value='';$('#dueFilter').value='all';render()});$$('[data-card]').forEach(el=>{el.onclick=()=>openCard(el.dataset.card);el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openCard(el.dataset.card)}};el.ondragstart=e=>{dragged=el.dataset.card;e.dataTransfer.setData('text/plain',dragged);e.dataTransfer.effectAllowed='move';el.classList.add('dragging')};el.ondragend=()=>{dragged=null;$$('.drag-over').forEach(e=>e.classList.remove('drag-over'));el.classList.remove('dragging')}});$$('[data-col]').forEach(el=>{el.ondragover=e=>{if(dragged){e.preventDefault();e.dataTransfer.dropEffect='move';el.classList.add('drag-over')}};el.ondragleave=e=>{if(!el.contains(e.relatedTarget))el.classList.remove('drag-over')};el.ondrop=e=>{e.preventDefault();if(!dragged||!canEdit())return;const b=board(),c=b.cards.find(c=>c.id===dragged);if(!c)return;const target=e.target.closest('[data-card]');if(target?.dataset.card===c.id){el.classList.remove('drag-over');return}b.cards=b.cards.filter(x=>x.id!==c.id);c.columnId=el.dataset.col;let index=target?b.cards.findIndex(x=>x.id===target.dataset.card):-1;if(index>=0){if(e.clientY>target.getBoundingClientRect().top+target.getBoundingClientRect().height/2)index++;b.cards.splice(index,0,c)}else b.cards.push(c);try{assignMovedOrderKey(b.cards,c)}catch(error){state=structuredClone(baseline);render();toast(error.message);return}save();render()}});$$('[data-add-card]').forEach(el=>el.onclick=()=>createCard(el.dataset.addCard));$$('[data-edit-col]').forEach(el=>el.onclick=()=>editColumn(el.dataset.editCol));$('#addColumn').onclick=()=>editColumn()}
 function $$(s,root=document){return [...root.querySelectorAll(s)]}
 
 function requireUser(action){if(me())action();else openUsers()}
@@ -143,21 +144,22 @@ async function restoreArchived(type,id,cardId){
 }
 $('#editor').onclose=()=>{currentCard=null;flushLiveSync()};$('#currentUser').onclick=openUsers;$('#membersBtn').onclick=openUsers;$('#inviteBtn').onclick=openUsers;$('#closeUser').onclick=()=>$('#userDialog').close();$('#addBoard').onclick=()=>editBoard(true);$('#editBoard').onclick=()=>editBoard();$('#starBoard').onclick=()=>{board().starred=!board().starred;save();render()};$('#quickCreate').onclick=()=>createCard();$('#workspaceNav').onclick=()=>{mine=false;$('#search').value='';$('#dueFilter').value='all';render()};$('#search').oninput=render;$('#mineFilter').onclick=()=>requireUser(()=>{mine=!mine;render()});$('#dueFilter').onchange=render;$('#clearFilters').onclick=()=>{mine=false;$('#search').value='';$('#dueFilter').value='all';render()};
 let baseline=null, loading=false, saving=false, generation=0;
-let stopSubscription=null, livePending=false, liveTimer=null;
+let stopSubscription=null, livePending=false, liveTimer=null, liveBoards=new Set();
 function stopLiveSync(){
   stopSubscription?.();stopSubscription=null;
-  clearTimeout(liveTimer);liveTimer=null;livePending=false;
+  clearTimeout(liveTimer);liveTimer=null;livePending=false;liveBoards.clear();
 }
 function flushLiveSync(){
   if(!livePending||liveTimer||saving||loading||$('#editor').open||$('#simpleDialog').open||$('#archiveDialog').open)return;
   liveTimer=setTimeout(()=>{
     liveTimer=null;
     if(saving||loading||$('#editor').open||$('#simpleDialog').open||$('#archiveDialog').open)return;
-    livePending=false;
-    refreshWorkspace();
+    const boardIds=[...liveBoards];
+    livePending=false;liveBoards.clear();
+    refreshWorkspace(boardIds.length?boardIds:null);
   },250);
 }
-function queueLiveSync(){livePending=true;flushLiveSync()}
+function queueLiveSync(boardId){livePending=true;if(boardId)liveBoards.add(boardId);flushLiveSync()}
 $('#simpleDialog').onclose=flushLiveSync;
 $('#archiveDialog').onclose=flushLiveSync;
 function canEdit(){return !loading && !saving && Boolean(baseline) && ['owner','admin','editor'].includes(googleAccount?.workspaceRole)}
@@ -185,23 +187,29 @@ function applyPermissions(){
   $('#simpleDialog').inert=saving;
 }
 function syncStatus(message){$('#syncStatus').textContent=message;}
-async function refreshWorkspace(){
-  const version=++generation,account=googleAccount,active=state.activeBoard;
-  clearTimeout(liveTimer);liveTimer=null;livePending=false;
+async function refreshWorkspace(boardIds=null){
+  const version=++generation,account=googleAccount,active=state.activeBoard,previous=state;
+  const partial=Boolean(boardIds?.length && previous.boards.length);
+  clearTimeout(liveTimer);liveTimer=null;livePending=false;liveBoards.clear();
   baseline=null;loading=true;
-  state={version:1,boards:[],users:account?.roster||[]};
-  $('#editor').close();$('#simpleDialog').close();$('#archiveDialog').close();render();
+  if(!partial){
+    state={version:1,boards:[],users:account?.roster||[]};
+    $('#editor').close();$('#simpleDialog').close();$('#archiveDialog').close();render();
+  }else applyPermissions();
   if(!account?.workspaceRole){loading=false;syncStatus('尚未取得 Firebase 存取權限');render();return;}
-  syncStatus('正在讀取 Firebase…');
+  syncStatus(partial?'正在同步 Firebase…':'正在讀取 Firebase…');
   try{
-    const loaded=await loadWorkspace(account);
+    const loaded=await loadWorkspace(account,boardIds?{previous,boardIds}:undefined);
     if(version!==generation)return;
     state=loaded;state.activeBoard=loaded.boards.some(b=>b.id===active)?active:(loaded.boards.find(b=>!b.archived)||loaded.boards[0])?.id;
     baseline=structuredClone(state);syncStatus('已從 Firebase 載入');
     if(!stopSubscription)stopSubscription=subscribeWorkspace(account,queueLiveSync,error=>{
       stopLiveSync();syncStatus('即時同步中斷：'+error.message+'；請重新整理重試');
     });
-  }catch(error){if(version===generation)syncStatus('讀取失敗：'+error.message+'；請重新整理重試');}
+  }catch(error){if(version===generation){
+    if(partial){state=previous;baseline=structuredClone(previous);}
+    syncStatus('讀取失敗：'+error.message+'；請重新整理重試');
+  }}
   finally{if(version===generation){loading=false;render();flushLiveSync();}}
 }
 async function save(){
@@ -230,7 +238,7 @@ document.addEventListener('click',event=>{
   if(target&&!canEdit()){event.preventDefault();event.stopImmediatePropagation();}
 },true);
 window.addEventListener('beforeunload',event=>{if(saving){event.preventDefault();event.returnValue='';}});
-$('#refreshWorkspace').onclick=refreshWorkspace;
+$('#refreshWorkspace').onclick=()=>refreshWorkspace();
 $('#archiveBtn').onclick=showArchive;
 $('#closeArchive').onclick=()=>$('#archiveDialog').close();
 $('#dialogGoogleSignIn').onclick=()=>{$('#userDialog').close();$('#googleSignIn').click()};
