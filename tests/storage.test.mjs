@@ -115,3 +115,24 @@ test('rejects restoration when the item was already changed',async()=>{
  const {api,writes}=await setup(remote);await assert.rejects(api.restoreCard('b','c','m'),/已變更/);
  assert.equal(writes.length,0);
 });
+
+test('independent concurrent fields merge without overwriting another member edit',async()=>{
+ const a=fixture(),b=fixture(),remote=documents(a);
+ b.boards[0].cards[0].title='My title';
+ remote.get('workspaces/main/boards/b/cards/c').description='Other member description';
+ const {api,writes}=await setup(remote);
+ await api.persistWorkspace(a,b,'m');
+ assert.equal(writes.length,1);
+ assert.equal(writes[0][2].title,'My title');
+ assert.equal(Object.hasOwn(writes[0][2],'description'),false);
+});
+test('concurrent checklist toggle rejects without touching parent counts',async()=>{
+ const a=fixture(),b=fixture();
+ a.boards[0].cards[0].checklist=[{id:'item',text:'Task',done:false}];
+ b.boards[0].cards[0].checklist=[{id:'item',text:'Task',done:true}];
+ const remote=documents(a);
+ remote.get('workspaces/main/boards/b/cards/c/checklist/item').done=true;
+ const {api,writes}=await setup(remote);
+ await assert.rejects(api.persistWorkspace(a,b,'m'),/其他成員/);
+ assert.equal(writes.length,0);
+});

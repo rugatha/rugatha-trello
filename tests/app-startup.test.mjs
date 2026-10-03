@@ -16,6 +16,10 @@ test('main page starts empty and loads Firebase only after membership is availab
  this.setExport('assignMovedOrderKey',()=>{});
  this.setExport('restoreCard',async()=>{});this.setExport('restoreAttachment',async()=>{});
  },{context});await app.link(()=>dep);await app.evaluate();
+ await listeners.get('boardly-auth-changed')({detail:{uid:'unapproved',displayName:'Unapproved',workspaceRole:null}});
+ assert.equal(element('#boardTitle').textContent,'尚未取得工作空間權限');
+ assert.equal(element('#quickCreate').disabled,true);
+ await listeners.get('boardly-auth-changed')({detail:null});
  assert.equal(loads,0);assert.match(element('#boardTitle').textContent,/登入/);assert.equal(element('#quickCreate').disabled,true);
  element('#currentUser').onclick();
  assert.equal(element('#userDialog').open,true);

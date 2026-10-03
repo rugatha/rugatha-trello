@@ -165,7 +165,7 @@ $('#simpleDialog').onclose=flushLiveSync;
 $('#archiveDialog').onclose=flushLiveSync;
 function canEdit(){return !loading && !saving && Boolean(baseline) && ['owner','admin','editor'].includes(googleAccount?.workspaceRole)}
 function renderEmpty(){
-  $('#boardTitle').textContent=loading?'正在讀取 Firebase…':googleAccount?.workspaceRole?'沒有可存取的看板':'請先使用 Google 登入';
+  $('#boardTitle').textContent=loading?'正在讀取 Firebase…':googleAccount?.workspaceRole?'沒有可存取的看板':googleAccount?'尚未取得工作空間權限':'請先使用 Google 登入';
   $('#boardDescription').textContent=googleAccount&&!googleAccount.workspaceRole?'此帳號尚未取得工作空間權限。':'看板與牌卡由 Firebase 提供。';
   for(const id of ['crumb','boardNav','columns','boardStats','headerMembers'])$('#'+id).replaceChildren();
   $('#currentUser').textContent=googleAccount?.displayName||'Google 登入';

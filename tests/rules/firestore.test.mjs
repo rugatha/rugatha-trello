@@ -19,6 +19,7 @@ before(async()=>{
     const db=context.firestore();
     const data={
       [root]:{name:'Test'},
+      [root+'/memberLookup/alternate@example.com']:{memberId:'viewer'},
       [board]:{name:'Allowed'},
       [root+'/boards/forbidden']:{name:'Forbidden'},
       [board+'/columns/column']:{name:'Todo'},
@@ -104,4 +105,13 @@ test('card writes cannot impersonate authors or replace original creator',async(
   await assertFails(setDoc(doc(db,board+'/cards/forged'),{title:'Forged',createdBy:'owner'}));
   await assertFails(updateDoc(doc(db,card),{createdBy:'editor',updatedBy:'editor'}));
   await assertFails(updateDoc(doc(db,card),{title:'Forged',updatedBy:'owner'}));
+});
+
+test('multiple verified emails mapped to one member share name-edit permissions',async()=>{
+  const db=dbFor('alternate'),ref=doc(db,root+'/members/viewer');
+  await assertSucceeds(getDoc(doc(db,board)));
+  await assertSucceeds(updateDoc(ref,{name:'Shared member name'}));
+  await assertFails(updateDoc(doc(db,root+'/members/editor'),{name:'Other member'}));
+  await assertFails(updateDoc(ref,{role:'editor'}));
+  await assertFails(updateDoc(doc(db,card),{title:'Viewer cannot edit',updatedBy:'viewer'}));
 });
