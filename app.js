@@ -76,6 +76,7 @@ function openUsers(){
 async function applyGoogleAccount(account){
   stopLiveSync();
   googleAccount=account;
+  if($('#userDialog').open)openUsers();
   await refreshWorkspace();
 }
 window.addEventListener('boardly-auth-changed',event=>applyGoogleAccount(event.detail));

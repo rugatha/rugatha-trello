@@ -17,7 +17,13 @@ test('main page starts empty and loads Firebase only after membership is availab
  this.setExport('restoreCard',async()=>{});this.setExport('restoreAttachment',async()=>{});
  },{context});await app.link(()=>dep);await app.evaluate();
  assert.equal(loads,0);assert.match(element('#boardTitle').textContent,/登入/);assert.equal(element('#quickCreate').disabled,true);
- await listeners.get('boardly-auth-changed')({detail:{memberId:'m',workspaceRole:'viewer',accessboard:['b']}});
+ element('#currentUser').onclick();
+ assert.equal(element('#userDialog').open,true);
+ assert.equal(element('#localUserPanel').hidden,false);
+ await listeners.get('boardly-auth-changed')({detail:{memberId:'m',displayName:'Member',email:'member@example.com',workspaceRole:'viewer',accessboard:['b']}});
+ assert.equal(element('#localUserPanel').hidden,true);
+ assert.equal(element('#googleAccountSummary').textContent,'Member · member@example.com');
+ element('#userDialog').close();
  await new Promise(resolve=>setTimeout(resolve,0));
  assert.equal(loads,1);assert.equal(element('#boardTitle').textContent,'Firebase board');assert.equal(element('#quickCreate').disabled,true);
  element('#archiveBtn').onclick();
@@ -32,7 +38,10 @@ test('main page starts empty and loads Firebase only after membership is availab
  assert.equal(loads,2);
  element('#editor').close();element('#editor').onclose();await new Promise(resolve=>setTimeout(resolve,300));
  assert.equal(loads,3);
+ element('#currentUser').onclick();
  await listeners.get('boardly-auth-changed')({detail:null});await new Promise(resolve=>setTimeout(resolve,0));
  assert.equal(stopped,1);
+ assert.equal(element('#localUserPanel').hidden,false);
+ assert.equal(element('#googleAccountPanel').hidden,true);
  assert.match(element('#boardTitle').textContent,/登入/);assert.equal(element('#columns').innerHTML,'');
 });
