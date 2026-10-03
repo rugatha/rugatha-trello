@@ -78,9 +78,14 @@ service cloud.firestore {
               && request.resource.data.text is string
               && request.resource.data.text.size() > 0
               && request.resource.data.text.size() <= 5000;
-            allow update, delete: if canEdit(w, b)
+            allow update: if canEdit(w, b)
               && resource.data.memberId == memberId(w)
-              && request.resource.data.memberId == resource.data.memberId;
+              && request.resource.data.memberId == resource.data.memberId
+              && request.resource.data.text is string
+              && request.resource.data.text.size() > 0
+              && request.resource.data.text.size() <= 5000;
+            allow delete: if canEdit(w, b)
+              && resource.data.memberId == memberId(w);
           }
           match /checklist/{itemId} {
             allow read: if boardAccess(w, b);
