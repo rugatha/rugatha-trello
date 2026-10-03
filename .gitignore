@@ -1,4 +1,10 @@
 # Private roster exports must never be committed.
+__pycache__/
+new_member_info.csv
+.DS_Store
+node_modules
+node_modules/
+*-debug.log
+.firebase/
 member_info.csv
 member_*.csv
-__pycache__/

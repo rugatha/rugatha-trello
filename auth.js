@@ -1,5 +1,5 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
-import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, updateProfile } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
+import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
 import { getFirestore, collection, doc, getDoc, getDocs, updateDoc } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 
 const firebaseConfig = {
@@ -19,6 +19,7 @@ const nameInput = document.querySelector('#googleDisplayName');
 const nameError = document.querySelector('#googleNameError');
 const loginButton = document.querySelector('#googleSignIn');
 let currentUser = null;
+let currentMember = null;
 
 function notify(message) {
   const toast = document.querySelector('#toast');
@@ -31,7 +32,7 @@ function publish(user, member = null) {
   window.boardlyGoogleUser = user ? {
     uid: user.uid,
     email: user.email,
-    displayName: user.displayName || '',
+    displayName: member?.name || user.displayName || '',
     memberId: member?.status === 'active' ? member.id : null,
     workspaceRole: member?.status === 'active' ? member.role : null,
     accessboard: member?.accessboard || [],
@@ -40,7 +41,7 @@ function publish(user, member = null) {
   window.dispatchEvent(new CustomEvent('boardly-auth-changed', { detail: window.boardlyGoogleUser }));
 }
 
-function nameKey(uid) { return `boardly-google-name-v1:${uid}`; }
+function hasName(member) { return typeof member?.name === 'string' && Boolean(member.name.trim()); }
 
 async function loadMembership(user) {
   if (!user.email || !user.emailVerified) return null;
@@ -49,11 +50,7 @@ async function loadMembership(user) {
   const ref = doc(firestore, 'workspaces', 'main', 'members', lookup.data().memberId);
   const snapshot = await getDoc(ref);
   if (!snapshot.exists() || snapshot.data().status !== 'active') return null;
-  const member = snapshot.data();
-  if (user.displayName && member.name !== user.displayName && localStorage.getItem(nameKey(user.uid))) {
-    await updateDoc(ref, { name: user.displayName });
-    member.name = user.displayName;
-  }
+  const member = { ...snapshot.data(), id: snapshot.id };
   const roster = await getDocs(collection(firestore, 'workspaces', 'main', 'members'));
   member.roster = roster.docs.map(item => ({ id: item.id, name: item.data().name || item.id }));
   return member;
@@ -66,11 +63,18 @@ async function finishSignIn(user) {
   } catch (error) {
     notify('Google 登入成功，但無法確認工作空間權限：' + error.message);
   }
-  if (auth.currentUser?.uid === user.uid) publish(user, member);
+  if (auth.currentUser !== user) return;
+  currentMember = member;
+  publish(user, member);
+  if (member && !hasName(member)) {
+    nameInput.value = '';
+    nameError.textContent = '';
+    if (!nameDialog.open) nameDialog.showModal();
+  }
 }
 
 async function cancelName() {
-  if (currentUser && !localStorage.getItem(nameKey(currentUser.uid))) {
+  if (currentUser && currentMember && !hasName(currentMember)) {
     try { await signOut(auth); }
     catch (error) { nameError.textContent = '無法登出：' + error.message; }
   } else {
@@ -86,16 +90,13 @@ nameDialog.addEventListener('cancel', event => {
 
 onAuthStateChanged(auth, async user => {
   currentUser = user;
+  currentMember = null;
+  if (nameDialog.open) nameDialog.close();
+  publish(null);
   loginButton.hidden = Boolean(user);
   if (!user) {
     if (nameDialog.open) nameDialog.close();
     publish(null);
-    return;
-  }
-  if (!localStorage.getItem(nameKey(user.uid))) {
-    nameInput.value = user.displayName || '';
-    nameError.textContent = '';
-    if (!nameDialog.open) nameDialog.showModal();
     return;
   }
   await finishSignIn(user);
@@ -119,17 +120,21 @@ loginButton.addEventListener('click', async () => {
 nameForm.addEventListener('submit', async event => {
   event.preventDefault();
   const name = nameInput.value.trim();
-  if (!currentUser || !name || name.length > 40) return;
+  if (!currentUser || !currentMember || !name || name.length > 40) return;
+  const user = currentUser;
+  const member = currentMember;
   const saveButton = nameForm.querySelector('button[type="submit"]');
   saveButton.disabled = true;
   nameError.textContent = '';
   try {
-    await updateProfile(currentUser, { displayName: name });
-    localStorage.setItem(nameKey(currentUser.uid), '1');
+    await updateDoc(doc(firestore, 'workspaces', 'main', 'members', member.id), { name });
+    if (currentUser !== user) return;
+    member.name = name;
+    member.roster = member.roster.map(item => item.id === member.id ? { ...item, name } : item);
+    publish(user, member);
     nameDialog.close();
-    await finishSignIn(currentUser);
   } catch (error) {
-    nameError.textContent = '名稱儲存失敗：' + error.message;
+    if (currentUser === user) nameError.textContent = '名稱儲存失敗：' + error.message;
   } finally {
     saveButton.disabled = false;
   }
@@ -137,8 +142,8 @@ nameForm.addEventListener('submit', async event => {
 
 window.boardlyGoogleAuth = {
   editName() {
-    if (!currentUser) return;
-    nameInput.value = currentUser.displayName || '';
+    if (!currentUser || !currentMember) { notify('尚未取得有效會員資格，無法修改名稱'); return; }
+    nameInput.value = currentMember.name || '';
     nameError.textContent = '';
     nameDialog.showModal();
   },
