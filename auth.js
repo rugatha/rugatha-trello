@@ -61,6 +61,7 @@ async function finishSignIn(user) {
   try {
     member = await loadMembership(user);
   } catch (error) {
+    if (auth.currentUser !== user) return;
     notify('Google 登入成功，但無法確認工作空間權限：' + error.message);
   }
   if (auth.currentUser !== user) return;

@@ -32,9 +32,11 @@ Trello 風格的看板網站。Google 登入使用 Firebase Authentication；正
 
 使用 Node.js 24 與 Java 21，先執行 `npm ci`，再執行 `npm run test:rules`。此指令啟動本機 Firestore 模擬器並使用 `demo-rugatha-trello`；測試資料只寫入模擬器，完成後自動關閉，不連接正式資料庫。首次執行會下載官方模擬器。測試依 [Firebase 官方測試方式](https://firebase.google.com/docs/firestore/security/test-rules-emulator) 使用 `@firebase/rules-unit-testing`。
 
-15 項規則測試涵蓋 Owner／Admin／Editor／Viewer／一般會員、無看板權限、停用／未核准／未驗證信箱與未登入狀態，以及會員自我提權防護、留言作者與刪除限制。留言更新必須保留作者、內容為 1–5000 字；具編輯權限的作者可刪除自己的留言。這些測試不取代正式站多帳號驗證，規則修改仍須另行部署。
+16 項規則測試涵蓋 Owner／Admin／Editor／Viewer／一般會員、無看板權限、停用／未核准／未驗證信箱與未登入狀態，以及會員自我提權防護、多個信箱對應同一會員、留言作者與刪除限制。留言更新必須保留作者、內容為 1–5000 字；具編輯權限的作者可刪除自己的留言。這些測試不取代正式站多帳號驗證，規則修改仍須另行部署。
 
 macOS 若系統的 Java 或 Firebase CLI 是舊版，可使用專案的 npm 指令及 Homebrew Java，例如：
 `PATH=/opt/homebrew/opt/node@24/bin:/opt/homebrew/opt/openjdk@21/bin:$PATH npm run test:rules`。
 
 2026-10-03 新增的測試依賴經 `npm audit` 回報 16 項相依漏洞（4 moderate、12 high，含上游套件的傳遞相依）；目前僅用於本機測試，不由網站載入。未採用 audit 建議的跨主要版本降版，後續需追蹤上游修補。
+
+登入回歸測試另涵蓋未驗證信箱、停用會員、登出期間的非同步讀寫及快速切換帳號；已登入但未核准者顯示「尚未取得工作空間權限」。舊登入請求的延遲錯誤不會干擾新帳號。
