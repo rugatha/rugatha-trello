@@ -6,12 +6,12 @@ const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve
 async function setup(){
  const elements=new Map(),writes=[],restores=[];
  const element=s=>{if(!elements.has(s))elements.set(s,{value:s==='#dueFilter'?'all':'',classList:{add(){},remove(){},toggle(){}},style:{},replaceChildren(){this.innerHTML='';},close(){this.open=false;},showModal(){this.open=true;}});return elements.get(s);};
- const context=vm.createContext({console,structuredClone,setTimeout:()=>0,clearTimeout,Intl,Date,
+ const context=vm.createContext({console,structuredClone,setTimeout:()=>0,clearTimeout,Intl,Date,crypto:{randomUUID:()=>'copy-id'},
  document:{querySelector:element,querySelectorAll:s=>/^#[a-zA-Z]+$/.test(s)?[element(s)]:[],addEventListener(){}},window:{addEventListener(){}}});
- const data=()=>({users:[],boards:[{id:'b',name:'Board',columns:[],cards:[]}]});
- const deps={loadWorkspace:async()=>data(),subscribeWorkspace:()=>()=>{},persistWorkspace:()=>{const d=deferred();writes.push(d);return d.promise;},restoreCard:()=>{const d=deferred();restores.push(d);return d.promise;},restoreAttachment:async()=>{},assignMovedOrderKey:()=>{}};
+ const data=()=>({users:[],boards:[{id:'b',name:'Board',columns:[{id:'col',name:'Todo'}],cards:[{id:'c',title:'Assigned',columnId:'col',createdAt:'2026-10-01T00:00:00Z',description:'',assignees:['viewer'],labels:[],checklist:[],comments:[],attachments:[]}]}]});
+ const deps={loadWorkspace:async()=>data(),subscribeWorkspace:()=>()=>{},persistWorkspace:(before,after,member)=>{const d=deferred();Object.assign(d,{before,after,member});writes.push(d);return d.promise;},restoreCard:()=>{const d=deferred();restores.push(d);return d.promise;},restoreAttachment:async()=>{},assignMovedOrderKey:()=>{}};
  const source=await fs.readFile(new URL('../app.js',import.meta.url),'utf8');
- const mod=new vm.SourceTextModule(source+'\nexport {applyGoogleAccount,save,restoreArchived,canEdit};',{context});
+ const mod=new vm.SourceTextModule(source+'\nexport {applyGoogleAccount,save,restoreArchived,canEdit,openCard};',{context});
  await mod.link(()=>new vm.SyntheticModule(Object.keys(deps),function(){for(const [k,v] of Object.entries(deps))this.setExport(k,v);},{context}));await mod.evaluate();
  return {api:mod.namespace,writes,restores,element};
 }
@@ -37,4 +37,15 @@ test('successful restoration reloads and unlocks editing',async()=>{
  const {api,restores,element}=await setup();await api.applyGoogleAccount(account('m'));
  const pending=api.restoreArchived('card','c');assert.equal(api.canEdit(),false);
  restores[0].resolve();await pending;assert.equal(api.canEdit(),true);assert.equal(element('#quickCreate').disabled,false);
+});
+
+test('copying an assigned card creates an unassigned copy without changing the source',async()=>{
+ const {api,writes,element}=await setup();await api.applyGoogleAccount(account('editor'));
+ api.openCard('c');element('#copyCard').onclick();
+ assert.equal(writes.length,1);
+ const cards=writes[0].after.boards[0].cards;
+ assert.deepEqual(Array.from(cards.find(c=>c.id==='c').assignees),['viewer']);
+ assert.deepEqual(Array.from(cards.find(c=>c.id==='copy-id').assignees),[]);
+ writes[0].resolve([]);await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(api.canEdit(),true);
 });

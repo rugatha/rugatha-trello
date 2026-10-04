@@ -63,13 +63,15 @@ service cloud.firestore {
             && request.resource.data.title is string
             && request.resource.data.title.size() > 0
             && request.resource.data.title.size() <= 150
-            && request.resource.data.createdBy == memberId(w);
+            && request.resource.data.createdBy == memberId(w)
+            && request.resource.data.get('assigneeIds', []) == [];
           allow update: if canEdit(w, b)
             && request.resource.data.title is string
             && request.resource.data.title.size() > 0
             && request.resource.data.title.size() <= 150
             && request.resource.data.get('createdBy', null) == resource.data.get('createdBy', null)
-            && request.resource.data.updatedBy == memberId(w);
+            && request.resource.data.updatedBy == memberId(w)
+            && request.resource.data.get('assigneeIds', []) == resource.data.get('assigneeIds', []);
           allow delete: if false;
           match /comments/{commentId} {
             allow read: if boardAccess(w, b);

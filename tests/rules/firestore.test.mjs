@@ -115,3 +115,38 @@ test('multiple verified emails mapped to one member share name-edit permissions'
   await assertFails(updateDoc(ref,{role:'editor'}));
   await assertFails(updateDoc(doc(db,card),{title:'Viewer cannot edit',updatedBy:'viewer'}));
 });
+
+for(const role of ['owner','admin','editor'])test(role+': client cannot assign members, including on new cards',async()=>{
+  const db=dbFor(role),path=board+'/cards/assignment-'+role,ref=doc(db,path);
+  await env.withSecurityRulesDisabled(c=>setDoc(doc(c.firestore(),path),{title:'Assigned',createdBy:'owner',assigneeIds:['viewer']}));
+  await assertSucceeds(updateDoc(ref,{title:'Safe edit',updatedBy:role}));
+  for(const assigneeIds of [[],['editor'],['viewer','editor'],null,'viewer']){
+    await assertFails(updateDoc(ref,{assigneeIds,updatedBy:role}));
+  }
+  await assertFails(setDoc(doc(db,path+'-forged'),{title:'New',createdBy:role,assigneeIds:['viewer']}));
+  await assertSucceeds(setDoc(doc(db,path+'-empty'),{title:'New',createdBy:role,assigneeIds:[]}));
+});
+for(const role of roles)test(role+': archive and restore permissions',async()=>{
+  const db=dbFor(role),path=board+'/cards/archive-'+role,ref=doc(db,path),file=doc(db,path+'/attachments/file');
+  await env.withSecurityRulesDisabled(async c=>{
+    await setDoc(doc(c.firestore(),path),{title:'Archive fixture',createdBy:'owner',assigneeIds:['viewer'],archived:false});
+    await setDoc(doc(c.firestore(),file.path),{name:'Attachment',archived:false});
+  });
+  const allowed=['owner','admin','editor'].includes(role)?assertSucceeds:assertFails;
+  for(const archived of [true,false]){
+    await allowed(updateDoc(ref,{archived,updatedBy:role}));
+    await allowed(updateDoc(file,{archived}));
+  }
+});
+test('revoking board access blocks an already authenticated client',async()=>{
+  const id='revoked',db=dbFor(id),member=root+'/members/'+id;
+  await env.withSecurityRulesDisabled(async c=>{
+    await setDoc(doc(c.firestore(),root+'/memberLookup/'+id+'@example.com'),{memberId:id});
+    await setDoc(doc(c.firestore(),member),{name:'Revoked',role:'editor',status:'active',accessboard:['allowed']});
+  });
+  await assertSucceeds(getDoc(doc(db,card)));
+  await env.withSecurityRulesDisabled(c=>updateDoc(doc(c.firestore(),member),{accessboard:[]}));
+  await assertFails(getDoc(doc(db,card)));
+  await assertFails(updateDoc(doc(db,card),{title:'Blocked',updatedBy:id}));
+  await assertFails(setDoc(doc(db,card+'/comments/revoked'),{text:'Blocked',memberId:id}));
+});
