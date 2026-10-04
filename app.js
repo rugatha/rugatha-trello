@@ -75,6 +75,7 @@ function openUsers(){
 }
 async function applyGoogleAccount(account){
   stopLiveSync();
+  saving=false;
   googleAccount=account;
   if($('#userDialog').open)openUsers();
   await refreshWorkspace();
@@ -124,23 +125,29 @@ function showArchive(){
 }
 async function restoreArchived(type,id,cardId){
   if(!canEdit())return;
-  const selectedBoard=board().id, member=userId();
+  const version=generation, selectedBoard=board().id, member=userId();
   saving=true;applyPermissions();
   $$('#archiveDialog [data-restore-card], #archiveDialog [data-restore-attachment]').forEach(button=>button.disabled=true);
   $('#archiveStatus').textContent='正在復原至 Firebase…';
   try{
     if(type==='card')await restoreCard(selectedBoard,id,member);
     else await restoreAttachment(selectedBoard,cardId,id,member);
+    if(version!==generation)return;
     $('#archiveDialog').close();
+    saving=false;
     syncStatus('已復原，正在重新讀取 Firebase…');
     await refreshWorkspace();
   }catch(error){
+    if(version!==generation)return;
     $('#archiveStatus').textContent='復原失敗：'+error.message;
     syncStatus('復原失敗：'+error.message);
   }finally{
-    saving=false;
-    applyPermissions();
-    $$('#archiveDialog [data-restore-card], #archiveDialog [data-restore-attachment]').forEach(button=>button.disabled=!canEdit());
+    if(version===generation){
+      saving=false;
+      applyPermissions();
+      $$('#archiveDialog [data-restore-card], #archiveDialog [data-restore-attachment]').forEach(button=>button.disabled=!canEdit());
+      flushLiveSync();
+    }
   }
 }
 $('#editor').onclose=()=>{currentCard=null;flushLiveSync()};$('#currentUser').onclick=openUsers;$('#membersBtn').onclick=openUsers;$('#inviteBtn').onclick=openUsers;$('#closeUser').onclick=()=>$('#userDialog').close();$('#addBoard').onclick=()=>editBoard(true);$('#editBoard').onclick=()=>editBoard();$('#starBoard').onclick=()=>{board().starred=!board().starred;save();render()};$('#quickCreate').onclick=()=>createCard();$('#workspaceNav').onclick=()=>{mine=false;$('#search').value='';$('#dueFilter').value='all';render()};$('#search').oninput=render;$('#mineFilter').onclick=()=>requireUser(()=>{mine=!mine;render()});$('#dueFilter').onchange=render;$('#clearFilters').onclick=()=>{mine=false;$('#search').value='';$('#dueFilter').value='all';render()};
@@ -231,7 +238,7 @@ async function save(){
     if(version!==generation)return;
     state=structuredClone(before);$('#editor').close();$('#simpleDialog').close();
     syncStatus('儲存失敗，畫面已還原：'+error.message);toast('未儲存，請重新整理後再試');
-  }finally{saving=false;if(version===generation){render();applyPermissions();flushLiveSync();}}
+  }finally{if(version===generation){saving=false;render();applyPermissions();flushLiveSync();}}
 }
 // Block mutations while a write is in flight; navigation/account controls stay usable.
 document.addEventListener('click',event=>{
