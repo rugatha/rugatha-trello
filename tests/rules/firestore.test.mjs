@@ -150,3 +150,11 @@ test('revoking board access blocks an already authenticated client',async()=>{
   await assertFails(updateDoc(doc(db,card),{title:'Blocked',updatedBy:id}));
   await assertFails(setDoc(doc(db,card+'/comments/revoked'),{text:'Blocked',memberId:id}));
 });
+
+for(const role of roles)test(role+': shared board colors require edit permission',async()=>{
+ const db=dbFor(role),ref=doc(db,board);
+ const allowed=['owner','admin','editor'].includes(role)?assertSucceeds:assertFails;
+ for(const color of ['#455f56','#c8b58f','#8fa697','#bca582','#ad9790'])await allowed(updateDoc(ref,{color}));
+ await assertFails(updateDoc(ref,{color:'url(https://example.com/image)'}));
+ await assertFails(updateDoc(ref,{color:null}));
+});

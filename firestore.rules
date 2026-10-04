@@ -44,10 +44,18 @@ service cloud.firestore {
       match /boards/{b} {
         allow get: if boardAccess(w, b);
         allow list: if false;
-        allow create, update: if canEdit(w, b)
-          && request.resource.data.name is string
-          && request.resource.data.name.size() > 0
-          && request.resource.data.name.size() <= 80;
+        function validBoard() {
+          return request.resource.data.name is string
+            && request.resource.data.name.size() > 0
+            && request.resource.data.name.size() <= 80;
+        }
+        function validColor() {
+          return request.resource.data.get('color', '#455f56') in
+            ['#455f56', '#c8b58f', '#8fa697', '#bca582', '#ad9790'];
+        }
+        allow create: if canEdit(w, b) && validBoard() && validColor();
+        allow update: if canEdit(w, b) && validBoard()
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['color']) || validColor());
         allow delete: if false;
         match /columns/{columnId} {
           allow read: if boardAccess(w, b);

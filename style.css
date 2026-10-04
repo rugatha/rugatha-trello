@@ -206,10 +206,10 @@ aside{
   flex:1;
   min-width:0;
   overflow:auto;
-  background:var(--bg)}
+  background:var(--board-bg,var(--bg))}
 .board-header{
   padding:30px 32px 0;
-  background:var(--primary);
+  background:var(--board-bg,var(--primary));
   color:var(--on-primary)}
 .breadcrumb{
   font-size:12px;
@@ -753,3 +753,15 @@ aside > .sidebar-boards {
   .archived-boards summary { padding: 10px 3px; font-size: 10px; }
   .archived-boards summary .count { display: none; }
 }
+
+/* Shared board backgrounds retain readable text on every preset. */
+.main #syncStatus,.main .add-column{color:var(--on-primary)}
+.board-title-actions button:hover,.board-controls #clearFilters:hover{
+  background:#ffffff26}
+.board-header button:focus-visible,.board-controls button:focus-visible,.add-column:focus-visible{
+  outline-color:var(--on-primary)}
+.main #archiveBtn,.main #refreshWorkspace{
+  background:var(--surface);
+  color:var(--ink)}
+.board-header .tab{border-bottom-color:var(--on-primary)}
+.main .add-column{color:var(--ink)}

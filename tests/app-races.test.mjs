@@ -49,3 +49,21 @@ test('copying an assigned card creates an unassigned copy without changing the s
  writes[0].resolve([]);await new Promise(resolve=>setImmediate(resolve));
  assert.equal(api.canEdit(),true);
 });
+
+for(const fails of [false,true])test(`shared board color ${fails?'rolls back on failure':'persists through the workspace save'}`,async()=>{
+ const {api,writes,element}=await setup();await api.applyGoogleAccount(account('editor'));
+ element('#editBoard').onclick();
+ assert.match(element('#simpleDialog').innerHTML,/共用看板配色/);
+ element('#boardNameInput').value='Board';element('#boardDescInput').value='';element('#boardColorInput').value='#c8b58f';
+ element('#simpleForm').onsubmit({preventDefault(){}});
+ assert.equal(writes[0].after.boards[0].color,'#c8b58f');
+ assert.match(element('.main').style.cssText,/#c8b58f/);
+ if(fails)writes[0].reject(Error('offline'));else writes[0].resolve([]);
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.match(element('.main').style.cssText,fails?/#455f56/:/#c8b58f/);
+ await api.applyGoogleAccount(null);assert.match(element('.main').style.cssText,/#455f56/);
+});
+test('viewer cannot open board color editing',async()=>{
+ const {api,element,writes}=await setup();await api.applyGoogleAccount({...account('viewer'),workspaceRole:'viewer'});
+ element('#editBoard').onclick();assert.notEqual(element('#simpleDialog').open,true);assert.equal(writes.length,0);
+});
