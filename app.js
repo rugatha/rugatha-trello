@@ -81,6 +81,7 @@ function openUsers(){
 }
 async function applyGoogleAccount(account){
   stopLiveSync();
+  saveFailure='';
   saving=false;
   googleAccount=account;
   if($('#userDialog').open)openUsers();
@@ -157,7 +158,7 @@ async function restoreArchived(type,id,cardId){
   }
 }
 $('#editor').onclose=()=>{currentCard=null;flushLiveSync()};$('#currentUser').onclick=openUsers;$('#membersBtn').onclick=openUsers;$('#inviteBtn').onclick=openUsers;$('#closeUser').onclick=()=>$('#userDialog').close();$('#addBoard').onclick=()=>editBoard(true);$('#editBoard').onclick=()=>editBoard();$('#starBoard').onclick=()=>{board().starred=!board().starred;save();render()};$('#quickCreate').onclick=()=>createCard();$('#workspaceNav').onclick=()=>{mine=false;$('#search').value='';$('#dueFilter').value='all';render()};$('#search').oninput=render;$('#mineFilter').onclick=()=>requireUser(()=>{mine=!mine;render()});$('#dueFilter').onchange=render;$('#clearFilters').onclick=()=>{mine=false;$('#search').value='';$('#dueFilter').value='all';render()};
-let baseline=null, loading=false, saving=false, generation=0;
+let baseline=null, loading=false, saving=false, generation=0, saveFailure='';
 let stopSubscription=null, livePending=false, liveTimer=null, liveBoards=new Set();
 function stopLiveSync(){
   stopSubscription?.();stopSubscription=null;
@@ -201,7 +202,7 @@ function applyPermissions(){
   $('#archiveBtn').disabled=loading||saving||!board();
   $('#simpleDialog').inert=saving;
 }
-function syncStatus(message){$('#syncStatus').textContent=message;}
+function syncStatus(message){$('#syncStatus').textContent=saveFailure?`${saveFailure}；${message}`:message;}
 async function refreshWorkspace(boardIds=null){
   const version=++generation,account=googleAccount,active=state.activeBoard,previous=state;
   const partial=Boolean(boardIds?.length && previous.boards.length);
@@ -230,6 +231,7 @@ async function refreshWorkspace(boardIds=null){
 async function save(){
   if(!canEdit()){if(baseline){state=structuredClone(baseline);render();}return;}
   const version=generation,before=baseline,after=structuredClone(state);
+  saveFailure='';
   saving=true;applyPermissions();syncStatus('正在儲存至 Firebase…');
   try{
     const committedCards=await persistWorkspace(before,after,userId());
@@ -244,7 +246,8 @@ async function save(){
   }catch(error){
     if(version!==generation)return;
     state=structuredClone(before);$('#editor').close();$('#simpleDialog').close();
-    syncStatus('儲存失敗，畫面已還原：'+error.message);toast('未儲存，請重新整理後再試');
+    saveFailure='上次儲存失敗，變更未寫入：'+error.message;
+    syncStatus('畫面已還原');toast('未儲存，請重新整理後再試');
   }finally{if(version===generation){saving=false;render();applyPermissions();flushLiveSync();}}
 }
 // Block mutations while a write is in flight; navigation/account controls stay usable.
@@ -253,7 +256,7 @@ document.addEventListener('click',event=>{
   if(target&&!canEdit()){event.preventDefault();event.stopImmediatePropagation();}
 },true);
 window.addEventListener('beforeunload',event=>{if(saving){event.preventDefault();event.returnValue='';}});
-$('#refreshWorkspace').onclick=()=>refreshWorkspace();
+$('#refreshWorkspace').onclick=()=>{saveFailure='';return refreshWorkspace();};
 $('#archiveBtn').onclick=showArchive;
 $('#closeArchive').onclick=()=>$('#archiveDialog').close();
 $('#dialogGoogleSignIn').onclick=()=>{$('#userDialog').close();$('#googleSignIn').click()};

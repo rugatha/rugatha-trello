@@ -11,7 +11,7 @@ async function setup(){
  const data=()=>({users:[],boards:[{id:'b',name:'Board',columns:[{id:'col',name:'Todo'}],cards:[{id:'c',title:'Assigned',columnId:'col',createdAt:'2026-10-01T00:00:00Z',description:'',assignees:['viewer'],labels:[],checklist:[],comments:[],attachments:[]}]}]});
  const deps={loadWorkspace:async()=>data(),subscribeWorkspace:()=>()=>{},persistWorkspace:(before,after,member)=>{const d=deferred();Object.assign(d,{before,after,member});writes.push(d);return d.promise;},restoreCard:()=>{const d=deferred();restores.push(d);return d.promise;},restoreAttachment:async()=>{},assignMovedOrderKey:()=>{}};
  const source=await fs.readFile(new URL('../app.js',import.meta.url),'utf8');
- const mod=new vm.SourceTextModule(source+'\nexport {applyGoogleAccount,save,restoreArchived,canEdit,openCard};',{context});
+ const mod=new vm.SourceTextModule(source+'\nexport {applyGoogleAccount,save,restoreArchived,canEdit,openCard,refreshWorkspace};',{context});
  await mod.link(()=>new vm.SyntheticModule(Object.keys(deps),function(){for(const [k,v] of Object.entries(deps))this.setExport(k,v);},{context}));await mod.evaluate();
  return {api:mod.namespace,writes,restores,element};
 }
@@ -66,4 +66,25 @@ for(const fails of [false,true])test(`shared board color ${fails?'rolls back on 
 test('viewer cannot open board color editing',async()=>{
  const {api,element,writes}=await setup();await api.applyGoogleAccount({...account('viewer'),workspaceRole:'viewer'});
  element('#editBoard').onclick();assert.notEqual(element('#simpleDialog').open,true);assert.equal(writes.length,0);
+});
+
+for(const recovery of ['refresh','save','account'])test(`conflict remains visible after live sync until ${recovery}`,async()=>{
+ const {api,writes,element}=await setup();await api.applyGoogleAccount(account('editor'));
+ const pending=api.save();writes[0].reject(Error('其他成員已修改此資料'));await pending;
+ await api.refreshWorkspace(['b']);
+ assert.match(element('#syncStatus').textContent,/上次儲存失敗，變更未寫入：其他成員/);
+ assert.match(element('#syncStatus').textContent,/已從 Firebase 載入/);
+ if(recovery==='refresh')await element('#refreshWorkspace').onclick();
+ if(recovery==='account')await api.applyGoogleAccount(account('new'));
+ if(recovery==='save'){
+  const retry=api.save();writes[1].resolve([]);await retry;
+ }
+ assert.doesNotMatch(element('#syncStatus').textContent,/失敗|其他成員/);
+});
+test('old account save failure cannot publish an error for the new account',async()=>{
+ const {api,writes,element}=await setup();await api.applyGoogleAccount(account('old'));
+ const pending=api.save();await api.applyGoogleAccount(account('new'));
+ writes[0].reject(Error('old conflict'));await pending;
+ await api.refreshWorkspace(['b']);
+ assert.equal(element('#syncStatus').textContent,'已從 Firebase 載入');
 });
