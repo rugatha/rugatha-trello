@@ -8,3 +8,4 @@ node_modules/
 .firebase/
 member_info.csv
 member_*.csv
+attachments_export/

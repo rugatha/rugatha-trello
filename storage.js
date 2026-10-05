@@ -24,8 +24,9 @@ export async function loadWorkspace(account, {previous,boardIds}={}) {
       await Promise.all(visible.slice(start,start+10).map(async card => {
         [card.checklist, card.comments, card.attachments] = await Promise.all(
           ['checklist','comments','attachments'].map(type =>
-            type==='checklist' && card.checklistCount===0 || type==='comments' && card.commentCount===0
+            type==='checklist' && card.checklistCount===0 || type==='comments' && card.commentCount===0 || type==='attachments' && card.attachmentCount===0
               ? [] : rows(`${path}/cards/${card.id}/${type}`)));
+        card.attachmentArchiveLoaded = card.attachmentCount!==0;
         card.archivedAttachments = card.attachments.filter(item => item.archived).map(({id,name}) => ({id,name}));
         card.attachments = card.attachments.filter(item => !item.archived);
         card.comments.sort((a,b)=>String(a.at).localeCompare(String(b.at)));
@@ -37,6 +38,19 @@ export async function loadWorkspace(account, {previous,boardIds}={}) {
     return {...snapshot.data(), id, columns, cards:visible, archivedCards};
   }));
   return {version:1, users:account.roster || [], boards:ordered(boards.filter(Boolean)), activeBoard:null};
+}
+// Zero active attachments does not imply an empty archive. Fetch those collections
+// only when the board archive is opened; never change editable card data here.
+export async function loadDeferredAttachmentArchives(board) {
+  const result = [];
+  const deferred = board.cards.filter(card => card.attachmentArchiveLoaded === false);
+  for (let start=0; start<deferred.length; start+=10) {
+    result.push(...await Promise.all(deferred.slice(start,start+10).map(async card => {
+      const files = await rows(`${root}/${board.id}/cards/${card.id}/attachments`);
+      return {cardId:card.id, files:files.filter(file=>file.archived).map(({id,name})=>({id,name}))};
+    })));
+  }
+  return result;
 }
 export function subscribeWorkspace(account, onChange, onError) {
   const unsubscribe = [];

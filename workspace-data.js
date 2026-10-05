@@ -8,7 +8,7 @@ export function documents(state) {
     board.columns.forEach(column=>result.set(`${path}/columns/${column.id}`, {...column}));
     board.cards.forEach(card=>{
       const cardPath = `${path}/cards/${card.id}`;
-      result.set(cardPath, {...omit(card,['checklist','comments','attachments','archivedAttachments','assignees']), assigneeIds:card.assignees,
+      result.set(cardPath, {...omit(card,['checklist','comments','attachments','archivedAttachments','attachmentArchiveLoaded','assignees']), assigneeIds:card.assignees,
         checklistCount:card.checklist.length, commentCount:card.comments.length, attachmentCount:card.attachments.length});
       for (const type of ['checklist','comments','attachments']) {
         card[type].forEach(item=>result.set(`${cardPath}/${type}/${item.id}`, type==='comments'

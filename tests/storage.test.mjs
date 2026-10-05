@@ -136,3 +136,37 @@ test('concurrent checklist toggle rejects without touching parent counts',async(
  await assert.rejects(api.persistWorkspace(a,b,'m'),/其他成員/);
  assert.equal(writes.length,0);
 });
+
+
+test('zero-count attachments are deferred but their archives remain discoverable',async()=>{
+ const root='workspaces/main/boards/b',remote=new Map([
+  [root,{name:'Board'}],
+  [root+'/cards/empty',{title:'Empty',attachmentCount:0,checklistCount:0,commentCount:0}],
+  [root+'/cards/empty/attachments/old',{name:'Archived image',archived:true}],
+  [root+'/cards/active',{title:'Active',attachmentCount:1,checklistCount:0,commentCount:0}],
+  [root+'/cards/active/attachments/image',{name:'Cover',archived:false}],
+  [root+'/cards/legacy',{title:'Legacy',checklistCount:0,commentCount:0}],
+  [root+'/cards/legacy/attachments/file',{name:'Legacy file'}]
+ ]);
+ const {api,reads,writes}=await setup(remote);
+ const loaded=await api.loadWorkspace({accessboard:['b']});
+ assert.equal(reads.filter(path=>path.endsWith('/attachments')).length,2);
+ assert.ok(!reads.includes(root+'/cards/empty/attachments'));
+ assert.equal(loaded.boards[0].cards.find(c=>c.id==='active').attachments[0].id,'image');
+ assert.equal(loaded.boards[0].cards.find(c=>c.id==='legacy').attachments[0].id,'file');
+ const before=structuredClone(loaded);reads.length=0;
+ const results=await api.loadDeferredAttachmentArchives(loaded.boards[0]);
+ assert.deepEqual(Array.from(reads),[root+'/cards/empty/attachments']);
+ assert.equal(results[0].files[0].id,'old');
+ assert.deepEqual(structuredClone(loaded),before);
+ // UI-only hydration must never produce writes or archive active attachments.
+ const card=loaded.boards[0].cards.find(c=>c.id==='empty');
+ card.archivedAttachments=results[0].files;card.attachmentArchiveLoaded=true;
+ await api.persistWorkspace(before,loaded,'m');assert.equal(writes.length,0);
+});
+test('600 zero-attachment cards require no attachment queries during initial load',async()=>{
+ const root='workspaces/main/boards/b',remote=new Map([[root,{name:'Board'}]]);
+ for(let i=0;i<600;i++)remote.set(root+'/cards/'+i,{title:'Card',attachmentCount:0,checklistCount:0,commentCount:0});
+ const {api,reads}=await setup(remote);await api.loadWorkspace({accessboard:['b']});
+ assert.equal(reads.length,3);assert.ok(!reads.some(path=>path.endsWith('/attachments')));
+});

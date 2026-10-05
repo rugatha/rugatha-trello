@@ -1,4 +1,4 @@
-import { loadWorkspace, subscribeWorkspace, persistWorkspace, restoreCard, restoreAttachment } from './storage.js';
+import { loadWorkspace, subscribeWorkspace, persistWorkspace, restoreCard, restoreAttachment, loadDeferredAttachmentArchives } from './storage.js';
 import { assignMovedOrderKey } from './order-key.js';
 // UI rendering, interaction handlers, and workspace state.
 'use strict';
@@ -116,19 +116,41 @@ function renderAttachments(c) {
   });
 }
 function renderComments(c){$('#comments').innerHTML=[...c.comments].reverse().map(x=>{const user=state.users.find(u=>u.id===x.userId),name=user?.name||'未知成員';return `<div class="comment">${avatar(user)}<div class="grow"><strong class="small">${esc(name)}</strong><time datetime="${esc(x.at)}">${formatDate(x.at,true)}</time><p>${esc(x.text)}</p></div></div>`}).join('')}
-function showArchive(){
-  const b=board();
-  if(!b||loading)return;
+function renderArchive(b){
   $('#archiveBoardName').textContent=b.name;
   const cards=b.archivedCards||[];
   $('#archivedCards').innerHTML=cards.length?cards.map(c=>`<div class="archive-row"><span>${esc(c.title||'未命名牌卡')}</span><button type="button" data-restore-card="${esc(c.id)}">復原牌卡</button></div>`).join(''):'<p class="muted">沒有已封存的牌卡。</p>';
   const attachments=b.cards.flatMap(card=>(card.archivedAttachments||[]).map(file=>({...file,cardId:card.id,cardTitle:card.title})));
   $('#archivedAttachments').innerHTML=attachments.length?attachments.map(file=>`<div class="archive-row"><span>${esc(file.name||'未命名附件')} <small class="muted">${esc(file.cardTitle)}</small></span><button type="button" data-restore-attachment="${esc(file.id)}" data-parent-card="${esc(file.cardId)}">復原附件</button></div>`).join(''):'<p class="muted">沒有已封存的附件。</p>';
-  $('#archiveStatus').textContent='';
   $$('[data-restore-card]').forEach(button=>button.onclick=()=>restoreArchived('card',button.dataset.restoreCard));
   $$('[data-restore-attachment]').forEach(button=>button.onclick=()=>restoreArchived('attachment',button.dataset.restoreAttachment,button.dataset.parentCard));
   $$('#archiveDialog [data-restore-card], #archiveDialog [data-restore-attachment]').forEach(button=>button.disabled=!canEdit());
-  $('#archiveDialog').showModal();
+}
+let archiveRequest=0;
+async function showArchive(){
+  const b=board();
+  if(!b||loading||saving)return;
+  const version=generation, request=++archiveRequest;
+  renderArchive(b);
+  $('#archiveStatus').textContent='';
+  if(!$('#archiveDialog').open)$('#archiveDialog').showModal();
+  if(!b.cards.some(card=>card.attachmentArchiveLoaded===false))return;
+  $('#archivedAttachments').textContent='正在讀取封存附件…';
+  const current=()=>version===generation && request===archiveRequest && $('#archiveDialog').open && board()===b;
+  try{
+    const results=await loadDeferredAttachmentArchives(b);
+    if(!current())return;
+    for(const result of results){
+      const card=b.cards.find(card=>card.id===result.cardId);
+      card.archivedAttachments=result.files;
+      card.attachmentArchiveLoaded=true;
+    }
+    renderArchive(b);
+  }catch(error){
+    if(!current())return;
+    $('#archivedAttachments').textContent='無法載入封存附件。';
+    $('#archiveStatus').textContent='讀取失敗：'+error.message+'；請關閉後重新開啟重試';
+  }
 }
 async function restoreArchived(type,id,cardId){
   if(!canEdit())return;
@@ -176,7 +198,7 @@ function flushLiveSync(){
 }
 function queueLiveSync(boardId){livePending=true;if(boardId)liveBoards.add(boardId);flushLiveSync()}
 $('#simpleDialog').onclose=flushLiveSync;
-$('#archiveDialog').onclose=flushLiveSync;
+$('#archiveDialog').onclose=()=>{archiveRequest++;flushLiveSync()};
 function canEdit(){return !loading && !saving && Boolean(baseline) && ['owner','admin','editor'].includes(googleAccount?.workspaceRole)}
 function renderEmpty(){
   applyBoardColor(null);
