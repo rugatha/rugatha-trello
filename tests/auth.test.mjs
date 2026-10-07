@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import fs from 'node:fs/promises';
 
 async function setup(member = {name:'會員名稱',status:'active',role:'viewer',accessboard:[]}, hooks = {}) {
-  const elements=new Map(), writes=[], reads=[];
+  const elements=new Map(), writes=[], reads=[], listeners=[];
   let onAuth, fail=false;
   const element=key=>{
     if(!elements.has(key))elements.set(key,{value:'',open:false,events:{},classList:{add(){},remove(){}},
@@ -18,14 +18,15 @@ async function setup(member = {name:'會員名稱',status:'active',role:'viewer'
     onAuthStateChanged:(_,fn)=>onAuth=fn,signInWithPopup:async()=>{},
     signOut:async()=>{auth.currentUser=null;await onAuth(null);},
     doc:(_, ...parts)=>parts.join('/'),collection:()=>({}),
-    getDoc:async path=>{
+    getDocFromServer:async path=>{
       reads.push(path);
       if(hooks.getDoc)await hooks.getDoc(path);
       return path.includes('memberLookup')
         ? {exists:()=>Boolean(member),data:()=>({memberId:'m'})}
         : {id:'m',exists:()=>true,data:()=>({...member})};
     },
-    getDocs:async()=>({docs:[{id:'m',data:()=>({...member})}]}),
+    getDocsFromServer:async()=>({docs:[{id:'m',data:()=>({...member})}]}),
+    onSnapshot:(path,next,error)=>{const listener={path,next,error,stopped:false};listeners.push(listener);return ()=>listener.stopped=true;},
     updateDoc:async(path,patch)=>{if(hooks.updateDoc)await hooks.updateDoc();if(fail)throw Error('offline');writes.push({path,patch});Object.assign(member,patch);}
   };
   const window={dispatchEvent(){}};
@@ -33,7 +34,7 @@ async function setup(member = {name:'會員名稱',status:'active',role:'viewer'
   const module=new vm.SourceTextModule(await fs.readFile(new URL('../auth.js',import.meta.url),'utf8'),{context});
   const dep=new vm.SyntheticModule(Object.keys(api),function(){for(const [key,value] of Object.entries(api))this.setExport(key,value);},{context});
   await module.link(()=>dep);await module.evaluate();
-  return {element,window,writes,reads,setFail:()=>fail=true,
+  return {element,window,writes,reads,listeners,setFail:()=>fail=true,
     async login(uid='u',overrides={}){const user={uid,email:uid+'@example.com',emailVerified:true,displayName:'Google 名稱',...overrides};auth.currentUser=user;await onAuth(user);},
     async save(name){element('#googleDisplayName').value=name;await element('#googleNameForm').events.submit({preventDefault(){}});}
   };
@@ -115,4 +116,60 @@ test('invalid display names never write',async()=>{
   const h=await setup();await h.login();
   await h.save('   ');await h.save('x'.repeat(41));
   assert.equal(h.writes.length,0);
+});
+
+const snapshot = (data, metadata = {}) => ({id:'m',exists:()=>data !== null,data:()=>data,metadata});
+test('membership changes publish current board access and role without a browser reload',async()=>{
+  const member={name:'Member',status:'active',role:'editor',accessboard:['a','b']};
+  const h=await setup(member);await h.login();
+  h.listeners[0].next(snapshot({...member,role:'viewer',accessboard:['b']}));
+  assert.deepEqual(Array.from(h.window.boardlyGoogleUser.accessboard),['b']);
+  assert.equal(h.window.boardlyGoogleUser.workspaceRole,'viewer');
+  h.listeners[0].next(snapshot(member));
+  assert.deepEqual(Array.from(h.window.boardlyGoogleUser.accessboard),['a','b']);
+});
+for(const kind of ['disabled','deleted','denied'])test('membership '+kind+' clears access and closes the name editor',async()=>{
+  const h=await setup();await h.login();h.window.boardlyGoogleAuth.editName();
+  if(kind==='denied')h.listeners[0].error(Error('permission denied'));
+  else h.listeners[0].next(snapshot(kind==='deleted'?null:{status:'disabled'}));
+  assert.equal(h.window.boardlyGoogleUser.memberId,null);
+  assert.equal(h.window.boardlyGoogleUser.roster.length,0);
+  assert.equal(h.element('#nameDialog').open,false);
+  assert.equal(h.listeners[0].stopped,true);
+});
+test('cached snapshots cannot restore obsolete membership permissions',async()=>{
+  const h=await setup();await h.login();
+  h.listeners[0].next(snapshot({status:'active',role:'owner'}, {fromCache:true}));
+  assert.equal(h.window.boardlyGoogleUser.workspaceRole,'viewer');
+});
+test('old member callbacks cannot replace a new account or show stale errors',async()=>{
+  const h=await setup();await h.login('old');const old=h.listeners[0];await h.login('new');
+  assert.equal(old.stopped,true);
+  old.next(snapshot(null));old.error(Error('old error'));
+  assert.equal(h.window.boardlyGoogleUser.uid,'new');
+  assert.equal(h.window.boardlyGoogleUser.memberId,'m');
+  assert.equal(h.element('#toast').textContent,undefined);
+});
+test('manual refresh rereads membership and restarts a failed listener',async()=>{
+  const member={name:'Member',status:'active',role:'editor',accessboard:['a','b']};
+  const h=await setup(member);await h.login();h.listeners[0].error(Error('denied'));
+  member.accessboard=['b'];await h.window.boardlyGoogleAuth.refreshMembership();
+  assert.deepEqual(Array.from(h.window.boardlyGoogleUser.accessboard),['b']);
+  assert.equal(h.listeners.length,2);assert.equal(h.reads.length,4);
+});
+test('pending name save cannot restore revoked membership',async()=>{
+  const pending=deferred();const h=await setup(undefined,{updateDoc:()=>pending.promise});await h.login();
+  const save=h.save('Saved');h.listeners[0].error(Error('denied'));
+  pending.resolve();await save;
+  assert.equal(h.window.boardlyGoogleUser.memberId,null);
+});
+
+test('name save finishing after a role update preserves new permissions',async()=>{
+  const pending=deferred();const h=await setup(undefined,{updateDoc:()=>pending.promise});await h.login();
+  h.window.boardlyGoogleAuth.editName();const save=h.save('Saved');
+  h.listeners[0].next(snapshot({name:'Saved',status:'active',role:'viewer',accessboard:['new']}));
+  pending.resolve();await save;
+  assert.equal(h.window.boardlyGoogleUser.displayName,'Saved');
+  assert.deepEqual(Array.from(h.window.boardlyGoogleUser.accessboard),['new']);
+  assert.equal(h.element('#nameDialog').open,false);
 });

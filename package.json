@@ -3,7 +3,8 @@
   "private": true,
   "scripts": {
     "test": "node --experimental-vm-modules --test tests/*.test.mjs",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-rugatha-trello \"node --test tests/rules/*.test.mjs\""
+    "test:rules": "firebase emulators:exec --only firestore --project demo-rugatha-trello \"node --test tests/rules/*.test.mjs\"",
+    "test:storage-rules": "firebase emulators:exec --only firestore,storage --project demo-rugatha-trello \"node --test tests/storage-rules/*.test.mjs\""
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.0",

@@ -12,6 +12,8 @@ Trello 風格的看板網站。Google 登入使用 Firebase Authentication；正
 
 網站不可藉由選擇本機使用者取得會員身分。未核准的 Google 帳號不能讀取 Firestore 工作空間。角色、信箱、看板權限與牌卡掛名僅可由可信任的管理流程修改。
 
+登入後以 [Firestore 即時訂閱](https://firebase.google.com/docs/firestore/query-data/listen) 監聽目前會員文件。角色或看板授權更新時，立即清空舊看板及編輯視窗，再載入最新授權內容；會員停用、刪除或訂閱失敗則清除資格。權限變更時未送出的草稿不保留。站內重新整理會向伺服器重讀會員索引、會員資料與名冊，也可用來重試失敗的會員訂閱。
+
 ## 看板與牌卡
 
 主畫面唯一資料來源為 `workspaces/main/boards/{boardId}`，欄位與牌卡分別位於 `columns`、`cards` 子集合，牌卡的待辦、留言及附件由各自子集合載入。搜尋與篩選涵蓋所有已載入的授權看板牌卡，沒有 50 張上限。重新整理按鈕會從伺服器重新讀取；已訂閱授權看板的變更，只重新載入有異動的看板；編輯視窗開啟時暫緩套用更新。
@@ -52,3 +54,9 @@ macOS 若系統的 Java 或 Firebase CLI 是舊版，可使用專案的 npm 指�
 2026-10-05 附件讀取優化：`attachmentCount === 0` 的牌卡不再於初次載入查詢附件，改在開啟該看板「封存項目」時補讀；同次看板載入期間重開清單不重讀，重新整理／即時同步重新載入該看板後會失效。正附件數及缺少計數的舊牌卡維持原流程，以保留封面及編輯功能。封存附件載入失敗可關閉重試，舊帳號／已關閉視窗的延遲回應不會更新畫面。
 
 正式 Firebase 唯讀量測：6 個看板、658 張牌卡（462 張未封存），初次附件查詢 462 → 122，整體查詢 612 → 272；讀回文件均為 1,489 份，少了 340 次空查詢。這是伺服器查詢量測，並非 Firebase 帳單數字。細節、限制與重跑方式見 [附件讀取評估](docs/attachment-read-audit.md)。56 項應用測試通過；尚未部署。
+
+Trello 備份附件遷移與重跑方式見 [附件遷移](docs/attachment-migration.md)。遷移使用既有牌卡附件連結欄位；一般使用者從介面新增上傳仍未開放。
+
+會員參照檢查可執行 `node scripts/audit-member-references.cjs`；逐筆核對所有指派與留言作者，僅讀取正式資料。修復計畫產生方式、歷史指派警告與 2026-10-07 正式站顯示驗證見 [會員參照檢查](docs/member-reference-audit.md)。
+
+P2 Storage 路徑、20 MiB／MIME 限制與生命週期見 [Storage 設計](docs/storage-design.md)。`npm run test:storage-rules` 使用本機 Firestore＋Storage 模擬器驗證會員／看板權限；16 項測試通過，規則尚未部署。前端上傳及舊下載 token 切換仍待完成，既有 token 連結不具會員撤權效果。

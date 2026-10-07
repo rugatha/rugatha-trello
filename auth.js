@@ -1,6 +1,6 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
 import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
-import { getFirestore, collection, doc, getDoc, getDocs, updateDoc } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
+import { getFirestore, collection, doc, getDocFromServer, getDocsFromServer, onSnapshot, updateDoc } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyB6voURDiSOGPY4Anx-HBxaCy3ShaIGias',
@@ -20,6 +20,15 @@ const nameError = document.querySelector('#googleNameError');
 const loginButton = document.querySelector('#googleSignIn');
 let currentUser = null;
 let currentMember = null;
+let membershipVersion = 0;
+let stopMembership = null;
+
+function resetMembership() {
+  membershipVersion++;
+  stopMembership?.();
+  stopMembership = null;
+  currentMember = null;
+}
 
 function notify(message) {
   const toast = document.querySelector('#toast');
@@ -45,28 +54,53 @@ function hasName(member) { return typeof member?.name === 'string' && Boolean(me
 
 async function loadMembership(user) {
   if (!user.email || !user.emailVerified) return null;
-  const lookup = await getDoc(doc(firestore, 'workspaces', 'main', 'memberLookup', user.email.toLowerCase()));
+  const lookup = await getDocFromServer(doc(firestore, 'workspaces', 'main', 'memberLookup', user.email.toLowerCase()));
   if (!lookup.exists()) return null;
   const ref = doc(firestore, 'workspaces', 'main', 'members', lookup.data().memberId);
-  const snapshot = await getDoc(ref);
+  const snapshot = await getDocFromServer(ref);
   if (!snapshot.exists() || snapshot.data().status !== 'active') return null;
   const member = { ...snapshot.data(), id: snapshot.id };
-  const roster = await getDocs(collection(firestore, 'workspaces', 'main', 'members'));
+  const roster = await getDocsFromServer(collection(firestore, 'workspaces', 'main', 'members'));
   member.roster = roster.docs.map(item => ({ id: item.id, name: item.data().name || item.id }));
   return member;
 }
 
 async function finishSignIn(user) {
+  const version = membershipVersion;
+  const isCurrent = () => auth.currentUser === user && version === membershipVersion;
   let member = null;
   try {
     member = await loadMembership(user);
   } catch (error) {
-    if (auth.currentUser !== user) return;
+    if (!isCurrent()) return;
     notify('Google 登入成功，但無法確認工作空間權限：' + error.message);
   }
-  if (auth.currentUser !== user) return;
+  if (!isCurrent()) return;
   currentMember = member;
   publish(user, member);
+  if (member) {
+    stopMembership = onSnapshot(doc(firestore, 'workspaces', 'main', 'members', member.id), snapshot => {
+      if (!isCurrent() || snapshot.metadata?.fromCache || snapshot.metadata?.hasPendingWrites) return;
+      const data = snapshot.exists() ? snapshot.data() : null;
+      if (!data || data.status !== 'active') {
+        resetMembership();
+        nameDialog.close();
+        publish(user);
+        return;
+      }
+      const next = { ...data, id: snapshot.id, roster: currentMember.roster.map(item =>
+        item.id === snapshot.id ? { ...item, name: data.name || snapshot.id } : item) };
+      if (JSON.stringify(next) === JSON.stringify(currentMember)) return;
+      currentMember = next;
+      publish(user, next);
+    }, error => {
+      if (!isCurrent()) return;
+      resetMembership();
+      nameDialog.close();
+      publish(user);
+      notify('會員權限同步失敗，已清除看板；請重新整理重試：' + error.message);
+    });
+  }
   if (member && !hasName(member)) {
     nameInput.value = '';
     nameError.textContent = '';
@@ -91,7 +125,7 @@ nameDialog.addEventListener('cancel', event => {
 
 onAuthStateChanged(auth, async user => {
   currentUser = user;
-  currentMember = null;
+  resetMembership();
   if (nameDialog.open) nameDialog.close();
   publish(null);
   loginButton.hidden = Boolean(user);
@@ -124,24 +158,32 @@ nameForm.addEventListener('submit', async event => {
   if (!currentUser || !currentMember || !name || name.length > 40) return;
   const user = currentUser;
   const member = currentMember;
+  const version = membershipVersion;
   const saveButton = nameForm.querySelector('button[type="submit"]');
   saveButton.disabled = true;
   nameError.textContent = '';
   try {
     await updateDoc(doc(firestore, 'workspaces', 'main', 'members', member.id), { name });
-    if (currentUser !== user) return;
-    member.name = name;
-    member.roster = member.roster.map(item => item.id === member.id ? { ...item, name } : item);
-    publish(user, member);
+    if (currentUser !== user || membershipVersion !== version || !currentMember) return;
+    currentMember.name = name;
+    currentMember.roster = currentMember.roster.map(item => item.id === member.id ? { ...item, name } : item);
+    publish(user, currentMember);
     nameDialog.close();
   } catch (error) {
-    if (currentUser === user) nameError.textContent = '名稱儲存失敗：' + error.message;
+    if (currentUser === user && membershipVersion === version) nameError.textContent = '名稱儲存失敗：' + error.message;
   } finally {
     saveButton.disabled = false;
   }
 });
 
 window.boardlyGoogleAuth = {
+  async refreshMembership() {
+    const user = currentUser;
+    resetMembership();
+    nameDialog.close();
+    publish(user);
+    if (user) await finishSignIn(user);
+  },
   editName() {
     if (!currentUser || !currentMember) { notify('尚未取得有效會員資格，無法修改名稱'); return; }
     nameInput.value = currentMember.name || '';

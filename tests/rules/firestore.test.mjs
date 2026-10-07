@@ -1,7 +1,8 @@
 import {before, after, test} from 'node:test';
+import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {initializeTestEnvironment, assertFails, assertSucceeds} from '@firebase/rules-unit-testing';
-import {doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc} from 'firebase/firestore';
+import {doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot} from 'firebase/firestore';
 
 const projectId='demo-rugatha-trello';
 const root='workspaces/main';
@@ -157,4 +158,22 @@ for(const role of roles)test(role+': shared board colors require edit permission
  for(const color of ['#455f56','#c8b58f','#8fa697','#bca582','#ad9790'])await allowed(updateDoc(ref,{color}));
  await assertFails(updateDoc(ref,{color:'url(https://example.com/image)'}));
  await assertFails(updateDoc(ref,{color:null}));
+});
+
+test('own membership listener receives revocation then fails closed on deactivation', {timeout:15000}, async t=>{
+  const id='live-membership',path=root+'/members/'+id;
+  await env.withSecurityRulesDisabled(async context=>{
+    await setDoc(doc(context.firestore(),root+'/memberLookup/'+id+'@example.com'),{memberId:id});
+    await setDoc(doc(context.firestore(),path),{name:'Live',status:'active',role:'viewer',accessboard:['allowed']});
+  });
+  const events=[],waiting=[];
+  const push=value=>waiting.length?waiting.shift()(value):events.push(value);
+  const next=()=>events.length?Promise.resolve(events.shift()):new Promise(resolve=>waiting.push(resolve));
+  const stop=onSnapshot(doc(dbFor(id),path),snap=>push(snap.data()),error=>push(error));
+  t.after(stop);
+  assert.deepEqual((await next()).accessboard,['allowed']);
+  await env.withSecurityRulesDisabled(context=>updateDoc(doc(context.firestore(),path),{accessboard:[]}));
+  assert.deepEqual((await next()).accessboard,[]);
+  await env.withSecurityRulesDisabled(context=>updateDoc(doc(context.firestore(),path),{status:'disabled'}));
+  assert.equal((await next()).code,'permission-denied');
 });

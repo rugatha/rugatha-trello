@@ -1,0 +1,34 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function verified() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+    function memberId(w) {
+      return firestore.get(/databases/(default)/documents/workspaces/$(w)/memberLookup/$(request.auth.token.email.lower())).data.memberId;
+    }
+    function member(w) {
+      return firestore.get(/databases/(default)/documents/workspaces/$(w)/members/$(memberId(w))).data;
+    }
+    function access(w, b) {
+      return verified() && member(w).status == 'active' && b in member(w).accessboard;
+    }
+    match /workspaces/{w}/boards/{b}/cards/{c}/attachments/{a}/{filename} {
+      // Archive is reversible: authorized members retain access to archived files.
+      allow get: if access(w, b);
+      allow list: if false;
+      // Objects are immutable. Replacements receive a new attachment ID/path.
+      allow create: if resource == null && access(w, b) && member(w).role in ['owner', 'admin', 'editor']
+        && request.resource.size > 0 && request.resource.size <= 20 * 1024 * 1024
+        && request.resource.contentType in ['image/png', 'image/jpeg', 'image/gif',
+          'image/webp', 'image/avif', 'application/pdf', 'text/plain',
+          'application/zip', 'model/gltf-binary', 'model/stl']
+        && request.resource.metadata.keys().hasOnly(['uploadedBy', 'boardId', 'cardId', 'attachmentId'])
+        && request.resource.metadata.uploadedBy == memberId(w)
+        && request.resource.metadata.boardId == b
+        && request.resource.metadata.cardId == c
+        && request.resource.metadata.attachmentId == a;
+      allow update, delete: if false;
+    }
+  }
+}

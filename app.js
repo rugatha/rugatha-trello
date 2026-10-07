@@ -98,7 +98,7 @@ function renderAttachments(c) {
   $('#attachments').innerHTML=c.attachments.map(a=>`<div class="attachment">
     ${attachmentImage(a)?`<img src="${esc(attachmentImage(a))}" alt="${esc(a.name)}" loading="lazy" referrerpolicy="no-referrer">`:'<span style="font-size:24px">▤</span>'}
     <div class="grow"><button data-download="${a.id}" class="attachment-link">${esc(a.name)}</button>
-    <div class="small muted">${a.url?'原始附件連結 · 可能需要登入來源網站':(a.size/1024).toFixed(1)+' KB'}
+    <div class="small muted">${a.storagePath?'Firebase Storage · '+(a.size/1024).toFixed(1)+' KB':a.url?'原始附件連結 · 可能需要登入來源網站':(a.size/1024).toFixed(1)+' KB'}
     ${attachmentImage(a)?`<button data-cover="${a.id}" class="small">${c.coverId===a.id?'✓ 取消封面':'設為封面'}</button>`:''}</div></div>
     <button data-remove-file="${a.id}" aria-label="封存附件">×</button></div>`).join('');
   $$('[data-cover]').forEach(el=>el.onclick=()=>{
@@ -225,6 +225,11 @@ function applyPermissions(){
   $('#simpleDialog').inert=saving;
 }
 function syncStatus(message){$('#syncStatus').textContent=saveFailure?`${saveFailure}；${message}`:message;}
+function clearWorkspaceDialogs(){
+  currentCard=null;dragged=null;
+  $('#editor').close();$('#simpleDialog').close();$('#archiveDialog').close();
+  for(const id of ['editor','simpleDialog','archiveBoardName','archivedCards','archivedAttachments'])$('#'+id).replaceChildren();
+}
 async function refreshWorkspace(boardIds=null){
   const version=++generation,account=googleAccount,active=state.activeBoard,previous=state;
   const partial=Boolean(boardIds?.length && previous.boards.length);
@@ -232,7 +237,7 @@ async function refreshWorkspace(boardIds=null){
   baseline=null;loading=true;
   if(!partial){
     state={version:1,boards:[],users:account?.roster||[]};
-    $('#editor').close();$('#simpleDialog').close();$('#archiveDialog').close();render();
+    clearWorkspaceDialogs();render();
   }else applyPermissions();
   if(!account?.workspaceRole){loading=false;syncStatus('尚未取得 Firebase 存取權限');render();return;}
   syncStatus(partial?'正在同步 Firebase…':'正在讀取 Firebase…');
@@ -242,10 +247,19 @@ async function refreshWorkspace(boardIds=null){
     state=loaded;state.activeBoard=loaded.boards.some(b=>b.id===active)?active:(loaded.boards.find(b=>!b.archived)||loaded.boards[0])?.id;
     baseline=structuredClone(state);syncStatus('已從 Firebase 載入');
     if(!stopSubscription)stopSubscription=subscribeWorkspace(account,queueLiveSync,error=>{
+      if(googleAccount!==account)return;
+      if(error.code==='permission-denied'){
+        applyGoogleAccount({...account,workspaceRole:null,roster:[]});
+        syncStatus('看板存取權限已變更，已清除內容；請重新整理確認最新權限');
+        return;
+      }
       stopLiveSync();syncStatus('即時同步中斷：'+error.message+'；請重新整理重試');
     });
   }catch(error){if(version===generation){
-    if(partial){state=previous;baseline=structuredClone(previous);}
+    if(error.code==='permission-denied'){
+      stopLiveSync();state={version:1,boards:[],users:[]};
+      clearWorkspaceDialogs();
+    }else if(partial){state=previous;baseline=structuredClone(previous);}
     syncStatus('讀取失敗：'+error.message+'；請重新整理重試');
   }}
   finally{if(version===generation){loading=false;render();flushLiveSync();}}
@@ -278,7 +292,8 @@ document.addEventListener('click',event=>{
   if(target&&!canEdit()){event.preventDefault();event.stopImmediatePropagation();}
 },true);
 window.addEventListener('beforeunload',event=>{if(saving){event.preventDefault();event.returnValue='';}});
-$('#refreshWorkspace').onclick=()=>{saveFailure='';return refreshWorkspace();};
+$('#refreshWorkspace').onclick=()=>{saveFailure='';return window.boardlyGoogleAuth?.refreshMembership
+  ?window.boardlyGoogleAuth.refreshMembership():refreshWorkspace();};
 $('#archiveBtn').onclick=showArchive;
 $('#closeArchive').onclick=()=>$('#archiveDialog').close();
 $('#dialogGoogleSignIn').onclick=()=>{$('#userDialog').close();$('#googleSignIn').click()};

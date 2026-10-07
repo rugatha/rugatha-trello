@@ -3,17 +3,17 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import fs from 'node:fs/promises';
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
-async function setup({archiveLoad=async()=>[],deferredArchives=false}={}){
- const elements=new Map(),writes=[],restores=[];
+async function setup({archiveLoad=async()=>[],deferredArchives=false,workspaceLoad}={}){
+ const elements=new Map(),writes=[],restores=[],subscriptions=[];
  const element=s=>{if(!elements.has(s))elements.set(s,{value:s==='#dueFilter'?'all':'',classList:{add(){},remove(){},toggle(){}},style:{},replaceChildren(){this.innerHTML='';},close(){this.open=false;},showModal(){this.open=true;}});return elements.get(s);};
  const context=vm.createContext({console,structuredClone,setTimeout:()=>0,clearTimeout,Intl,Date,crypto:{randomUUID:()=>'copy-id'},
  document:{querySelector:element,querySelectorAll:s=>/^#[a-zA-Z]+$/.test(s)?[element(s)]:[],addEventListener(){}},window:{addEventListener(){}}});
  const data=()=>({users:[],boards:[{id:'b',name:'Board',columns:[{id:'col',name:'Todo'}],cards:[{id:'c',title:'Assigned',columnId:'col',createdAt:'2026-10-01T00:00:00Z',description:'',assignees:['viewer'],labels:[],checklist:[],comments:[],attachments:[],attachmentArchiveLoaded:!deferredArchives}]}]});
- const deps={loadDeferredAttachmentArchives:archiveLoad,loadWorkspace:async()=>data(),subscribeWorkspace:()=>()=>{},persistWorkspace:(before,after,member)=>{const d=deferred();Object.assign(d,{before,after,member});writes.push(d);return d.promise;},restoreCard:()=>{const d=deferred();restores.push(d);return d.promise;},restoreAttachment:async()=>{},assignMovedOrderKey:()=>{}};
+ const deps={loadDeferredAttachmentArchives:archiveLoad,loadWorkspace:async(account,options)=>workspaceLoad?workspaceLoad(account,options,data):data(),subscribeWorkspace:(account,next,error)=>{const sub={account,next,error,stopped:false};subscriptions.push(sub);return ()=>sub.stopped=true;},persistWorkspace:(before,after,member)=>{const d=deferred();Object.assign(d,{before,after,member});writes.push(d);return d.promise;},restoreCard:()=>{const d=deferred();restores.push(d);return d.promise;},restoreAttachment:async()=>{},assignMovedOrderKey:()=>{}};
  const source=await fs.readFile(new URL('../app.js',import.meta.url),'utf8');
  const mod=new vm.SourceTextModule(source+'\nexport {applyGoogleAccount,save,restoreArchived,canEdit,openCard,refreshWorkspace,showArchive};',{context});
  await mod.link(()=>new vm.SyntheticModule(Object.keys(deps),function(){for(const [k,v] of Object.entries(deps))this.setExport(k,v);},{context}));await mod.evaluate();
- return {api:mod.namespace,writes,restores,element};
+ return {api:mod.namespace,writes,restores,element,subscriptions,window:context.window};
 }
 const account=id=>({memberId:id,workspaceRole:'editor',accessboard:['b']});
 test('old save completion cannot unlock a new account write',async()=>{
@@ -119,4 +119,45 @@ test('failed archive loading shows failure instead of empty and can be retried',
  assert.equal(element('#archivedAttachments').textContent,'無法載入封存附件。');
  element('#archiveDialog').close();await api.showArchive();
  assert.match(element('#archivedAttachments').innerHTML,/Recovered/);assert.equal(tries,2);
+});
+
+test('revocation clears open content immediately and ignores an earlier save result',async()=>{
+ const pending=deferred();let calls=0;
+ const {api,element,writes}=await setup({workspaceLoad:async(account,options,data)=>++calls===1?data():pending.promise});
+ await api.applyGoogleAccount(account('m'));api.openCard('c');
+ const save=api.save();
+ const reload=api.applyGoogleAccount({...account('m'),accessboard:[]});
+ assert.equal(element('#editor').open,false);
+ assert.equal(element('#editor').innerHTML,'');
+ assert.equal(element('#columns').innerHTML,'');
+ assert.equal(api.canEdit(),false);
+ writes[0].resolve([]);await save;
+ assert.equal(element('#columns').innerHTML,'');
+ pending.resolve({boards:[],users:[]});await reload;
+ assert.equal(element('#boardTitle').textContent,'沒有可存取的看板');
+});
+test('permission listener failure clears content and manual refresh renews membership',async()=>{
+ const {api,element,subscriptions,window}=await setup();await api.applyGoogleAccount(account('m'));api.openCard('c');
+ subscriptions[0].error(Object.assign(Error('denied'),{code:'permission-denied'}));
+ assert.equal(subscriptions[0].stopped,true);
+ assert.equal(element('#columns').innerHTML,'');assert.equal(element('#editor').innerHTML,'');
+ assert.equal(api.canEdit(),false);
+ assert.match(element('#syncStatus').textContent,/已清除內容/);
+ let refreshed=0;window.boardlyGoogleAuth={refreshMembership:async()=>{refreshed++;}};
+ await element('#refreshWorkspace').onclick();assert.equal(refreshed,1);
+});
+test('late subscription error from previous membership cannot clear renewed access',async()=>{
+ const {api,element,subscriptions}=await setup();await api.applyGoogleAccount(account('m'));
+ await api.applyGoogleAccount({...account('m'),workspaceRole:'viewer'});
+ subscriptions[0].error(Object.assign(Error('old denied'),{code:'permission-denied'}));
+ assert.equal(element('#boardTitle').textContent,'Board');
+ assert.equal(subscriptions[1].stopped,false);
+});
+test('partial reload permission denial never restores cached board content',async()=>{
+ let calls=0;const {api,element}=await setup({workspaceLoad:async(account,options,data)=>{
+  if(++calls>1)throw Object.assign(Error('denied'),{code:'permission-denied'});return data();
+ }});
+ await api.applyGoogleAccount(account('m'));api.openCard('c');await api.refreshWorkspace(['b']);
+ assert.equal(element('#columns').innerHTML,'');assert.equal(element('#editor').innerHTML,'');
+ assert.equal(api.canEdit(),false);
 });
