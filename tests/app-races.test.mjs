@@ -3,15 +3,15 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import fs from 'node:fs/promises';
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
-async function setup({archiveLoad=async()=>[],deferredArchives=false,workspaceLoad}={}){
+async function setup({archiveLoad=async()=>[],deferredArchives=false,workspaceLoad,managementLoad=async()=>({members:[],assigneeIds:[]}),managedCreate=async()=>({boardId:'new'}),managedAssign=async()=>({})}={}){
  const elements=new Map(),writes=[],restores=[],subscriptions=[];
  const element=s=>{if(!elements.has(s))elements.set(s,{value:s==='#dueFilter'?'all':'',classList:{add(){},remove(){},toggle(){}},style:{},replaceChildren(){this.innerHTML='';},close(){this.open=false;},showModal(){this.open=true;}});return elements.get(s);};
  const context=vm.createContext({console,structuredClone,setTimeout:()=>0,clearTimeout,Intl,Date,crypto:{randomUUID:()=>'copy-id'},
  document:{querySelector:element,querySelectorAll:s=>/^#[a-zA-Z]+$/.test(s)?[element(s)]:[],addEventListener(){}},window:{addEventListener(){}}});
  const data=()=>({users:[],boards:[{id:'b',name:'Board',columns:[{id:'col',name:'Todo'}],cards:[{id:'c',title:'Assigned',columnId:'col',createdAt:'2026-10-01T00:00:00Z',description:'',assignees:['viewer'],labels:[],checklist:[],comments:[],attachments:[],attachmentArchiveLoaded:!deferredArchives}]}]});
- const deps={loadDeferredAttachmentArchives:archiveLoad,loadWorkspace:async(account,options)=>workspaceLoad?workspaceLoad(account,options,data):data(),subscribeWorkspace:(account,next,error)=>{const sub={account,next,error,stopped:false};subscriptions.push(sub);return ()=>sub.stopped=true;},persistWorkspace:(before,after,member)=>{const d=deferred();Object.assign(d,{before,after,member});writes.push(d);return d.promise;},restoreCard:()=>{const d=deferred();restores.push(d);return d.promise;},restoreAttachment:async()=>{},assignMovedOrderKey:()=>{}};
+ const deps={listManagementMembers:managementLoad,createManagedBoard:managedCreate,setManagedAssignees:managedAssign,loadDeferredAttachmentArchives:archiveLoad,loadWorkspace:async(account,options)=>workspaceLoad?workspaceLoad(account,options,data):data(),subscribeWorkspace:(account,next,error)=>{const sub={account,next,error,stopped:false};subscriptions.push(sub);return ()=>sub.stopped=true;},persistWorkspace:(before,after,member)=>{const d=deferred();Object.assign(d,{before,after,member});writes.push(d);return d.promise;},restoreCard:()=>{const d=deferred();restores.push(d);return d.promise;},restoreAttachment:async()=>{},assignMovedOrderKey:()=>{}};
  const source=await fs.readFile(new URL('../app.js',import.meta.url),'utf8');
- const mod=new vm.SourceTextModule(source+'\nexport {applyGoogleAccount,save,restoreArchived,canEdit,openCard,refreshWorkspace,showArchive};',{context});
+ const mod=new vm.SourceTextModule(source+'\nexport {applyGoogleAccount,save,restoreArchived,canEdit,openCard,refreshWorkspace,showArchive,canManage,openManagedBoard,openManagedAssignees,runManagedWrite};',{context});
  await mod.link(()=>new vm.SyntheticModule(Object.keys(deps),function(){for(const [k,v] of Object.entries(deps))this.setExport(k,v);},{context}));await mod.evaluate();
  return {api:mod.namespace,writes,restores,element,subscriptions,window:context.window};
 }
@@ -160,4 +160,56 @@ test('partial reload permission denial never restores cached board content',asyn
  await api.applyGoogleAccount(account('m'));api.openCard('c');await api.refreshWorkspace(['b']);
  assert.equal(element('#columns').innerHTML,'');assert.equal(element('#editor').innerHTML,'');
  assert.equal(api.canEdit(),false);
+});
+
+const owner=id=>({...account(id),workspaceRole:'owner'});
+test('only owner/admin can open management, including when no boards exist',async()=>{
+ const {api,element}=await setup({workspaceLoad:async()=>({users:[],boards:[]})});
+ for(const role of ['editor','viewer','member']){
+  await api.applyGoogleAccount({...account(role),workspaceRole:role});
+  assert.equal(api.canManage(),false);assert.equal(element('#addBoard').disabled,true);
+  await api.openManagedBoard();assert.notEqual(element('#simpleDialog').open,true);
+ }
+ for(const role of ['owner','admin']){
+  await api.applyGoogleAccount({...account(role),workspaceRole:role});
+  assert.equal(element('#addBoard').disabled,false);
+  await api.openManagedBoard();assert.equal(element('#simpleDialog').open,true);
+ }
+});
+test('failed member fetch cannot submit a partial grant list',async()=>{
+ let calls=0;
+ const {api,element}=await setup({managementLoad:async()=>{throw Error('offline');},managedCreate:async()=>{calls++;}});
+ await api.applyGoogleAccount(owner('owner'));await api.openManagedBoard();
+ element('#managedBoardName').value='Board';element('#simpleForm').onsubmit({preventDefault(){}});
+ assert.equal(calls,0);assert.equal(element('#managementSubmit').disabled,true);
+ assert.equal(element('#managementError').textContent,'offline');
+});
+test('late management member fetch cannot reopen a closed or switched account dialog',async()=>{
+ const load=deferred();const {api,element}=await setup({managementLoad:()=>load.promise});
+ await api.applyGoogleAccount(owner('owner'));const pending=api.openManagedBoard();
+ await api.applyGoogleAccount(account('other'));element('#managedMembers').innerHTML='new account';
+ load.resolve({members:[{id:'secret',name:'Hidden',eligible:true}],assigneeIds:[]});await pending;
+ assert.equal(element('#managedMembers').innerHTML,'new account');assert.equal(element('#simpleDialog').open,false);
+});
+test('assignment conflicts preserve the management form and do not call normal card persistence',async()=>{
+ const {api,element,writes}=await setup();await api.applyGoogleAccount(owner('owner'));
+ await api.openManagedAssignees('c');
+ await api.runManagedWrite(async()=>{throw Error('conflict');},()=>assert.fail('must not reload'));
+ assert.equal(element('#simpleDialog').open,true);assert.equal(element('#managementError').textContent,'conflict');
+ assert.equal(api.canManage(),true);assert.equal(writes.length,0);
+});
+test('uncertain board creation retries reuse their operation ID',async()=>{
+ const payloads=[];const {api,element}=await setup({managedCreate:async payload=>{payloads.push(payload);throw Error('timeout');}});
+ await api.applyGoogleAccount(owner('owner'));await api.openManagedBoard();
+ element('#managedBoardName').value='New';element('#managedBoardDescription').value='';element('#managedBoardColor').value='#455f56';
+ for(let i=0;i<2;i++){element('#simpleForm').onsubmit({preventDefault(){}});await new Promise(resolve=>setImmediate(resolve));}
+ assert.equal(payloads.length,2);assert.equal(payloads[0].requestId,payloads[1].requestId);
+ assert.equal(element('#simpleDialog').open,true);
+});
+for(const rejects of [false,true])test(`old management ${rejects?'failure':'completion'} cannot affect new account`,async()=>{
+ const operation=deferred();const {api,element}=await setup();await api.applyGoogleAccount(owner('owner'));
+ await api.openManagedBoard();const pending=api.runManagedWrite(()=>operation.promise,()=>assert.fail('stale reload'));
+ await api.applyGoogleAccount(account('other'));element('#syncStatus').textContent='new status';
+ if(rejects)operation.reject(Error('old failure'));else operation.resolve({boardId:'new'});
+ await pending;assert.equal(element('#syncStatus').textContent,'new status');assert.equal(api.canEdit(),true);
 });

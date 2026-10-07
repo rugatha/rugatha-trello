@@ -177,3 +177,12 @@ test('own membership listener receives revocation then fails closed on deactivat
   await env.withSecurityRulesDisabled(context=>updateDoc(doc(context.firestore(),path),{status:'disabled'}));
   assert.equal((await next()).code,'permission-denied');
 });
+
+test('clients cannot forge management operation receipts or grant board access',async()=>{
+  for(const role of roles){
+    const db=dbFor(role);
+    await assertFails(setDoc(doc(db,root+'/managementRequests/forged'),{kind:'createBoard',result:{boardId:'forbidden'}}));
+    await assertFails(getDoc(doc(db,root+'/managementRequests/forged')));
+    await assertFails(updateDoc(doc(db,root+'/members/'+role),{accessboard:['allowed','forbidden']}));
+  }
+});
