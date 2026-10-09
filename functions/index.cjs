@@ -27,7 +27,8 @@ const {getStorage}=require('firebase-admin/storage');
 const {onSchedule}=require('firebase-functions/v2/scheduler');
 const {createAttachments}=require('./attachments.cjs');
 const attachments=createAttachments(getFirestore(),getStorage().bucket());
-const attachmentCall=method=>onCall({...options,timeoutSeconds:120,memory:'512MiB'},async request=>{
+// Callable endpoints accept browser preflight; handlers still require verified Firebase auth.
+const attachmentCall=method=>onCall({...options,invoker:'public',timeoutSeconds:120,memory:'512MiB'},async request=>{
   try{return await attachments[method](request.auth,request.data);}
   catch(error){
     if(error instanceof ManagementError)throw new HttpsError(error.code,error.message);

@@ -59,6 +59,22 @@ test('archived or deleted card rejects completion and uploaded bytes remain unli
  await db.doc(cardPath).set({title:'Card',attachmentCount:2,archived:false});
  assert.equal((await db.doc(cardPath+'/attachments/'+s.attachmentId).get()).exists,false);
 });
+test('late concurrent finish recognizes a commit after staging disappears',async()=>{
+ const session=await stage('late');
+ const concurrent=createAttachments(db,{name:bucket.name,file(path){
+  const file=bucket.file(path);
+  if(path===session.stagingPath){const metadata=file.getMetadata.bind(file);file.getMetadata=async()=>{await service.finish(auth('editor'),{requestId:'late'});return metadata();};}
+  return file;
+ }},{now:()=>clock});
+ const before=(await db.doc(cardPath).get()).data().attachmentCount;
+ assert.deepEqual(await concurrent.finish(auth('editor'),{requestId:'late'}),{attachmentId:session.attachmentId});
+ assert.equal((await db.doc(cardPath).get()).data().attachmentCount,before+1);
+});
+test('unfinished staging returns a retryable precondition failure',async()=>{
+ const session=await service.begin(auth('editor'),payload('not-uploaded'));
+ await assert.rejects(service.finish(auth('editor'),{requestId:'not-uploaded'}),{code:'failed-precondition'});
+ assert.equal((await db.doc(cardPath+'/attachments/'+session.attachmentId).get()).exists,false);
+});
 test('cleanup removes expired unlinked bytes, preserves committed/archived objects and rejects late retry',async()=>{
  const s=await stage('expired');
  await db.doc(cardPath).update({archived:true});clock+=86400001;

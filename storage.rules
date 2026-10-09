@@ -4,14 +4,19 @@ service firebase.storage {
     function verified() {
       return request.auth != null && request.auth.token.email_verified == true;
     }
-    function memberId(w) {
-      return firestore.get(/databases/(default)/documents/workspaces/$(w)/memberLookup/$(request.auth.token.email.lower())).data.memberId;
-    }
-    function member(w) {
-      return firestore.get(/databases/(default)/documents/workspaces/$(w)/members/$(memberId(w))).data;
+    function membership(w) {
+      let id = firestore.get(/databases/(default)/documents/workspaces/$(w)/memberLookup/$(request.auth.token.email.lower())).data.memberId;
+      let data = firestore.get(/databases/(default)/documents/workspaces/$(w)/members/$(id)).data;
+      return {'id': id, 'data': data};
     }
     function access(w, b) {
-      return verified() && member(w).status == 'active' && b in member(w).accessboard;
+      let m = membership(w).data;
+      return verified() && m.status == 'active' && b in m.accessboard;
+    }
+    function uploadAccess(u, b) {
+      let m = membership('main');
+      return verified() && m.id == u && m.data.status == 'active'
+        && b in m.data.accessboard && m.data.role in ['owner', 'admin', 'editor'];
     }
     match /workspaces/{w}/boards/{b}/cards/{c}/attachments/{a}/{filename} {
       // Archive is reversible: authorized members retain access to archived files.
@@ -22,8 +27,7 @@ service firebase.storage {
     // Temporary uploads are never readable; only trusted completion publishes them.
     match /uploads/{u}/{b}/{c}/{session}/{filename} {
       allow read, update, delete: if false;
-      allow create: if resource == null && access('main', b)
-        && memberId('main') == u && member('main').role in ['owner', 'admin', 'editor']
+      allow create: if resource == null && uploadAccess(u, b)
         && request.resource.size > 0 && request.resource.size <= 20 * 1024 * 1024
         && request.resource.contentType in ['image/png', 'image/jpeg', 'image/gif',
           'image/webp', 'image/avif', 'application/pdf', 'text/plain',
