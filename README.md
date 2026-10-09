@@ -20,7 +20,7 @@ Trello 風格的看板網站。Google 登入使用 Firebase Authentication；正
 
 編輯採 Firestore transaction，只寫入變更欄位，檢查同欄位是否被其他成員修改；離線、衝突或權限錯誤時顯示失敗並還原畫面。交易行為參考 [Firebase 官方文件](https://firebase.google.com/docs/firestore/manage-data/transactions)。
 
-看板可封存／復原，牌卡與附件移除採 `archived: true`，保留子文件。每個看板的「封存項目」列出已封存牌卡與附件；Owner／Admin／Editor 可復原，Viewer 僅可閱讀。刪除空欄位僅限 Owner／Admin。看板建立與牌卡負責人變更已接上 Owner／Admin 專用的 Cloud Functions 管理介面；需先部署管理端點才可使用。實作、權限與部署方式見 [看板管理](docs/board-management.md)。附件上傳暫緩。
+看板可封存／復原，牌卡與附件移除採 `archived: true`，保留子文件。每個看板的「封存項目」列出已封存牌卡與附件；Owner／Admin／Editor 可復原，Viewer 僅可閱讀。刪除空欄位僅限 Owner／Admin。看板建立與牌卡負責人變更已接上 Owner／Admin 專用的 Cloud Functions 管理介面；需先部署管理端點才可使用。實作、權限與部署方式見 [看板管理](docs/board-management.md)。Owner／Admin／Editor 可在已授權看板上傳附件，Viewer 可預覽與下載。
 
 已移除 `data.json`、IndexedDB 看板讀寫與匯入流程，以及獨立雲端視窗。網站不會載入或覆蓋舊瀏覽器看板。顯示名稱以 Firestore 會員的 `name` 為準，既有非空名稱視為已完成設定；同一會員的不同 Google 信箱共用名稱。名稱更新成功才關閉設定視窗，不再依賴 localStorage 或覆寫 Google 個人資料。Git 歷史與既有瀏覽器儲存不在此次清理範圍；2026-10-02 已驗證正式站舊 `data.json` URL 回傳 404。
 
@@ -55,11 +55,11 @@ macOS 若系統的 Java 或 Firebase CLI 是舊版，可使用專案的 npm 指�
 
 正式 Firebase 唯讀量測：6 個看板、658 張牌卡（462 張未封存），初次附件查詢 462 → 122，整體查詢 612 → 272；讀回文件均為 1,489 份，少了 340 次空查詢。這是伺服器查詢量測，並非 Firebase 帳單數字。細節、限制與重跑方式見 [附件讀取評估](docs/attachment-read-audit.md)。56 項應用測試通過；尚未部署。
 
-Trello 備份附件遷移與重跑方式見 [附件遷移](docs/attachment-migration.md)。遷移使用既有牌卡附件連結欄位；一般使用者從介面新增上傳仍未開放。
+Trello 備份附件遷移與重跑方式見 [附件遷移](docs/attachment-migration.md)。既有檔案保存 Storage 路徑，外部連結保留來源；新附件上傳依角色與看板權限限制。
 
 會員參照檢查可執行 `node scripts/audit-member-references.cjs`；逐筆核對所有指派與留言作者，僅讀取正式資料。修復計畫產生方式、歷史指派警告與 2026-10-07 正式站顯示驗證見 [會員參照檢查](docs/member-reference-audit.md)。
 
-P2 Storage 路徑、20 MiB／MIME 限制與生命週期見 [Storage 設計](docs/storage-design.md)。`npm run test:storage-rules` 使用本機 Firestore＋Storage 模擬器驗證會員／看板權限；16 項測試通過，規則尚未部署。前端上傳及舊下載 token 切換仍待完成，既有 token 連結不具會員撤權效果。
+Storage 路徑、20 MiB／MIME 限制與生命週期見 [Storage 設計](docs/storage-design.md)。`npm run test:storage-rules` 使用本機 Firestore＋Storage 模擬器驗證會員／看板權限；17 項測試通過，規則已部署。正式切換與角色存取證據見 [附件生命週期](docs/attachment-lifecycle.md)。
 
 看板管理測試：`npm ci --prefix functions` 安裝後，`npm run test:management` 以 demo 專案啟動 Auth／Firestore／Functions 模擬器，驗證 Owner／Admin 管理流程及越權拒絕。本輪 86 項應用、32 項 Firestore 規則與 16 項管理端點整合測試通過；部署與正式站驗證仍待完成。
 

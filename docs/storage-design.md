@@ -32,6 +32,8 @@ Storage 規則核對 metadata 僅含 `uploadedBy`、`boardId`、`cardId`、`atta
 
 必須先發布並驗證前端授權讀取，再執行 token 撤銷。舊網頁分頁需重新載入新版；已下載至装置的副本無法收回。正式切換與驗證記錄見 [附件生命週期](attachment-lifecycle.md)。
 
+2026-10-09 已完成正式切換：218 個遷移檔案的舊 token 全數撤銷，原連結全數拒絕下載；新前端與 Storage 規則已發布，Firefox 正式 Owner／Viewer 及撤權／還原驗證通過。Cloud Run callable 入口 IAM 由 `scripts/ensure-attachment-invoker.cjs` 唯讀檢查，必要時經授權以 `--apply` 修正；只涉及兩個附件端點，函式內會員驗證持續生效。
+
 ## 本機驗證
 
 使用 Node 24、Java 21：

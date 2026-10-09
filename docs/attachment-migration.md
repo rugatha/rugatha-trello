@@ -43,3 +43,14 @@ API 行為參考：[Cloud Storage objects.insert](https://docs.cloud.google.com/
 已完成正式資料遷移：5 個看板、160 張牌卡，218 個檔案上傳且逐檔下載校驗通過，69 個外部連結保持原網址。最後唯讀核對時間為 2026-10-07 10:51 UTC，全部 287 筆附件的對應、Storage 欄位與牌卡附件數量均通過，錯誤為 0。Socials 176 筆依使用者指示略過。既有 56 項應用測試全數通過。
 
 2026-10-07 11:49 UTC 唯讀複核：160 張牌卡、218 檔案及 69 外部連結的中繼資料與附件計數均通過，錯誤 0。P2 Storage 規則及 token 切換限制另見 [Storage 設計](storage-design.md)。
+
+## 2026-10-08 外部連結檢查
+
+依使用者明確授權，對 69 筆既有外部附件送出不含 Firebase 憑證的唯讀 HTTP GET。67 筆回應成功；HTTP 成功只代表可取得頁面，沒有宣稱完整內容已人工逐項校對。
+
+Illustration 看板的 Stefano 牌卡（`66251c646c0ea6b5f43215cb`）有兩筆附件指向同一個原始網頁，均回應 HTTP 404，需提供替代網址或重新上傳原檔：
+
+- `66251c696918119ecba3e4c2`
+- `66251c7c1c1f2b2722965b2e`
+
+未變更或刪除這兩筆附件。逐筆網址、狀態與時間保存在忽略追蹤的 `attachments_export/migration/external-link-audit.json`。

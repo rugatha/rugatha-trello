@@ -96,3 +96,31 @@ GitHub API 本輪確認 repository 為 public、可見 fork 數為 0。正式 Pa
 尚未完成：GitHub Pages 同帳號複測、以該未核准帳號直接讀取看板／牌卡／完整會員集合，以及完全沒有會員索引的新帳號情境。主控台唯讀探測因使用者切換視窗而未確認執行，不列為已通過；規則模擬器已涵蓋相應讀取拒絕。
 
 依使用者指示，測試會員已從 `active` 改為 `pending`，保留 Viewer 角色與原看板清單，且確認只有該測試信箱對應此會員。私人備份 `attachments_export/stage-one-audit/pending-member-before.json` 保存修改前文件與伺服器版本。完成上述檢查後，僅將 `status` 還原為 `active`，使用最新 updateTime 前置條件並重讀驗證；全部會員欄位與原備份一致，原 Viewer 角色與授權保留。還原確認存於同目錄的 `pending-member-restored.json`。後續已觀察到原 Viewer 在 localhost 恢復載入 3D 看板，寫入控制維持停用。
+
+
+## 2026-10-08 階段一續作
+
+本節更新前述 2026-10-07 尚未執行事項。使用者確認舊本機修改不需保留、已協調停止推送，且不需保留其他分支／clone。因此舊瀏覽器備份合併免辦；未清除任何 IndexedDB。
+
+### 正式站 Firefox 權限測試
+
+指定測試帳號原會員與登入索引皆先私人備份。pending 狀態下，GitHub Pages 顯示「尚未取得工作空間權限」、無看板，新增／編輯控制停用；直接讀取看板集合、既有看板文件、既有看板牌卡集合、既有牌卡文件及完整會員集合皆回傳 `permission-denied`。
+
+經使用者明確同意，暫時移除同帳號登入索引，重新載入正式站，伺服器讀取確認索引 `exists() === false`；上述五種讀取再次全部遭拒。此測試涵蓋缺少索引的已驗證 Google 身分，不代表全新帳號首次 OAuth 流程已驗證。完成後以版本／不存在前置條件還原索引與會員 active 狀態，逐欄比對備份相同；Firefox 重新載入可見 3D 看板，Viewer 新增／編輯控制仍停用。
+
+### Git 清理與仍待處理的曝光
+
+- 私人備份：`attachments_export/stage-one-audit/git-backup-20261008/` 保存所有本機 refs 的 bundle、工作目錄 binary patch、未追蹤檔案及 SHA-256 manifest。bundle verify、隔離 mirror 還原與 fsck 通過，HEAD 一致。此備份包含敏感舊歷史，禁止提交／部署。
+- 遠端備份與清理證據：`attachments_export/stage-one-audit/run-20261008/`；遠端僅 main，公開 API 當時未見 PR、release 或 fork。不能據此排除已下載副本。
+- 在隔離 mirror 使用 Git filter-branch 移除 `data.json`、`import/`、會員 CSV、`import-report.json`、`.DS_Store`，並替換歷史文件中的兩個私人測試信箱。清理後 main 可達物件掃描未見上述路徑或信箱；其餘掃描結果是範例信箱、相依作者信箱與 token URL 程式模板。
+- 遠端 main 由 `836a68447bc1383506addd9d841e3464b3ea573b` 改為 `866b529eefa003b59cd8fdd18c693e47ab073d72`，以指定舊 SHA 的 force-with-lease 推送。本機 main 同步，保留既有未提交工作；最新內容僅文件測試信箱改為範例值，未部署尚未提交的會員功能。
+- 私人遷移來源已與原 Git 資料逐內容確認一致。`audit-migration-content.cjs` 改讀私人 `source.json` 並記錄 SHA-256，不再依賴已移除的 Git 提交；缺備份時明確中止。
+- **尚未解除的阻礙：** 強制同步後，舊提交 `data.json` 的 raw URL 仍回應 200；Pages 首頁 200、目前 `data.json` 404。因此分支歷史清理已執行，但公開曝光尚未完全清除。需依 [GitHub 官方敏感資料移除流程](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository) 請 GitHub Support 審核並清除伺服器舊物件及快取；能否受理由 GitHub 決定。
+- 本機安全備份及 Codex 內部 refs 仍可能持有舊物件，未對外同步；不要推送 `--all`／`--mirror` 或合併舊歷史。
+
+本輪應用測試 86 項通過；補上 pending 會員（與缺少索引分開）後，Firestore 規則測試 34 項通過。正式站權限結果不以模擬器替代。未進行階段二之後的開發。
+
+
+新版 Pages run `37778158198` 已完成且成功，產物 `11551206718` 對應清理後 main。舊產物 `11496432980` 對應清理前提交，已下載為私人 `old-pages-artifact.zip`（221,011 bytes，SHA-256 `f976ea253715a0f5478202db8bd665ba64f55ff3068bed713b589cb3d4b0e3b6`）；檢查其中 Markdown 與產生的 HTML 仍含私人測試信箱。刪除曾被自動核准審查拒絕，因不可復原操作尚缺明確授權，目前等待使用者確認。
+
+GitHub Support 申請草稿位於私人 `attachments_export/stage-one-audit/run-20261008/github-support-draft.md`，尚未送出；對資料持有人的必要通知也尚未對外發送。完成判準為舊資料入口不可再讀取及通知處理完成，不以 force push 成功視為全部完成。

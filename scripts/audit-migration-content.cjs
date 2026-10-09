@@ -2,7 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const {isDeepStrictEqual} = require('node:util');
-const {execFileSync} = require('node:child_process');
+const {createHash} = require('node:crypto');
 const collections = ['checklist', 'comments', 'attachments'];
 const decode = v => v.stringValue ?? v.booleanValue ?? (v.integerValue !== undefined ? Number(v.integerValue) : v.doubleValue) ?? v.timestampValue ?? (v.arrayValue ? (v.arrayValue.values || []).map(decode) : v.mapValue ? fields(v.mapValue.fields || {}) : null);
 const fields = f => Object.fromEntries(Object.entries(f).map(([k,v])=>[k,decode(v)]));
@@ -54,7 +54,12 @@ async function main() {
   if (process.argv.length>2) throw Error('This audit accepts no arguments and never writes cloud data.');
   const dir=path.resolve(__dirname,'../attachments_export/stage-one-audit');
   fs.mkdirSync(dir,{recursive:true,mode:0o700});
-  const source=JSON.parse(execFileSync('git',['show','61baf1a^:data.json'],{maxBuffer:30*1024*1024}));
+  const sourcePath=path.join(dir,'source.json');
+  if (!fs.existsSync(sourcePath)) throw Error('Private migration source missing: restore attachments_export/stage-one-audit/source.json from the private backup.');
+  const sourceBytes=fs.readFileSync(sourcePath);
+  const source=JSON.parse(sourceBytes);
+  if (!Array.isArray(source.boards)) throw Error('Invalid private migration source: boards must be an array.');
+  const sourceSha256=createHash('sha256').update(sourceBytes).digest('hex');
   const auth=require('firebase-tools/lib/auth'), account=auth.getProjectDefaultAccount(process.cwd());
   if (!account) throw Error('Firebase CLI login required.');
   const token=account.tokens.expires_at>Date.now()+60000?account.tokens:await auth.getAccessToken(account.tokens.refresh_token,account.tokens.scopes||['https://www.googleapis.com/auth/cloud-platform']);
@@ -84,7 +89,7 @@ async function main() {
     const key=`${b.id}/${c.id}/attachments/${a.id}`,e=entries.get(key);
     if(!e || a.size!==e.size || a.type!==(e.attachment.mimeType||'application/octet-stream') || a.external!==false || a.sourceUrl!==e.attachment.url || a.storageBucket!=='rugatha-trello.firebasestorage.app' || a.storagePath!==`workspaces/main/boards/${b.id}/cards/${c.id}/attachments/${a.id}/${path.basename(e.file)}`) migrationErrors.push({path:key,reason:'migration-backup-mismatch'});
   }
-  const report={at:snapshot.at,sourceRevision:execFileSync('git',['rev-parse','61baf1a^'],{encoding:'utf8'}).trim(),...compare(source,snapshot),migrationErrors};
+  const report={at:snapshot.at,sourceFile:'source.json',sourceSha256,...compare(source,snapshot),migrationErrors};
   report.unexplainedAdditions=report.additions.filter(x=>!entries.has(x.path));
   fs.writeFileSync(path.join(dir,'comparison.json'),JSON.stringify(report,null,2),{mode:0o600});
   console.log(JSON.stringify(report,null,2));
