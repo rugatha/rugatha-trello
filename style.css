@@ -765,3 +765,11 @@ aside > .sidebar-boards {
   color:var(--ink)}
 .board-header .tab{border-bottom-color:var(--on-primary)}
 .main .add-column{color:var(--ink)}
+
+[hidden] { display: none !important; }
+.membership-list { margin-top: 16px; }
+.membership-row { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid #ddd; overflow-wrap:anywhere; }
+.membership-form { display:grid; gap:10px; margin-top:20px; }
+.membership-form fieldset { display:grid; gap:8px; }
+.membership-form fieldset label { display:flex; align-items:center; gap:8px; }
+#membershipDialog { max-height:90vh; overflow:auto; }

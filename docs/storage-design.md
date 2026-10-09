@@ -1,40 +1,46 @@
-# P2 附件與 Storage 設計
+# 附件與 Firebase Storage
 
-## 檔案與資料關聯
+## 路徑與可信任完成
 
-沿用遷移路徑：`workspaces/{workspaceId}/boards/{boardId}/cards/{cardId}/attachments/{attachmentId}/{filename}`。新附件使用隨機唯一 ID；替換檔案建立新附件，不覆寫舊路徑。前端應移除檔名中的斜線、控制字元，保留原始顯示名稱於 Firestore。只支援單層檔名；規則不開放任意子路徑或目錄列舉。
+正式物件沿用 `workspaces/main/boards/{boardId}/cards/{cardId}/attachments/{attachmentId}/{filename}`；客戶端禁止建立、覆寫、改 metadata 或刪除正式物件。
 
-Firestore 牌卡下 `attachments/{attachmentId}` 保存 `name`、`type`、`size`、`storageBucket`、`storagePath`、`createdBy`、`createdAt`、`archived`。父牌卡保存 `attachmentCount`、`coverId`，附件建立／封存／復原時透過 transaction 更新計數與父牌卡 `updatedAt`，沿用即時同步。外部連結保存 `url`、`external: true`；遷移附件另保留 `sourceUrl` 與 `migrationStatus`，不把來源網址當成已驗證可讀。
+新附件先呼叫 `beginAttachmentUpload`，以登入 UID 與 requestId 雜湊建立獨立上傳工作。原檔暫存於 `uploads/{memberId}/{boardId}/{cardId}/{sessionId}/{filename}`。暫存物件不可由客戶端讀取、覆寫或刪除；只有有效 Owner／Admin／Editor 且具看板權限者可新增。
 
-Storage 新物件的自訂 metadata 必须只有 `uploadedBy`（會員 ID）、`boardId`、`cardId`、`attachmentId`，且與登入會員／路徑一致。既有管理遷移物件的 metadata 不改寫；讀取不以新上傳 metadata 格式為條件。
+`finishAttachmentUpload` 重新確認會員、看板和牌卡狀態，核對大小、MIME、metadata 與檔頭／內容格式，以 generation 前置條件建立正式物件。最後在 Firestore transaction 中再次核對權限、工作狀態，建立附件並更新父牌卡實際 `attachmentCount`、`updatedAt`、`updatedBy`。重複／並行完成只計數一次，已完成工作不重傳；失敗重試沿用原 requestId，內容變更則拒絕。
 
-## 新上傳限制
+正式附件記錄保存 `name`、`type`、`size`、`storageBucket`、`storagePath`、`createdBy`、`createdAt`、`archived`。新物件沒有下載 token；Cache-Control 為 `private, no-store`。檔名移除斜線與控制字元，原顯示名稱另存於 Firestore。
 
-- 每檔大於 0 bytes、最多 20 MiB（20 × 1024 × 1024 bytes，包含上限）。這是新客戶端上傳限制，不回頭刪除或限制既有大檔案的讀取。
-- 允許 MIME：`image/png`、`image/jpeg`、`image/gif`、`image/webp`、`image/avif`、`application/pdf`、`text/plain`、`application/zip`、`model/gltf-binary`、`model/stl`。
-- 不接受 HTML、SVG、JavaScript 或通用 `application/octet-stream`。GLB／STL 等瀏覽器未提供明確 MIME 的檔案，未來上傳流程應由可信任驗證判斷格式，不只依副檔名放行。
-- 規則只能核對宣告的 MIME、大小及 metadata，無法判斷檔案位元內容；上傳功能正式開放前，仍須處理格式驗證與未完成上傳的檔案清理。
+## 檔案限制
 
-## 權限與生命週期
+每檔大於 0 bytes、最多 20 MiB（包含上限）。允許 PNG、JPEG、GIF、WebP、AVIF、PDF、UTF-8 純文字、ZIP、GLB、STL；不接受 HTML、SVG、JavaScript、通用 octet-stream。GLB／STL 可依副檔名補 MIME，但可信任端仍驗證內容。格式檢查不是完整病毒掃描，也不代表 ZIP 內含檔案皆可信任。既有遷移檔案不受新上傳類型／大小限制，不會因此被刪除。
 
-`storage.rules` 透過 Firestore 的信箱索引與會員文件判斷權限，使用原有 `accessboard`，不新增第二份授權清單。有效且信箱已驗證的會員可讀取授權看板中的物件；Owner／Admin／Editor 可新增合規物件，Viewer／一般會員唯讀。所有客戶端皆不可覆寫、改 metadata、刪除檔案或列舉目錄。未登入、未核准、停用及無看板權限者拒絕存取。
+Storage 規則核對 metadata 僅含 `uploadedBy`、`boardId`、`cardId`、`attachmentId` 且與路徑一致。規則透過信箱索引與會員文件判定角色／看板權限；牌卡是否有效則由可信任完成端點檢查。
 
-每次授權讀取信箱索引與會員兩份文件，符合 Storage 跨服務規則的兩份文件上限；不能再依賴第三份牌卡文件判定封存狀態。規則校驗路徑與 metadata 的一致性，不保證牌卡／附件文件存在，也不禁止往已封存牌卡的路徑新增物件。未來上傳完成流程須由可信任端核對牌卡有效性及物件，再建立附件紀錄；失敗或離線留下的未關聯物件由管理流程清理。**前端上傳仍未開放，這部分尚未實作。** 跨服務行為見 [Firebase 官方說明](https://firebase.blog/posts/2022/09/announcing-cross-service-security-rules/) 與 [規則限制](https://firebase.google.com/docs/rules/rules-behavior)。
+## 清理與封存
 
-封存牌卡／附件只改 Firestore，保留檔案與既有授權成員的檔案讀取；復原不用重傳。實體刪除仍須管理端先備份並檢查參照，不提供客戶端刪除入口。
+`cleanupAttachmentUploads` 每 24 小時處理建立超過 24 小時的工作。先在 transaction 將未完成工作標為 expired，再刪除其暫存及未關聯正式物件；完成工作的正式檔案保留。過期墓碑保留，遲到重試不可復活。另分頁掃描 `uploads/` 清除無工作記錄且超過 24 小時的物件，刪除時帶 generation 前置條件。
 
-## 下載 token 與尚未完成的切換
+封存牌卡／附件只改 Firestore，保留原檔，已授權會員仍可讀取；復原不用重傳。不存在或已封存的牌卡／看板不能完成新上傳。一般客戶端不能實體刪除牌卡或原檔；管理端實體刪除牌卡不會自動刪除歷史附件，避免誤刪與失去還原來源。
 
-現有 218 個遷移檔案使用下載 token URL。2026-10-07 11:56 UTC 抽驗 3D 的一個檔案：無登入但保留 token 時 HTTP 200、735096 bytes、MD5 與本機備份一致；移除 token 後 HTTP 403。這表示 bucket 未直接公開，但已取得完整 token URL 者仍可下載；修改會員或 Storage 規則不等於使既有連結失效。
+## 授權預覽與下載
 
-要完成「撤權即禁止後續下載」，仍須把預覽／下載改為驗證 Firebase 身分的 SDK 讀取，處理 CORS 與 Blob URL 的釋放，再由管理流程移除／撤銷物件的下載 token。新物件也須避免長期保留可繞過會員檢查的 token URL。切換須先完成正式站預覽／下載驗證；本輪沒有變更任何 token 或既有 URL。已下载至使用者裝置的副本無法靠撤權收回。
+前端使用 Firebase SDK `getBlob`，不使用 `getDownloadURL` 或 Firestore 的舊 token URL。圖片與下載採短期 Blob URL；重新渲染移除圖片時釋放，下載後釋放，帳號／會員授權變更時取消正在上傳的工作並釋放全部 URL。延遲完成的圖片讀取不得重新建立可用 URL；舊帳號的批次不得繼續下一個檔案。
 
-## 測試與部署狀態
+2026-10-09 已設定 CORS：允許 `https://rugatha.github.io`、`http://localhost:8765`、`http://127.0.0.1:8765` 的 GET／HEAD。CORS 不授予資料存取权，仍需 Firebase 身分與 Storage 規則。參考 [Firebase SDK 下載與 CORS](https://firebase.google.com/docs/storage/web/download-files)。
+
+`node scripts/storage-auth-cutover.cjs` 預設唯讀核對 218 個遷移檔案的大小／MD5；備份寫入忽略追蹤、0600 權限的 `attachments_export/migration/storage-auth-cutover/`。`--apply-cors` 只更新 CORS；`--apply-tokens` 以 generation／metageneration 前置條件移除舊 token、設定 no-store，並以 Firestore updateTime 前置條件移除舊 `url` 欄位。外部連結不變。`--verify-denied` 驗證原 token 連結失效。參考 [Cloud Storage metadata 前置條件](https://docs.cloud.google.com/storage/docs/request-preconditions)。
+
+必須先發布並驗證前端授權讀取，再執行 token 撤銷。舊網頁分頁需重新載入新版；已下載至装置的副本無法收回。正式切換與驗證記錄見 [附件生命週期](attachment-lifecycle.md)。
+
+## 本機驗證
+
+使用 Node 24、Java 21：
 
 ```sh
-PATH=/opt/homebrew/opt/node@24/bin:/opt/homebrew/opt/openjdk@21/bin:$PATH npm run test:storage-rules
+npm test
+npm run test:rules
+npm run test:storage-rules
+npm run test:attachments
 ```
 
-此指令使用 `demo-rugatha-trello`，同時啟動 Firestore（8080）與 Storage（9199）本機模擬器，不連接正式 bucket。16 項測試涵蓋角色矩陣、已驗證／未驗證信箱、缺少會員、跨看板、信箱大小寫與多信箱、20 MiB 邊界、允許／拒絕 MIME、偽造 metadata、覆寫／刪除／列舉拒絕、既有工作階段撤權，以及封存保留檔案。
-
-測試曾發現上傳至既有路徑僅靠 `allow create` 不足以達成本工具鏈下的不可覆寫要求；加入 `resource == null` 後回歸通過。規則與 `firebase.json` 已納入本機設定，**尚未部署**。部署還須確認 Storage 跨服務讀取 Firestore 的服務權限，並與 token／前端下載切換一起安排正式驗證。
+模擬器僅使用 `demo-rugatha-trello`。Firefox 開啟 `tests/browser/attachments.html`，測試重試、批次隔離、Viewer 阻擋、圖片解碼、實際下載與 Blob 釋放。正式角色存取必須另行驗證，不能以模擬器代替。

@@ -10,7 +10,8 @@ test('main page starts empty and loads Firebase only after membership is availab
  window:{addEventListener:(name,fn)=>listeners.set(name,fn)}});
  const source=await fs.readFile(new URL('../app.js',import.meta.url),'utf8');
  const app=new vm.SourceTextModule(source,{context});
- const dep=new vm.SyntheticModule(['listManagementMembers','createManagedBoard','setManagedAssignees','loadWorkspace','subscribeWorkspace','persistWorkspace','restoreCard','restoreAttachment','loadDeferredAttachmentArchives','assignMovedOrderKey'],function(){
+ const dep=new vm.SyntheticModule(['clearAttachmentUI','hydrateAttachmentImages','downloadAttachment','bindAttachmentUpload','listManagementMembers','createManagedBoard','setManagedAssignees','loadWorkspace','subscribeWorkspace','persistWorkspace','restoreCard','restoreAttachment','loadDeferredAttachmentArchives','assignMovedOrderKey'],function(){
+ for(const name of ['clearAttachmentUI','hydrateAttachmentImages','downloadAttachment','bindAttachmentUpload'])this.setExport(name,()=>{});
  this.setExport('listManagementMembers',async()=>({members:[],assigneeIds:[]}));this.setExport('createManagedBoard',async()=>({boardId:'new'}));this.setExport('setManagedAssignees',async()=>({}));
  this.setExport('loadWorkspace',async(_,options)=>{loads++;loadOptions.push(options);return {users:[],boards:[{id:'b',name:'Firebase board',columns:[{id:'col',name:'Todo'}],archivedCards:[{id:'old',title:'Archived card'}],cards:[{id:'c',title:'Current card',columnId:'col',description:'',assignees:[],labels:[],checklist:[],comments:[],attachments:[],archivedAttachments:[{id:'file',name:'Archived file'}]}]}]};});this.setExport('persistWorkspace',async()=>{});
  this.setExport('subscribeWorkspace',(_,onChange)=>{liveChange=onChange;return()=>stopped++});

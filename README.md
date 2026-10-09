@@ -8,9 +8,9 @@ Trello 風格的看板網站。Google 登入使用 Firebase Authentication；正
 
 ## 會員資料
 
-會員主資料位於 `workspaces/main/members/{memberId}`，包含穩定 `id`、顯示名稱 `name`、已核對的 Google 信箱 `emails`、角色 `role`、狀態 `status` 與唯一的看板存取清單 `accessboard`。牌卡以 `assigneeIds` 指向會員，留言以 `memberId` 指向作者；會員文件不再保存重複的牌卡清單。同一人可以有多個信箱。登入時透過私人 `memberLookup/{email}` 找到 member ID；該索引只保存 `memberId`。
+會員主資料位於 `workspaces/main/members/{memberId}`，包含穩定 `id`、顯示名稱 `name`、已核對的 Google 信箱 `emails`、角色 `role`、狀態 `status` 與唯一的看板存取清單 `accessboard`。牌卡以 `assigneeIds` 指向會員，留言以 `memberId` 指向作者；會員文件不再保存重複的牌卡清單。同一人可以有多個信箱。登入時透過私人 `memberLookup/{email}` 找到 member ID；該索引只保存 `memberId`。新版規則限定只能讀取自己的會員文件；一般名冊由 `listDisplayMembers` 回傳 ID／名稱，信箱與授權不提供給其他一般會員。
 
-網站不可藉由選擇本機使用者取得會員身分。未核准的 Google 帳號不能讀取 Firestore 工作空間。角色、信箱、看板權限與牌卡掛名僅可由可信任的管理流程修改。新看板授權與牌卡指派使用伺服器端管理端點，會員邀請與角色管理介面仍待完成。
+網站不可藉由選擇本機使用者取得會員身分。未核准的 Google 帳號不能讀取 Firestore 工作空間。角色、信箱、看板權限與牌卡掛名僅可由可信任的管理流程修改。新看板授權與牌卡指派使用伺服器端管理端點，會員邀請、核准、停用與角色／看板授權管理介面已完成本機測試，尚未部署。見 [會員管理](docs/member-management.md)。
 
 登入後以 [Firestore 即時訂閱](https://firebase.google.com/docs/firestore/query-data/listen) 監聽目前會員文件。角色或看板授權更新時，立即清空舊看板及編輯視窗，再載入最新授權內容；會員停用、刪除或訂閱失敗則清除資格。權限變更時未送出的草稿不保留。站內重新整理會向伺服器重讀會員索引、會員資料與名冊，也可用來重試失敗的會員訂閱。
 
@@ -62,3 +62,9 @@ Trello 備份附件遷移與重跑方式見 [附件遷移](docs/attachment-migra
 P2 Storage 路徑、20 MiB／MIME 限制與生命週期見 [Storage 設計](docs/storage-design.md)。`npm run test:storage-rules` 使用本機 Firestore＋Storage 模擬器驗證會員／看板權限；16 項測試通過，規則尚未部署。前端上傳及舊下載 token 切換仍待完成，既有 token 連結不具會員撤權效果。
 
 看板管理測試：`npm ci --prefix functions` 安裝後，`npm run test:management` 以 demo 專案啟動 Auth／Firestore／Functions 模擬器，驗證 Owner／Admin 管理流程及越權拒絕。本輪 86 項應用、32 項 Firestore 規則與 16 項管理端點整合測試通過；部署與正式站驗證仍待完成。
+
+2026-10-08 階段三完成：86 項應用、33 項 Firestore 規則、31 項管理端點整合測試，以及 Firefox 14 項會員介面測試通過。會員管理與名冊讀取變更尚未部署；部署順序與測試範圍見 [會員管理](docs/member-management.md)。
+
+### 階段四附件
+
+新附件採暫存上傳、可信任完成與原子計數；圖片預覽與下載使用 Firebase 身分驗證及短期 Blob URL。Storage 原檔封存保留、過期暫存由排程清理。架構與正式切換工具見 [Storage 設計](docs/storage-design.md)，測試與正式驗證進度見 [附件生命週期](docs/attachment-lifecycle.md)。

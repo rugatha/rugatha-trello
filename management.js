@@ -13,3 +13,6 @@ async function call(name, data) {
 export const listManagementMembers = data => call('listManagementMembers', data);
 export const createManagedBoard = data => call('createManagedBoard', data);
 export const setManagedAssignees = data => call('setManagedAssignees', data);
+
+export const listMembershipDirectory = () => call('listMembershipDirectory', {});
+export const saveManagedMembership = data => call('saveManagedMembership', data);

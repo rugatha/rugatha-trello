@@ -25,7 +25,7 @@ const {localEntries} = require('./migrate-trello-attachments.cjs');
       const f=docs.find(d=>d.name.endsWith('/'+e.attachment.id))?.fields;
       if(!f){summary.errors.push({path:p,id:e.attachment.id,reason:'missing attachment'});continue;}
       if(e.status==='downloaded'){
-        if(f.storageBucket?.stringValue!=='rugatha-trello.firebasestorage.app'||!f.storagePath?.stringValue?.startsWith(p+'/attachments/')||!f.url?.stringValue?.startsWith('https://firebasestorage.googleapis.com/')||Number(f.size?.integerValue)!==e.size||f.migrationStatus?.stringValue!=='firebase_storage')summary.errors.push({path:p,id:e.attachment.id,reason:'storage metadata mismatch'});
+        if(f.storageBucket?.stringValue!=='rugatha-trello.firebasestorage.app'||!f.storagePath?.stringValue?.startsWith(p+'/attachments/')||(f.url&& !f.url.stringValue?.startsWith('https://firebasestorage.googleapis.com/'))||Number(f.size?.integerValue)!==e.size||f.migrationStatus?.stringValue!=='firebase_storage')summary.errors.push({path:p,id:e.attachment.id,reason:'storage metadata mismatch'});
         summary.files++;
       }else{
         if(f.url?.stringValue!==e.attachment.url)summary.errors.push({path:p,id:e.attachment.id,reason:'external URL changed'});

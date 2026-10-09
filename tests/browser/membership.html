@@ -1,0 +1,48 @@
+<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><title>階段三 · Firefox 會員介面測試</title>
+<link rel="stylesheet" href="../../style.css">
+<style>body{padding:24px}#results{white-space:pre-wrap}button{margin:4px}</style>
+<script type="importmap">{"imports":{"/management.js":"/tests/browser/membership-fixture.js"}}</script>
+<h1>會員管理介面測試</h1><p>僅使用記憶體測試資料，不連接 Firebase。</p>
+<button id="manageMembers" hidden>會員管理</button><button id="run">執行介面回歸測試</button>
+<button id="owner">Owner</button><button id="viewer">Viewer／撤權</button><button id="failure">下次儲存失敗</button>
+<pre id="results" role="status">等待測試</pre><dialog id="membershipDialog" class="modal" aria-label="會員管理"></dialog>
+<script type="module">
+import {fixture} from './membership-fixture.js';
+window.boardlyGoogleUser={memberId:'owner',workspaceRole:'owner'};
+await import('../../membership-ui.js');
+const $=s=>document.querySelector(s), tick=()=>new Promise(r=>setTimeout(r,30));
+function role(value){window.boardlyGoogleUser={memberId:value,workspaceRole:value};window.dispatchEvent(new Event('boardly-auth-changed'));}
+$('#owner').onclick=()=>role('owner');$('#viewer').onclick=()=>role('viewer');$('#failure').onclick=()=>fixture.fail=true;
+$('#run').onclick=async()=>{
+ const results=[];const check=(ok,message)=>{if(!ok)throw Error(message);results.push('PASS '+message);$('#results').textContent=results.join('\n');};
+ try{
+ fixture.reset();
+ role('viewer');check($('#manageMembers').hidden,'Viewer 看不到管理入口');
+ role('owner');$('#manageMembers').click();await tick();check($('#membershipDialog').open,'Owner 開啟名冊');
+ check(document.querySelectorAll('.membership-row').length===2,'載入會員列表');
+ const find=text=>Array.from(document.querySelectorAll('#membershipDialog button')).find(b=>b.textContent===text);
+ find('邀請會員').click();$('#membership-name').value='<img src=x onerror=alert(1)>';$('#membership-email').value='new@example.com';
+ fixture.fail=true;document.querySelector('form').requestSubmit();await tick();
+ check(document.querySelector('[role=alert]').textContent.includes('離線'),'失敗顯示錯誤並保留表單');
+ const failed=fixture.requests.at(-1);document.querySelector('form').requestSubmit();await tick();
+ check(fixture.requests.at(-1).requestId===failed.requestId,'重試沿用識別碼');
+ check(fixture.members.at(-1).status==='pending','邀請預設待核准');
+ check(!document.querySelector('#membershipDialog img'),'名稱以文字呈現，不執行 HTML');
+ Array.from(document.querySelectorAll('.membership-row button')).at(-1).click();$('#membership-status').value='active';document.querySelector('form').requestSubmit();await tick();
+ check(fixture.members.at(-1).status==='active','核准會員成功');
+ Array.from(document.querySelectorAll('.membership-row button')).at(-1).click();$('#membership-role').value='editor';document.querySelector('fieldset input').checked=true;document.querySelector('form').requestSubmit();await tick();
+ check(fixture.members.at(-1).role==='editor' && fixture.members.at(-1).accessboard.includes('board'),'調整角色與看板授權');
+ role('admin');$('#manageMembers').click();await tick();
+ check(document.querySelector('.membership-row button').disabled,'Admin 無法編輯 Owner');
+ Array.from(document.querySelectorAll('.membership-row button')).at(-1).click();
+ check(!Array.from($('#membership-role').options).some(o=>['owner','admin'].includes(o.value)),'Admin 角色選單不提供提升管理權');
+ role('owner');$('#manageMembers').click();await tick();
+ Array.from(document.querySelectorAll('.membership-row button')).at(-1).click();$('#membership-status').value='disabled';document.querySelector('form').requestSubmit();await tick();
+ check(fixture.members.at(-1).status==='disabled','停用會員成功');
+ role('viewer');check(!$('#membershipDialog').open && !$('#membershipDialog').textContent,'撤權立即清除管理資料');
+ role('owner');fixture.delay=true;$('#manageMembers').click();await tick();role('viewer');fixture.resolve();await tick();
+ check(!$('#membershipDialog').open && !$('#membershipDialog').textContent,'舊名冊回應不能恢復撤權後畫面');
+ role('owner');$('#results').textContent=results.join('\n')+'\n完成：'+results.length+' 項通過';
+ }catch(error){$('#results').textContent=results.join('\n')+'\nFAIL '+error.message;}
+};
+</script></html>

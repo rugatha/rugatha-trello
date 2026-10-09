@@ -1,0 +1,30 @@
+<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><title>階段四 · Firefox 附件介面測試</title>
+<link rel="stylesheet" href="../../style.css"><style>body{padding:24px}#results{white-space:pre-wrap}button{margin:4px}</style>
+<script type="importmap">{"imports":{"../../attachment-client.js":"./attachment-fixture.js"}}</script>
+<h1>附件介面測試</h1><p>僅使用記憶體測試資料，不連接 Firebase。</p>
+<button id="run">執行附件介面測試</button><input id="file" type="file" multiple><p id="status" role="status"></p><button id="retry" hidden>重試</button><div id="images"></div><pre id="results">等待測試</pre>
+<script type="module">
+import {fixture} from './attachment-fixture.js';
+import {bindAttachmentUpload,hydrateAttachmentImages,clearAttachmentUI,downloadAttachment} from '../../attachment-ui.js';
+const $=id=>document.getElementById(id),tick=()=>new Promise(r=>setTimeout(r,30));
+$('run').onclick=async()=>{
+const results=[],check=(value,name)=>{if(!value)throw Error(name);results.push('PASS '+name);};let allowed=true,current=true,busy=false,complete=0;
+try{
+fixture.calls=[];bindAttachmentUpload({input:$('file'),status:$('status'),retry:$('retry'),boardId:'board',cardId:'card',canEdit:()=>allowed,isCurrent:()=>current,busy:v=>{busy=v;},complete:async()=>complete++});
+const select=names=>{const data=new DataTransfer();names.forEach(name=>data.items.add(new File(['test'],name,{type:'text/plain'})));$('file').files=data.files;$('file').dispatchEvent(new Event('change'));};
+fixture.fail=true;select(['a.txt','b.txt']);await tick();
+check($('status').textContent.includes('測試連線失敗'),'失敗原因持續顯示');check(!$('retry').hidden&&!busy,'失敗解除鎖定並可重試');
+const first=fixture.calls[0].requestId;$('retry').click();await tick();
+check(fixture.calls[1].requestId===first,'重試沿用原附件 ID');check(fixture.calls.length===3,'批次重試只接續未完成檔案');check(complete===1,'全部完成後只重新載入一次');check($('status').textContent==='附件已儲存','完成狀態正確');
+allowed=false;select(['viewer.txt']);await tick();check(fixture.calls.length===3,'Viewer 不啟動上傳');allowed=true;
+let resolve;fixture.held=new Promise(r=>resolve=r);select(['slow.txt']);await tick();check(busy,'上傳期間鎖定編輯');resolve();fixture.held=null;await tick();check(!busy,'上傳完成解除鎖定');
+$('images').innerHTML='<img data-storage-path="private/file" alt="測試圖片">';hydrateAttachmentImages();await tick();check($('images').firstChild.src.startsWith('blob:'),'預覽使用 Blob URL');check($('images').firstChild.naturalWidth===1,'Firefox 成功解碼授權圖片');
+const count=fixture.downloads;hydrateAttachmentImages();await tick();check(fixture.downloads===count,'同一圖片不重複下載');$('images').replaceChildren();hydrateAttachmentImages();check(fixture.released.length>0,'移除圖片時釋放 Blob URL');
+clearAttachmentUI();check(fixture.clear>0,'撤權會清除附件存取');
+let release;fixture.held=new Promise(r=>release=r);select(['old-account.txt','must-not-upload.txt']);await tick();const beforeSwitch=fixture.calls.length;current=false;clearAttachmentUI();release();fixture.held=null;await tick();check(fixture.calls.length===beforeSwitch,'切換帳號後停止舊批次');check($('status').textContent.includes('存取權限已變更'),'舊批次不回報成功');current=true;
+let unblock;fixture.held=new Promise(r=>unblock=r);select(['original.txt']);await tick();select(['replacement.txt']);unblock();fixture.held=null;await tick();check(fixture.calls.at(-1).file.name==='original.txt','上傳期間不可覆蓋批次佇列');
+const releases=fixture.released.length;await downloadAttachment({storagePath:'private/file',name:'attachment-test.png'});await new Promise(r=>setTimeout(r,1100));check(fixture.released.length>releases,'下載後釋放 Blob URL');
+$('results').textContent=results.join('\n')+'\n完成：'+results.length+' 項通過';
+}catch(error){$('results').textContent=results.join('\n')+'\nFAIL '+error.message;}
+};
+</script></html>

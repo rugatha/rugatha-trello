@@ -28,9 +28,9 @@ before(async()=>{
       [card+'/checklist/item']:{text:'Task',done:false},
       [card+'/attachments/file']:{name:'File',archived:false},
     };
-    for(const id of [...roles,'disabled','outsider']){
+    for(const id of [...roles,'disabled','pending','outsider']){
       data[root+'/memberLookup/'+id+'@example.com']={memberId:id};
-      data[root+'/members/'+id]={id,name:id,role:roles.includes(id)?id:'editor',status:id==='disabled'?'disabled':'active',accessboard:id==='outsider'?[]:['allowed']};
+      data[root+'/members/'+id]={id,name:id,role:roles.includes(id)?id:'editor',status:['disabled','pending'].includes(id)?id:'active',accessboard:id==='outsider'?[]:['allowed']};
       data[card+'/comments/'+id]={memberId:id,text:'Comment'};
     }
     for(const [path,value] of Object.entries(data))await setDoc(doc(db,path),value);
@@ -60,7 +60,7 @@ for(const role of roles){
     await assertFails(deleteDoc(doc(db,card+'/attachments/file')));
   });
 }
-for(const id of ['anonymous','unapproved','disabled','outsider','unverified']){
+for(const id of ['anonymous','unapproved','pending','disabled','outsider','unverified']){
   test(id+': cannot read or modify restricted board data',async()=>{
     const db=id==='anonymous'?env.unauthenticatedContext().firestore():dbFor(id==='unverified'?'editor':id,id!=='unverified');
     for(const path of [board,board+'/columns/column',card,card+'/comments/owner',card+'/checklist/item',card+'/attachments/file']){
@@ -185,4 +185,14 @@ test('clients cannot forge management operation receipts or grant board access',
     await assertFails(getDoc(doc(db,root+'/managementRequests/forged')));
     await assertFails(updateDoc(doc(db,root+'/members/'+role),{accessboard:['allowed','forbidden']}));
   }
+});
+
+test('private membership documents are self-only, including for managers',async()=>{
+ for(const role of roles){
+  const db=dbFor(role);
+  await assertSucceeds(getDoc(doc(db,root+'/members/'+role)));
+  await assertFails(getDoc(doc(db,root+'/members/'+(role==='owner'?'viewer':'owner'))));
+  await assertFails(getDocs(collection(db,root+'/members')));
+  await assertFails(getDocs(collection(db,root+'/managementRequests')));
+ }
 });

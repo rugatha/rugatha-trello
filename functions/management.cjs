@@ -26,14 +26,14 @@ function requestId(value) {
 }
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 function createManagement(db) {
-  async function actor(tx, auth) {
+  async function actor(tx, auth, management = true) {
     const email=auth?.token?.email;
     if (!auth?.uid || auth.token.email_verified!==true || typeof email!=='string' || !email.includes('@') || email.includes('/')) fail('unauthenticated','請使用已驗證的 Google 帳號登入');
     const lookup=await tx.get(db.doc(`${ROOT}/memberLookup/${email.toLowerCase()}`));
     if (!lookup.exists) fail('permission-denied','尚未取得工作空間權限');
     const memberRef=db.doc(`${ROOT}/members/${id(lookup.data().memberId)}`);
     const member=await tx.get(memberRef), data=member.data();
-    if (!member.exists || data.status!=='active' || !['owner','admin'].includes(data.role) || !Array.isArray(data.accessboard)) fail('permission-denied','此操作僅限有效的 Owner／Admin');
+    if (!member.exists || data.status!=='active' || (management && !['owner','admin'].includes(data.role)) || !Array.isArray(data.accessboard)) fail('permission-denied','此操作僅限有效的 Owner／Admin');
     return {...data,id:member.id,ref:memberRef};
   }
   async function cardContext(tx, member, boardId, cardId) {
@@ -52,6 +52,83 @@ function createManagement(db) {
     return snapshot.data().result;
   }
   return {
+    async displayMembers(auth, data) {
+      input(data, []);
+      return db.runTransaction(async tx => {
+        await actor(tx, auth, false);
+        const snapshot = await tx.get(db.collection(`${ROOT}/members`));
+        return {members: snapshot.docs.map(d => ({id:d.id, name:d.data().name || '未設定名稱'}))};
+      });
+    },
+    async membershipDirectory(auth, data) {
+      input(data, []);
+      return db.runTransaction(async tx => {
+        const manager = await actor(tx, auth);
+        const [members, boards] = await Promise.all([
+          tx.get(db.collection(`${ROOT}/members`)), tx.get(db.collection(`${ROOT}/boards`))
+        ]);
+        return {
+          members:members.docs.map(d => ({id:d.id, name:d.data().name || '未設定名稱',
+            emails:d.data().emails || [], role:d.data().role, status:d.data().status,
+            accessboard:d.data().accessboard || []})),
+          boards:boards.docs.filter(d => manager.role === 'owner' || manager.accessboard.includes(d.id))
+            .map(d => ({id:d.id, name:d.data().name || d.id, archived:!!d.data().archived}))
+        };
+      });
+    },
+    async saveMembership(auth, data) {
+      input(data, ['requestId','memberId','email','name','role','status','accessboard','expected']);
+      const operationId=requestId(data.requestId), creating=data.memberId === undefined;
+      const memberId=creating ? `invited-${operationId}` : id(data.memberId);
+      if (!['owner','admin','editor','viewer','member'].includes(data.role) ||
+          !['pending','active','disabled'].includes(data.status)) fail('invalid-argument','角色或狀態不正確');
+      const accessboard=ids(data.accessboard,200);
+      let email, name;
+      if (creating) {
+        email=typeof data.email==='string'?data.email.trim().toLowerCase():'';
+        name=typeof data.name==='string'?data.name.trim():'';
+        if (!/^[^\s/@]+@[^\s/@]+\.[^\s/@]+$/.test(email) || email.length>254 || !name || name.length>40 || data.status!=='pending' || data.expected!==undefined)
+          fail('invalid-argument','邀請需要有效信箱、名稱及待核准狀態');
+      } else {
+        if (data.email!==undefined || data.name!==undefined) fail('invalid-argument','此操作不可修改會員信箱或名稱');
+        input(data.expected,['role','status','accessboard']);
+        if (!data.expected || !Array.isArray(data.expected.accessboard)) fail('invalid-argument','缺少原始會員授權');
+      }
+      const payload={memberId,role:data.role,status:data.status,accessboard,...(creating?{email,name}:{expected:data.expected})};
+      return db.runTransaction(async tx => {
+        const manager=await actor(tx,auth),op=operation(auth,operationId,'saveMembership',payload);
+        const previous=await tx.get(op.ref),result=replay(previous,op.fingerprint);
+        if(result)return result;
+        const ref=db.doc(`${ROOT}/members/${memberId}`),snapshot=await tx.get(ref),old=snapshot.data();
+        if (creating ? snapshot.exists : !snapshot.exists) fail('failed-precondition','會員不存在或邀請已存在');
+        if (!creating && (old.role!==data.expected.role || old.status!==data.expected.status || !equalIds(old.accessboard,data.expected.accessboard)))
+          fail('aborted','其他管理員已修改此會員；請重新載入名單');
+        if (manager.role!=='owner' && (['owner','admin'].includes(data.role) || (!creating && ['owner','admin'].includes(old.role))))
+          fail('permission-denied','只有 Owner 可管理 Owner／Admin');
+        const changedBoards=[...new Set([...(old?.accessboard || []),...accessboard])]
+          .filter(b => (old?.accessboard || []).includes(b)!==accessboard.includes(b));
+        if (manager.role!=='owner' && changedBoards.some(b=>!manager.accessboard.includes(b)))
+          fail('permission-denied','不可調整自己無權存取的看板');
+        const boards=await Promise.all(accessboard.map(b=>tx.get(db.doc(`${ROOT}/boards/${b}`))));
+        if(boards.some(b=>!b.exists))fail('failed-precondition','授權看板不存在');
+        if (!creating && old.role==='owner' && old.status==='active' && (data.role!=='owner' || data.status!=='active')) {
+          const owners=await tx.get(db.collection(`${ROOT}/members`).where('role','==','owner'));
+          if(!owners.docs.some(d=>d.id!==memberId && d.data().status==='active'))fail('failed-precondition','必須保留至少一位有效 Owner');
+        }
+        let lookup;
+        if(creating){
+          lookup=db.doc(`${ROOT}/memberLookup/${email}`);
+          if((await tx.get(lookup)).exists)fail('already-exists','此信箱已對應會員，請編輯原會員');
+        }
+        const now=new Date().toISOString();
+        const patch={role:data.role,status:data.status,accessboard,updatedBy:manager.id,updatedAt:now};
+        if(creating){tx.create(ref,{id:memberId,name,emails:[email],...patch,createdAt:now});tx.create(lookup,{memberId});}
+        else tx.update(ref,patch);
+        const saved={memberId};
+        tx.create(op.ref,{kind:'saveMembership',actorId:manager.id,fingerprint:op.fingerprint,result:saved,createdAt:now});
+        return saved;
+      });
+    },
     async listMembers(auth, data) {
       input(data,['boardId','cardId']);
       const forCard=data.boardId!==undefined || data.cardId!==undefined;

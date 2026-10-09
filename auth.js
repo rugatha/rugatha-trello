@@ -1,6 +1,7 @@
+import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-functions.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
 import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
-import { getFirestore, collection, doc, getDocFromServer, getDocsFromServer, onSnapshot, updateDoc } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
+import { getFirestore, doc, getDocFromServer, onSnapshot, updateDoc } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyB6voURDiSOGPY4Anx-HBxaCy3ShaIGias',
@@ -60,8 +61,8 @@ async function loadMembership(user) {
   const snapshot = await getDocFromServer(ref);
   if (!snapshot.exists() || snapshot.data().status !== 'active') return null;
   const member = { ...snapshot.data(), id: snapshot.id };
-  const roster = await getDocsFromServer(collection(firestore, 'workspaces', 'main', 'members'));
-  member.roster = roster.docs.map(item => ({ id: item.id, name: item.data().name || item.id }));
+  const roster = await httpsCallable(getFunctions(app, 'asia-east1'), 'listDisplayMembers')({});
+  member.roster = roster.data.members;
   return member;
 }
 

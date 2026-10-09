@@ -98,3 +98,79 @@ test('simultaneous assignment edits commit one winner and reject the stale updat
  assert.equal(results.filter(x=>x.error==='ABORTED').length,1);
  const winner=results.find(x=>!x.error);assert.deepEqual((await ref.get()).data().assigneeIds,winner.assigneeIds);
 });
+
+const invite=(patch={})=>({requestId:randomUUID(),name:'Invited member',email:randomUUID()+'@example.com',role:'viewer',status:'pending',accessboard:['allowed'],...patch});
+async function change(memberId,patch={},who='owner') {
+ const data=(await db.doc(`${root}/members/${memberId}`).get()).data();
+ return call('saveManagedMembership',{requestId:randomUUID(),memberId,expected:{role:data.role,status:data.status,accessboard:data.accessboard},role:data.role,status:data.status,accessboard:data.accessboard,...patch},who);
+}
+for(const who of ['anonymous','unverified','unapproved','disabled','editor','viewer','member'])test(`${who} cannot read private directory or modify membership`,async()=>{
+ for(const [name,data] of [['listMembershipDirectory',{}],['saveManagedMembership',invite()]])assert.ok(['UNAUTHENTICATED','PERMISSION_DENIED'].includes((await call(name,data,who)).error));
+});
+test('display directory exposes only ID/name to active members',async()=>{
+ const result=await call('listDisplayMembers',{},'viewer');
+ assert.ok(result.members.length>0);
+ for(const member of result.members)assert.deepEqual(Object.keys(member).sort(),['id','name']);
+ for(const who of ['anonymous','unapproved','unverified','disabled'])assert.ok((await call('listDisplayMembers',{},who)).error);
+});
+test('invite is pending, normalized, atomic, idempotent and uniquely reserves email',async()=>{
+ const payload=invite({email:' New.Member@Example.com '}),result=await call('saveManagedMembership',payload);
+ assert.ok(result.memberId,JSON.stringify(result));
+ assert.deepEqual(await call('saveManagedMembership',payload),result);
+ const member=(await db.doc(`${root}/members/${result.memberId}`).get()).data();
+ assert.equal(member.status,'pending');assert.deepEqual(member.emails,['new.member@example.com']);
+ assert.equal((await db.doc(`${root}/memberLookup/new.member@example.com`).get()).data().memberId,result.memberId);
+ assert.equal((await call('saveManagedMembership',{...payload,requestId:randomUUID()})).error,'ALREADY_EXISTS');
+ assert.equal((await call('saveManagedMembership',{...payload,name:'Changed'})).error,'ALREADY_EXISTS');
+ assert.ok(!(await change(result.memberId,{status:'active'})).error);
+ assert.ok(!(await change(result.memberId,{status:'disabled'})).error);
+ assert.equal((await db.doc(`${root}/members/${result.memberId}`).get()).data().status,'disabled');
+ assert.ok(!(await change(result.memberId,{status:'active',role:'editor',accessboard:[]})).error);
+});
+test('admin cannot elevate or edit managers and cannot grant inaccessible boards',async()=>{
+ await db.doc(`${root}/members/admin`).update({accessboard:['allowed']});
+ for(const role of ['owner','admin'])assert.equal((await call('saveManagedMembership',invite({role}),'admin')).error,'PERMISSION_DENIED');
+ assert.equal((await change('owner',{status:'disabled'},'admin')).error,'PERMISSION_DENIED');
+ assert.equal((await change('admin',{role:'owner'},'admin')).error,'PERMISSION_DENIED');
+ assert.equal((await call('saveManagedMembership',invite({accessboard:['forbidden']}),'admin')).error,'PERMISSION_DENIED');
+ const invited=await call('saveManagedMembership',invite(),'admin');assert.ok(invited.memberId);
+ assert.ok(!(await change(invited.memberId,{status:'active'},'admin')).error);
+});
+test('last active owner cannot be disabled or demoted, even concurrently',async()=>{
+ // Earlier fixtures deliberately include an owner with no board access.
+ await db.doc(`${root}/members/outsider`).update({role:'viewer'});
+ await db.doc(`${root}/members/unverified`).update({role:'viewer'});
+ assert.equal((await change('owner',{status:'disabled'})).error,'FAILED_PRECONDITION');
+ assert.equal((await change('owner',{role:'viewer'})).error,'FAILED_PRECONDITION');
+ await db.doc(`${root}/members/second-owner`).set({name:'Second owner',role:'owner',status:'active',accessboard:[]});
+ const results=await Promise.all([change('owner',{role:'viewer'}),change('second-owner',{role:'viewer'})]);
+ assert.equal(results.filter(r=>!r.error).length,1);
+ const owners=await db.collection(`${root}/members`).where('role','==','owner').get();
+ assert.equal(owners.docs.filter(d=>d.data().status==='active').length,1);
+ await db.doc(`${root}/members/owner`).update({role:'owner'});
+});
+test('stale membership edits fail without overwriting changes; malformed requests write nothing',async()=>{
+ const created=await call('saveManagedMembership',invite()),memberId=created.memberId;
+ const payload={requestId:randomUUID(),memberId,expected:{role:'viewer',status:'pending',accessboard:['allowed']},role:'editor',status:'active',accessboard:['allowed']};
+ assert.ok(!(await call('saveManagedMembership',payload)).error);
+ assert.deepEqual(await call('saveManagedMembership',payload),{memberId});
+ assert.equal((await call('saveManagedMembership',{...payload,requestId:randomUUID(),role:'member'})).error,'ABORTED');
+ for(const patch of [{email:'../invalid'},{role:'superuser'},{status:'active'},{accessboard:['missing']},{accessboard:['allowed','allowed']},{name:''},{extra:true}])assert.ok((await call('saveManagedMembership',invite(patch))).error);
+});
+test('revoked manager cannot replay a previously authorized membership operation',async()=>{
+ const payload=invite(),result=await call('saveManagedMembership',payload,'admin');assert.ok(result.memberId);
+ await db.doc(`${root}/members/admin`).update({status:'disabled'});
+ assert.equal((await call('saveManagedMembership',payload,'admin')).error,'PERMISSION_DENIED');
+ await db.doc(`${root}/members/admin`).update({status:'active'});
+});
+test('private directory has explicit fields and limits admin board choices',async()=>{
+ const result=await call('listMembershipDirectory',{},'admin');
+ assert.deepEqual(result.boards.map(b=>b.id),['allowed']);
+ for(const m of result.members)assert.deepEqual(Object.keys(m).sort(),['accessboard','emails','id','name','role','status']);
+});
+test('concurrent invitations cannot create two members for one email',async()=>{
+ const payload=invite();
+ const results=await Promise.all([call('saveManagedMembership',payload),call('saveManagedMembership',{...payload,requestId:randomUUID()})]);
+ assert.equal(results.filter(r=>!r.error).length,1);
+ assert.equal(results.filter(r=>r.error==='ALREADY_EXISTS').length,1);
+});

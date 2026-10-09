@@ -14,6 +14,7 @@ async function setup(member = {name:'會員名稱',status:'active',role:'viewer'
   };
   const auth={currentUser:null};
   const api={
+    getFunctions:()=>({}),httpsCallable:()=>async()=>({data:{members:[{id:'m',name:member?.name}]}}),
     initializeApp:()=>({}),getAuth:()=>auth,getFirestore:()=>({}),GoogleAuthProvider:class{},
     onAuthStateChanged:(_,fn)=>onAuth=fn,signInWithPopup:async()=>{},
     signOut:async()=>{auth.currentUser=null;await onAuth(null);},
