@@ -22,7 +22,10 @@ const {PROJECT,cloudClient}=require('./cloud-client.cjs');
   console.log(JSON.stringify({phase:role,lookupAbsent:true,historicalMemberUnchanged:true}));return;
  }
  fields.role={stringValue:['pending','disabled','revoked','first-member'].includes(role)?'viewer':role};fields.status={stringValue:role==='pending'?'pending':role==='disabled'?'disabled':'active'};
- fields.accessboard={arrayValue:{values:role==='revoked'?[]:[{stringValue:boardId}]}};
+ const testIds=new Set(boards.documents.filter(d=>/^階段六(?:驗證| Admin 範圍驗證) 20261010$/.test(d.fields.name?.stringValue||'')).map(d=>d.name.split('/').at(-1)));
+ const priorIds=(current.fields.accessboard?.arrayValue?.values||[]).map(v=>v.stringValue).filter(id=>testIds.has(id));
+ const accessIds=role==='revoked'?priorIds.filter(id=>id!==boardId):[...new Set([boardId,...priorIds])];
+ fields.accessboard={arrayValue:{values:accessIds.map(id=>({stringValue:id}))}};
  let lookup;try{lookup=await request(base+before.lookup.name);}catch(e){if(!e.message.includes('HTTP 404'))throw e;}
  if(role==='first-member')fields.name={stringValue:''};
  const writes=[{update:{name:before.member.name,fields},updateMask:{fieldPaths:['role','status','accessboard',...(role==='first-member'?['name']:[])]},currentDocument:{updateTime:current.updateTime}}];

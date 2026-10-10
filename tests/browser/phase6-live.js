@@ -7,7 +7,7 @@ import {uploadAttachment} from '../../attachment-client.js';
 const root='workspaces/main', $=id=>document.getElementById(id), call=async(name,data)=>(await httpsCallable(getFunctions(auth.app,'asia-east1'),name)(data)).data;
 const results=[];const log=s=>{results.push(s);$('liveResults').textContent=results.slice(-8).join('\n');}, check=(condition,label)=>{if(!condition)throw Error('FAIL '+label);log('PASS '+label);};
 const member=()=>window.boardlyGoogleUser;
-let context=null,stopWatch=null,draft=null;
+let context=null,stopWatch=null,draft=null,assigneeDraft=null;
 async function denied(task,label,code='permission-denied'){try{await task();}catch(e){if(e.code===code||e.code==='functions/'+code){log('PASS '+label);return;}throw e;}throw Error('FAIL '+label+' 未拒絕');}
 async function locate(){
  const m=member();if(!m?.workspaceRole)throw Error('需有效會員');
@@ -57,7 +57,7 @@ button('liveData',async()=>{
  const before=await loadWorkspace({...m,accessboard:[context.boardId]}),card=before.boards[0].cards.find(c=>c.id===context.cardId);if(!card)throw Error('先執行管理測試');
  const id='phase6-'+crypto.randomUUID(),after=structuredClone(before),next=after.boards[0].cards.find(c=>c.id===context.cardId);next.comments.push({id,text:'雙帳號留言新增',at:new Date().toISOString(),userId:m.memberId});next.checklist.push({id,text:'雙帳號待辦',done:false,orderKey:'0'});
  await persistWorkspace(before,after,m.memberId);log('PASS 新增本人留言／待辦與父牌卡通知');
- const loaded=await loadWorkspace({...m,accessboard:[context.boardId]}),changed=structuredClone(loaded),c=changed.boards[0].cards.find(c=>c.id===context.cardId);c.comments.find(x=>x.id===id).text='雙帳號留言更新';c.checklist.find(x=>x.id===id).done=true;c.columnId=changed.boards[0].columns.find(x=>x.id!==c.columnId).id;c.orderKey='000000000001';
+ const loaded=await loadWorkspace({...m,accessboard:[context.boardId]}),changed=structuredClone(loaded),c=changed.boards[0].cards.find(c=>c.id===context.cardId);if(!c.comments.some(x=>x.id===id)||!c.checklist.some(x=>x.id===id)){const parent=await getDocFromServer(ref()),child=await getDocFromServer(doc(ref(),'comments',id));throw Error('寫入後重讀不一致 '+JSON.stringify({loadedComments:c.commentCount,loadedChecklist:c.checklistCount,loadedCommentRows:c.comments.length,serverComments:parent.data().commentCount,serverChecklist:parent.data().checklistCount,childExists:child.exists()}));}c.comments.find(x=>x.id===id).text='雙帳號留言更新';c.checklist.find(x=>x.id===id).done=true;c.columnId=changed.boards[0].columns.find(x=>x.id!==c.columnId).id;c.orderKey='000000000001';
  await persistWorkspace(loaded,changed,m.memberId);log('PASS 留言更新／待辦勾選／跨欄排序');
  await denied(()=>persistWorkspace(loaded,changed,m.memberId),'過期留言／待辦／排序衝突',undefined).catch(e=>{if(/其他成員|資料已變更/.test(e.message)){log('PASS 過期留言／待辦／排序衝突');}else throw e;});
  const latest=await loadWorkspace({...m,accessboard:[context.boardId]}),removed=structuredClone(latest),r=removed.boards[0].cards.find(c=>c.id===context.cardId);r.comments=r.comments.filter(x=>x.id!==id);r.checklist=r.checklist.filter(x=>x.id!==id);await persistWorkspace(latest,removed,m.memberId);log('PASS 刪除本人留言／待辦');
@@ -74,6 +74,15 @@ button('liveCommit',async()=>{
  const m=member();if(!draft||draft.uid!==m?.uid||draft.memberId!==m?.memberId)throw Error('請先在目前帳號建立草稿');
  try{await persistWorkspace(draft.before,draft.after,m.memberId);log('PASS 草稿成功寫入');}
  catch(e){if(!/其他成員|資料已變更/.test(e.message))throw e;log('PASS 另一帳號先寫入後，過期草稿遭衝突阻擋');}finally{draft=null;}
+});
+button('liveAssigneeDraft',async()=>{
+ await locate();const m=member();if(!['owner','admin'].includes(m.workspaceRole))throw Error('需管理權限');
+ assigneeDraft={requestId:crypto.randomUUID(),...context,assigneeIds:[m.memberId],expectedAssigneeIds:(await getDocFromServer(ref())).data().assigneeIds||[]};log('PASS 已建立尚未寫入的指派草稿');
+});
+button('liveAssigneeCommit',async()=>{
+ if(!assigneeDraft)throw Error('請先建立指派草稿');
+ try{await call('setManagedAssignees',assigneeDraft);log('PASS 指派草稿成功寫入');}
+ catch(e){if(e.code!=='functions/aborted')throw e;log('PASS 另一管理帳號先指派後，過期指派遭衝突阻擋');}finally{assigneeDraft=null;}
 });
 button('liveZero',async()=>{
  await locate();const m=member();if(!['owner','admin','editor'].includes(m.workspaceRole))throw Error('需編輯權限');
