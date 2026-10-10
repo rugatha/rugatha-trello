@@ -15,7 +15,7 @@ async function setup(member = {name:'會員名稱',status:'active',role:'viewer'
   const auth={currentUser:null};
   const api={
     getFunctions:()=>({}),httpsCallable:()=>async()=>({data:{members:[{id:'m',name:member?.name}]}}),
-    initializeApp:()=>({}),getAuth:()=>auth,getFirestore:()=>({}),GoogleAuthProvider:class{},
+    initializeApp:()=>({}),getAuth:()=>auth,getFirestore:()=>({}),GoogleAuthProvider:class{setCustomParameters(parameters){if(hooks.provider)hooks.provider(parameters);}},
     onAuthStateChanged:(_,fn)=>onAuth=fn,signInWithPopup:async()=>{},
     signOut:async()=>{auth.currentUser=null;await onAuth(null);},
     doc:(_, ...parts)=>parts.join('/'),collection:()=>({}),
@@ -204,4 +204,10 @@ for(const failure of [false,true])test('old theme '+(failure?'failure':'completi
 test('theme snapshots sync and revoked membership resets preference',async()=>{
  const h=await setup();await h.login();h.listeners[0].next(snapshot({name:'Member',status:'active',role:'viewer',theme:'dark'}));
  assert.equal(h.body.dataset.theme,'dark');h.listeners[0].next(snapshot(null));assert.equal(h.body.dataset.theme,'light');assert.equal(h.element('#personalTheme').disabled,true);
+});
+
+test('Google sign in offers account selection for real multi-account testing',async()=>{
+ let parameters;const h=await setup(undefined,{provider:p=>parameters=p});
+ await h.element('#googleSignIn').events.click();
+ assert.equal(parameters.prompt,'select_account');
 });

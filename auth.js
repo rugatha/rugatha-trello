@@ -179,7 +179,9 @@ onAuthStateChanged(auth, async user => {
 loginButton.addEventListener('click', async () => {
   loginButton.disabled = true;
   try {
-    await signInWithPopup(auth, new GoogleAuthProvider());
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({prompt:'select_account'});
+    await signInWithPopup(auth, provider);
   } catch (error) {
     if (error.code !== 'auth/popup-closed-by-user') {
       notify(error.code === 'auth/unauthorized-domain'
