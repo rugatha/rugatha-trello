@@ -5,7 +5,7 @@ import {getFunctions,httpsCallable} from 'https://www.gstatic.com/firebasejs/12.
 import {loadWorkspace,loadDeferredAttachmentArchives,restoreAttachment,persistWorkspace} from '../../storage.js';
 import {uploadAttachment} from '../../attachment-client.js';
 const root='workspaces/main', $=id=>document.getElementById(id), call=async(name,data)=>(await httpsCallable(getFunctions(auth.app,'asia-east1'),name)(data)).data;
-const log=s=>{$('liveResults').textContent+=s+'\n';}, check=(condition,label)=>{if(!condition)throw Error('FAIL '+label);log('PASS '+label);};
+const results=[];const log=s=>{results.push(s);$('liveResults').textContent=results.slice(-22).join('\n');}, check=(condition,label)=>{if(!condition)throw Error('FAIL '+label);log('PASS '+label);};
 const member=()=>window.boardlyGoogleUser;
 let context=null,stopWatch=null;
 async function denied(task,label,code='permission-denied'){try{await task();}catch(e){if(e.code===code||e.code==='functions/'+code){log('PASS '+label);return;}throw e;}throw Error('FAIL '+label+' 未拒絕');}
@@ -57,7 +57,7 @@ button('liveData',async()=>{
  const before=await loadWorkspace({...m,accessboard:[context.boardId]}),card=before.boards[0].cards.find(c=>c.id===context.cardId);if(!card)throw Error('先執行管理測試');
  const id='phase6-'+crypto.randomUUID(),after=structuredClone(before),next=after.boards[0].cards.find(c=>c.id===context.cardId);next.comments.push({id,text:'雙帳號留言新增',at:new Date().toISOString(),userId:m.memberId});next.checklist.push({id,text:'雙帳號待辦',done:false,orderKey:'0'});
  await persistWorkspace(before,after,m.memberId);log('PASS 新增本人留言／待辦與父牌卡通知');
- const loaded=await loadWorkspace({...m,accessboard:[context.boardId]}),changed=structuredClone(loaded),c=changed.boards[0].cards.find(c=>c.id===context.cardId);c.comments.find(x=>x.id===id).text='雙帳號留言更新';c.checklist.find(x=>x.id===id).done=true;c.columnId=changed.boards[0].columns[1].id;c.orderKey='000000000001';
+ const loaded=await loadWorkspace({...m,accessboard:[context.boardId]}),changed=structuredClone(loaded),c=changed.boards[0].cards.find(c=>c.id===context.cardId);c.comments.find(x=>x.id===id).text='雙帳號留言更新';c.checklist.find(x=>x.id===id).done=true;c.columnId=changed.boards[0].columns.find(x=>x.id!==c.columnId).id;c.orderKey='000000000001';
  await persistWorkspace(loaded,changed,m.memberId);log('PASS 留言更新／待辦勾選／跨欄排序');
  await denied(()=>persistWorkspace(loaded,changed,m.memberId),'過期留言／待辦／排序衝突',undefined).catch(e=>{if(/其他成員|資料已變更/.test(e.message)){log('PASS 過期留言／待辦／排序衝突');}else throw e;});
  const latest=await loadWorkspace({...m,accessboard:[context.boardId]}),removed=structuredClone(latest),r=removed.boards[0].cards.find(c=>c.id===context.cardId);r.comments=r.comments.filter(x=>x.id!==id);r.checklist=r.checklist.filter(x=>x.id!==id);await persistWorkspace(latest,removed,m.memberId);log('PASS 刪除本人留言／待辦');
@@ -79,4 +79,5 @@ button('liveOffline',async()=>{
  check((await getDocFromServer(ref())).exists(),'恢復連線後重試成功');
 });
 button('liveHide',async()=>{$('livePanel').hidden=true;});
+button('liveShow',async()=>{$('livePanel').hidden=false;});
 window.addEventListener('boardly-auth-changed',e=>log('AUTH '+(e.detail?.workspaceRole||'無權限')));
