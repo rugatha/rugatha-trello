@@ -1,6 +1,6 @@
 # 階段五：個人主題與介面驗證
 
-2026-10-10 完成階段五的本機開發與測試；四項清單在各自驗證通過後即時勾選。尚未部署前端與新版 Firestore 規則，正式站驗證留在階段六。
+2026-10-10 完成階段五的本機開發與測試；四項清單在各自驗證通過後即時勾選。本輪階段六已依相依順序部署前端與新版 Firestore 規則；正式站補驗另見 [階段六驗證](phase6-live-verification.md)。
 
 ## 個人主題
 
@@ -28,4 +28,4 @@ Firestore 規則僅允許已核准會員變更自己的 `name`／`theme`，主�
 
 重跑 Firefox：執行 `python3 scripts/serve-phase5-test.py`，以 Firefox 開啟 `http://127.0.0.1:8005/tests/browser/phase5.html`，依序點擊四個測試按鈕。伺服器由目前的 `index.html` 產生測試頁，載入真實 `auth.js`、`app.js`、`membership-ui.js` 與 `style.css`；Firebase、管理端點、看板及附件呼叫都透過 import map 導向記憶體替身，不連接正式 Firebase。測試資料與寫入僅存於該測試頁記憶體。
 
-這些檢查不等同實機手機、VoiceOver 語音播報或正式站驗證；尚未進行新版部署、正式 Firebase 偏好存取及跨瀏覽器實際登入驗證。這些工作留待階段六。
+這些檢查不等同實機手機、VoiceOver 語音播報或正式站驗證；新版部署已完成，正式 Firebase 偏好存取及跨瀏覽器實際登入補驗紀錄於階段六。
