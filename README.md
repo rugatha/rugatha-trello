@@ -68,3 +68,10 @@ Storage 路徑、20 MiB／MIME 限制與生命週期見 [Storage 設計](docs/st
 ### 階段四附件
 
 新附件採暫存上傳、可信任完成與原子計數；圖片預覽與下載使用 Firebase 身分驗證及短期 Blob URL。Storage 原檔封存保留、過期暫存由排程清理。架構與正式切換工具見 [Storage 設計](docs/storage-design.md)，測試與正式驗證進度見 [附件生命週期](docs/attachment-lifecycle.md)。
+
+
+### 階段五介面
+
+帳號設定提供 Firebase 個人明亮／深色主題，存於既有會員文件的 `theme`，同一會員不同信箱共用；不重複保存身分資料。共用看板配色維持原設計。統一 CSS 色彩變數與權限提示，改善手機排版、鍵盤焦點、對話框及欄位標籤。
+
+2026-10-10 通過 100 項應用回歸、35 項 Firestore 規則及 Firefox 104 項介面檢查。新版前端與主題規則尚未部署；階段五完成後停止，正式部署驗證留在階段六。設計、測試範圍與 Firefox 重跑方式見 [階段五介面驗證](docs/phase5-ux.md)。

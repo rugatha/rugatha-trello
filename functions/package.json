@@ -2,6 +2,25 @@
   "name": "rugatha-trello-functions",
   "private": true,
   "main": "index.cjs",
-  "engines": {"node": "22"},
-  "dependencies": {"firebase-admin": "^13.0.0", "firebase-functions": "^7.0.0"}
+  "engines": {
+    "node": "22"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.0",
+    "firebase-functions": "^7.0.0"
+  },
+  "overrides": {
+    "gaxios": {
+      "uuid": "11.1.1"
+    },
+    "teeny-request": {
+      "uuid": "11.1.1"
+    },
+    "@google-cloud/storage": {
+      "uuid": "11.1.1"
+    },
+    "google-gax": {
+      "uuid": "11.1.1"
+    }
+  }
 }

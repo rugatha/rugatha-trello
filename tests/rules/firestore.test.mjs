@@ -196,3 +196,16 @@ test('private membership documents are self-only, including for managers',async(
   await assertFails(getDocs(collection(db,root+'/managementRequests')));
  }
 });
+
+test('personal themes are self-only preset preferences without identity or privilege writes',async()=>{
+ for(const role of roles){
+  const ref=doc(dbFor(role),root+'/members/'+role);
+  for(const theme of ['dark','light'])await assertSucceeds(updateDoc(ref,{theme}));
+  for(const theme of ['system','#fff',null,1,{},['dark']])await assertFails(updateDoc(ref,{theme}));
+  await assertFails(updateDoc(ref,{theme:'dark',role:'owner',emails:['forged@example.com']}));
+ }
+ await assertSucceeds(updateDoc(doc(dbFor('alternate'),root+'/members/viewer'),{theme:'dark'}));
+ await assertFails(updateDoc(doc(dbFor('owner'),root+'/members/viewer'),{theme:'light'}));
+ for(const id of ['disabled','pending','unapproved'])await assertFails(updateDoc(doc(dbFor(id),root+'/members/'+id),{theme:'dark'}));
+ await assertFails(updateDoc(doc(env.unauthenticatedContext().firestore(),root+'/members/viewer'),{theme:'dark'}));
+});

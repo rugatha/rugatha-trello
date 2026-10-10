@@ -213,3 +213,22 @@ for(const rejects of [false,true])test(`old management ${rejects?'failure':'comp
  if(rejects)operation.reject(Error('old failure'));else operation.resolve({boardId:'new'});
  await pending;assert.equal(element('#syncStatus').textContent,'new status');assert.equal(api.canEdit(),true);
 });
+
+test('board creation completion survives its own membership refresh and selects the new board',async()=>{
+ const {api,element,window}=await setup({workspaceLoad:async(a,o,data)=>{const result=data();result.boards.push({...structuredClone(result.boards[0]),id:'new',name:'New board'});return result;}});
+ const actor={...owner('owner'),uid:'google-owner'};
+ await api.applyGoogleAccount(actor);
+ window.boardlyGoogleAuth={refreshMembership:async()=>{await api.applyGoogleAccount({...actor});}};
+ const operation=deferred();let reloaded=false;
+ const pending=api.runManagedWrite(()=>operation.promise,async result=>{reloaded=true;await window.boardlyGoogleAuth.refreshMembership();await api.refreshWorkspace(null,result.boardId);},true);
+ await api.applyGoogleAccount({...actor,accessboard:['b','new']});
+ operation.resolve({boardId:'new'});await pending;
+ assert.equal(reloaded,true);assert.equal(element('#boardTitle').textContent,'New board');
+});
+
+test('board completion after switching Google accounts for the same member cannot reload',async()=>{
+ const {api}=await setup();await api.applyGoogleAccount({...owner('owner'),uid:'first'});
+ const operation=deferred();const pending=api.runManagedWrite(()=>operation.promise,()=>assert.fail('stale account reload'),true);
+ await api.applyGoogleAccount({...owner('owner'),uid:'second'});
+ operation.resolve({boardId:'new'});await pending;
+});

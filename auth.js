@@ -23,9 +23,44 @@ let currentUser = null;
 let currentMember = null;
 let membershipVersion = 0;
 let stopMembership = null;
+let themeRequest = 0;
+let themeSaving = false;
+const themeSelect = document.querySelector('#personalTheme');
+const themeStatus = document.querySelector('#themeStatus');
+const validTheme = value => ['light', 'dark'].includes(value);
+function syncTheme() {
+  const theme = validTheme(currentMember?.theme) ? currentMember.theme : 'light';
+  document.body.dataset.theme = theme;
+  themeSelect.value = theme;
+  themeSelect.disabled = !currentMember || themeSaving;
+}
+
+themeSelect.addEventListener('change', async () => {
+  const theme = themeSelect.value;
+  if (!currentUser || !currentMember || themeSaving || !validTheme(theme)) { syncTheme(); return; }
+  const user = currentUser, memberId = currentMember.id, version = membershipVersion, request = ++themeRequest;
+  const isCurrent = () => currentUser === user && membershipVersion === version && currentMember?.id === memberId && request === themeRequest;
+  themeSaving = true;
+  themeSelect.disabled = true;
+  themeStatus.textContent = '正在儲存主題…';
+  try {
+    await updateDoc(doc(firestore, 'workspaces', 'main', 'members', memberId), { theme });
+    if (!isCurrent()) return;
+    currentMember.theme = theme;
+    themeStatus.textContent = '個人主題已儲存';
+  } catch (error) {
+    if (isCurrent()) themeStatus.textContent = '主題未儲存，請重試：' + error.message;
+  } finally {
+    if (isCurrent()) { themeSaving = false; syncTheme(); }
+  }
+});
+syncTheme();
 
 function resetMembership() {
   membershipVersion++;
+  themeRequest++;
+  themeSaving = false;
+  themeStatus.textContent = '';
   stopMembership?.();
   stopMembership = null;
   currentMember = null;
@@ -39,6 +74,8 @@ function notify(message) {
 }
 
 function publish(user, member = null) {
+  syncTheme();
+  const previous = JSON.stringify(window.boardlyGoogleUser);
   window.boardlyGoogleUser = user ? {
     uid: user.uid,
     email: user.email,
@@ -48,6 +85,7 @@ function publish(user, member = null) {
     accessboard: member?.accessboard || [],
     roster: member?.roster || []
   } : null;
+  if (previous === JSON.stringify(window.boardlyGoogleUser)) return;
   window.dispatchEvent(new CustomEvent('boardly-auth-changed', { detail: window.boardlyGoogleUser }));
 }
 

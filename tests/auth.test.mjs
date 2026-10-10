@@ -31,11 +31,11 @@ async function setup(member = {name:'會員名稱',status:'active',role:'viewer'
     updateDoc:async(path,patch)=>{if(hooks.updateDoc)await hooks.updateDoc();if(fail)throw Error('offline');writes.push({path,patch});Object.assign(member,patch);}
   };
   const window={dispatchEvent(){}};
-  const context=vm.createContext({document:{querySelector:element},window,setTimeout:()=>{},CustomEvent:class{}});
+  const context=vm.createContext({document:{querySelector:element,body:{dataset:{}}},window,setTimeout:()=>{},CustomEvent:class{}});
   const module=new vm.SourceTextModule(await fs.readFile(new URL('../auth.js',import.meta.url),'utf8'),{context});
   const dep=new vm.SyntheticModule(Object.keys(api),function(){for(const [key,value] of Object.entries(api))this.setExport(key,value);},{context});
   await module.link(()=>dep);await module.evaluate();
-  return {element,window,writes,reads,listeners,setFail:()=>fail=true,
+  return {element,window,body:context.document.body,writes,reads,listeners,setFail:()=>fail=true,
     async login(uid='u',overrides={}){const user={uid,email:uid+'@example.com',emailVerified:true,displayName:'Google 名稱',...overrides};auth.currentUser=user;await onAuth(user);},
     async save(name){element('#googleDisplayName').value=name;await element('#googleNameForm').events.submit({preventDefault(){}});}
   };
@@ -173,4 +173,35 @@ test('name save finishing after a role update preserves new permissions',async()
   assert.equal(h.window.boardlyGoogleUser.displayName,'Saved');
   assert.deepEqual(Array.from(h.window.boardlyGoogleUser.accessboard),['new']);
   assert.equal(h.element('#nameDialog').open,false);
+});
+
+for (const theme of ['light','dark']) test('personal '+theme+' theme persists on the existing member across emails',async()=>{
+  const h=await setup();await h.login();
+  h.element('#personalTheme').value=theme;await h.element('#personalTheme').events.change();
+  assert.deepEqual(JSON.parse(JSON.stringify(h.writes[0])),{path:'workspaces/main/members/m',patch:{theme}});
+  assert.equal(h.body.dataset.theme,theme);
+  await h.login('alternate');assert.equal(h.body.dataset.theme,theme);
+  await h.window.boardlyGoogleAuth.signOut();assert.equal(h.body.dataset.theme,'light');
+});
+test('theme failure restores saved preference and allows retry',async()=>{
+  const h=await setup({name:'Member',status:'active',theme:'dark'});await h.login();h.setFail();
+  h.element('#personalTheme').value='light';await h.element('#personalTheme').events.change();
+  assert.equal(h.body.dataset.theme,'dark');assert.equal(h.element('#personalTheme').value,'dark');
+  assert.equal(h.element('#personalTheme').disabled,false);assert.match(h.element('#themeStatus').textContent,/offline/);
+});
+test('unapproved and invalid themes do not write',async()=>{
+  const h=await setup(null);await h.login();h.element('#personalTheme').value='dark';await h.element('#personalTheme').events.change();
+  assert.equal(h.writes.length,0);assert.equal(h.element('#personalTheme').disabled,true);
+  const member=await setup();await member.login();member.element('#personalTheme').value='injected';await member.element('#personalTheme').events.change();
+  assert.equal(member.writes.length,0);
+});
+for(const failure of [false,true])test('old theme '+(failure?'failure':'completion')+' cannot change a new account',async()=>{
+  const pending=deferred();const h=await setup(undefined,{updateDoc:()=>pending.promise});await h.login('old');
+  h.element('#personalTheme').value='dark';const save=h.element('#personalTheme').events.change();await h.login('new');
+  if(failure)pending.reject(Error('old failure'));else pending.resolve();await save;
+  assert.equal(h.body.dataset.theme,'light');assert.equal(h.element('#themeStatus').textContent,'');assert.equal(h.element('#personalTheme').disabled,false);
+});
+test('theme snapshots sync and revoked membership resets preference',async()=>{
+ const h=await setup();await h.login();h.listeners[0].next(snapshot({name:'Member',status:'active',role:'viewer',theme:'dark'}));
+ assert.equal(h.body.dataset.theme,'dark');h.listeners[0].next(snapshot(null));assert.equal(h.body.dataset.theme,'light');assert.equal(h.element('#personalTheme').disabled,true);
 });

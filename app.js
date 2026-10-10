@@ -15,7 +15,7 @@ function me(){return state.users.find(u=>u.id===userId())}
 
 function board(){return state.boards.find(b=>b.id===state.activeBoard)||state.boards[0]}
 
-function avatar(u){return u?`<span class="avatar" style="background:#e4e9dd" title="${esc(u.name)}">${esc([...u.name].slice(0,1).join(''))}</span>`:''}
+function avatar(u){return u?`<span class="avatar" title="${esc(u.name)}">${esc([...u.name].slice(0,1).join(''))}</span>`:''}
 
 function overdue(c){return c.due&&!c.done&&new Date(c.due)<new Date()}
 
@@ -26,7 +26,7 @@ const boardColorNames=['森林綠','暖沙色','鼠尾草綠','奶茶色','玫�
 function applyBoardColor(value){
   const color=boardColors.includes(value)?value:boardColors[0];
   const dark=color===boardColors[0];
-  $('.main').style.cssText=`--board-bg:${color};--on-primary:${dark?'#f7f6f0':'#24352d'};--on-primary-muted:${dark?'#e0e7df':'#24352d'}`;
+  $('.main').style.cssText=`--board-bg:${color};--on-primary:${dark?'var(--board-light-ink)':'var(--board-dark-ink)'};--on-primary-muted:${dark?'var(--board-light-muted)':'var(--board-dark-ink)'}`;
 }
 function renderBoardNavigation(active) {
   const expanded = $('#archivedBoards')?.open || false;
@@ -39,7 +39,7 @@ function renderBoardNavigation(active) {
       <div>${archived.map(boardButton).join('')}</div>
     </details>` : '');
 }
-function render(){const b=board();if(!b){renderEmpty();return;}applyBoardColor(b.color);$('#boardTitle').textContent=b.name;$('#crumb').textContent=b.name;$('#boardDescription').textContent=b.description||'為團隊整理任務，讓進度清楚可見。';$('#starBoard').textContent=b.starred?'★':'☆';$('#starBoard').style.color=b.starred?'var(--on-primary)':'';$('#currentUser').innerHTML=avatar(me())+`<span class="user-name">${esc(me()?.name||'Google 登入')}</span><span class="muted">⌄</span>`;$('#headerMembers').innerHTML=state.users.slice(0,5).map(avatar).join('');renderBoardNavigation(b);const q=$('#search').value.trim().toLowerCase(),filter=$('#dueFilter').value;const visible=b.cards.filter(c=>(!q||(c.title+' '+c.description).toLowerCase().includes(q))&&(!mine||c.assignees.includes(userId()))&&(filter==='all'||filter==='none'&&!c.due||filter==='overdue'&&overdue(c)||filter==='week'&&c.due&&!c.done&&new Date(c.due)>=new Date()&&new Date(c.due)<=new Date(Date.now()+7*86400000)));$('#mineFilter').classList.toggle('filter-active',mine);$('#clearFilters').classList.toggle('hidden',!mine&&!q&&filter==='all');$('#boardStats').textContent=`${b.columns.length} 個階段 · ${b.cards.length} 張卡片${visible.length!==b.cards.length?' · 顯示 '+visible.length+' 張':''}`;$('#columns').innerHTML=b.columns.map((col,i)=>`<section class="column" data-col="${col.id}"><div class="column-head"><span class="board-dot" style="background:${['#9ba6b6','#455f56','#c8b58f','#8fa697'][i%4]}"></span><span class="grow">${esc(col.name)}</span><span class="count">${visible.filter(c=>c.columnId===col.id).length}</span><button data-edit-col="${col.id}" aria-label="編輯階段 ${esc(col.name)}" style="padding:2px 5px">⋯</button></div><div class="cards">${visible.filter(c=>c.columnId===col.id).map(cardHTML).join('')||'<div class="empty">'+(q||mine||filter!=='all'?'沒有符合篩選的卡片':'把想法放在這裡<br><br>拖曳卡片至此，或新增卡片')+'</div>'}</div><button class="add-card" data-add-card="${col.id}">＋ &nbsp; 新增卡片</button></section>`).join('')+'<button class="add-column" id="addColumn">＋ &nbsp; 新增階段</button>';bindBoard();applyPermissions();hydrateAttachmentImages()}
+function render(){const b=board();if(!b){renderEmpty();return;}applyBoardColor(b.color);$('#boardTitle').textContent=b.name;$('#crumb').textContent=b.name;$('#boardDescription').textContent=b.description||'為團隊整理任務，讓進度清楚可見。';$('#starBoard').textContent=b.starred?'★':'☆';$('#starBoard').style.color=b.starred?'var(--on-primary)':'';$('#currentUser').innerHTML=avatar(me())+`<span class="user-name">${esc(me()?.name||'Google 登入')}</span><span class="muted">⌄</span>`;$('#headerMembers').innerHTML=state.users.slice(0,5).map(avatar).join('');renderBoardNavigation(b);const q=$('#search').value.trim().toLowerCase(),filter=$('#dueFilter').value;const visible=b.cards.filter(c=>(!q||(c.title+' '+c.description).toLowerCase().includes(q))&&(!mine||c.assignees.includes(userId()))&&(filter==='all'||filter==='none'&&!c.due||filter==='overdue'&&overdue(c)||filter==='week'&&c.due&&!c.done&&new Date(c.due)>=new Date()&&new Date(c.due)<=new Date(Date.now()+7*86400000)));$('#mineFilter').classList.toggle('filter-active',mine);$('#clearFilters').classList.toggle('hidden',!mine&&!q&&filter==='all');$('#boardStats').textContent=`${b.columns.length} 個階段 · ${b.cards.length} 張卡片${visible.length!==b.cards.length?' · 顯示 '+visible.length+' 張':''}`;$('#columns').innerHTML=b.columns.map((col,i)=>`<section class="column" data-col="${col.id}"><div class="column-head"><span class="board-dot" style="background:${boardColors[i%boardColors.length]}"></span><span class="grow">${esc(col.name)}</span><span class="count">${visible.filter(c=>c.columnId===col.id).length}</span><button data-edit-col="${col.id}" aria-label="編輯階段 ${esc(col.name)}" style="padding:2px 5px">⋯</button></div><div class="cards">${visible.filter(c=>c.columnId===col.id).map(cardHTML).join('')||'<div class="empty">'+(q||mine||filter!=='all'?'沒有符合篩選的卡片':'把想法放在這裡<br><br>拖曳卡片至此，或新增卡片')+'</div>'}</div><button class="add-card" data-add-card="${col.id}">＋ &nbsp; 新增卡片</button></section>`).join('')+'<button class="add-column" id="addColumn">＋ &nbsp; 新增階段</button>';bindBoard();applyPermissions();hydrateAttachmentImages()}
 // Imported labels retain their names while using the existing readable palette.
 function labelOptions() {
   return {...Object.fromEntries(Object.entries(colors).map(([id,name])=>[id,{name,color:id}])),
@@ -47,7 +47,7 @@ function labelOptions() {
 }
 function labelHTML(id) {
   const label=labelOptions()[id];
-  return label ? `<span class="tag ${esc(label.color)}">${esc(label.name)}</span>` : '';
+  return label ? `<span class="tag ${Object.hasOwn(colors,label.color)?label.color:'purple'}">${esc(label.name)}</span>` : '';
 }
 function safeExternalURL(value) {
   if (typeof value !== 'string') return false;
@@ -80,6 +80,9 @@ function openUsers(){
       ?`工作空間權限：${roleNames[googleAccount.workspaceRole]||googleAccount.workspaceRole}`
       :'Google 登入成功；此帳號尚未取得工作空間成員權限。';
   }
+  $('#editGoogleName').disabled=!googleAccount?.memberId;
+  $('#displayMembers').hidden=!googleAccount?.memberId;
+  $('#displayMembers').innerHTML=googleAccount?.memberId ? '<h3>工作空間成員</h3><p class="help-note">此名冊僅供查閱；負責人請在牌卡內由 Owner／Admin 管理。</p>'+(googleAccount.roster||state.users).map(u=>`<div class="member-display">${avatar(u)}<span>${esc(u.name)}</span></div>`).join('') : '';
   if(!$('#userDialog').open)$('#userDialog').showModal();
 }
 async function applyGoogleAccount(account){
@@ -91,7 +94,7 @@ async function applyGoogleAccount(account){
   await refreshWorkspace();
 }
 window.addEventListener('boardly-auth-changed',event=>applyGoogleAccount(event.detail));
-function simple(title,body,onSubmit){managementRequest++;managementLoading=false;const d=$('#simpleDialog');d.innerHTML=`<form id="simpleForm"><div class="modal-head"><h2>${esc(title)}</h2><button type="button" data-close-simple aria-label="關閉">✕</button></div><div class="modal-body">${body}<div class="row" style="justify-content:flex-end;margin-top:22px"><button type="button" data-close-simple>取消</button><button class="primary" type="submit">儲存</button></div></div></form>`;$$('[data-close-simple]').forEach(el=>el.onclick=()=>d.close());$('#simpleForm').onsubmit=e=>{e.preventDefault();if(onSubmit()!==false)d.close()};d.showModal();applyPermissions()}
+function simple(title,body,onSubmit){managementRequest++;managementLoading=false;const d=$('#simpleDialog');d.innerHTML=`<form id="simpleForm"><div class="modal-head"><h2 id="simpleTitle">${esc(title)}</h2><button type="button" data-close-simple aria-label="關閉">✕</button></div><div class="modal-body">${body}<div class="row" style="justify-content:flex-end;margin-top:22px"><button type="button" data-close-simple>取消</button><button class="primary" type="submit">儲存</button></div></div></form>`;$$('[data-close-simple]').forEach(el=>el.onclick=()=>d.close());$('#simpleForm').onsubmit=e=>{e.preventDefault();if(onSubmit()!==false)d.close()};d.showModal();applyPermissions()}
 function editBoard(isNew=false){
   if(isNew){openManagedBoard();return;}
   if(!canEdit())return;
@@ -106,7 +109,7 @@ function editBoard(isNew=false){
 }
 function editColumn(id){const b=board(),col=b.columns.find(x=>x.id===id);simple(col?'編輯階段':'新增階段',`<div class="field"><label for="columnName">階段名稱</label><input id="columnName" class="full" required maxlength="50" value="${esc(col?.name||'')}"></div>${col?`<div class="field"><label for="columnPosition">欄位順序</label><select id="columnPosition" class="full">${b.columns.map((x,i)=>`<option value="${i}" ${x.id===id?'selected':''}>第 ${i+1} 欄</option>`).join('')}</select></div><button type="button" id="deleteColumn" class="danger">刪除此階段</button>`:''}`,()=>{const name=$('#columnName').value.trim();if(!name)return false;if(col){col.name=name;const pos=Number($('#columnPosition').value);b.columns=b.columns.filter(x=>x.id!==id);b.columns.splice(pos,0,col)}else b.columns.push({id:uid(),name});b.columns.forEach((item,i)=>item.orderKey=String(i).padStart(12,'0'));save();render()});if(col)$('#deleteColumn').onclick=()=>{if(b.columns.length===1){toast('至少保留一個階段');return}if(b.cards.some(c=>c.columnId===id)){toast('請先移動或刪除這個階段內的卡片');return}b.columns=b.columns.filter(x=>x.id!==id);save();render();$('#simpleDialog').close()}}
 function createCard(col){requireUser(()=>{simple('新增卡片',`<div class="field"><label for="newCardTitle">卡片標題</label><input id="newCardTitle" class="full" required maxlength="150" placeholder="接下來想完成什麼？"></div>`,()=>{const title=$('#newCardTitle').value.trim();if(!title)return false;const c={id:uid(),title,columnId:col||board().columns[0].id,description:'',labels:[],assignees:[],due:'',done:false,checklist:[],attachments:[],comments:[],createdAt:new Date().toISOString(),orderKey:'z'+Date.now()};board().cards.push(c);save();render();setTimeout(()=>openCard(c.id),0)})})}
-function openCard(id){const c=board().cards.find(x=>x.id===id);if(!c)return;currentCard=id;const d=$('#editor');d.innerHTML=`<div class="modal-head"><span class="muted">▤</span><input id="cardTitleInput" class="title-input" aria-label="卡片標題" maxlength="150" value="${esc(c.title)}"><button id="closeCard" aria-label="關閉卡片">✕</button></div><div class="modal-body"><div class="detail-grid"><div><div class="field"><label for="cardDescription">≡ &nbsp; 說明</label><textarea id="cardDescription" placeholder="加入更詳細的說明…">${esc(c.description)}</textarea></div><div class="field"><h3>☑ &nbsp; 待辦事項 <span id="checkCount" class="muted"></span></h3><div id="checklist"></div><form id="checkForm" class="row"><input id="checkText" class="grow" placeholder="新增待辦事項…" required maxlength="200"><button>＋</button></form></div><div class="field"><h3>♧ &nbsp; 附件</h3><div id="attachments"></div><label class="file-label" for="attachmentInput">＋ 上傳附件（每檔最多 20 MiB）</label><input id="attachmentInput" type="file" multiple><p id="attachmentStatus" role="status" class="help-note"></p><button id="retryAttachment" type="button" hidden>重試未完成附件</button></div><div class="field"><h3>☏ &nbsp; 留言與討論</h3><form id="commentForm"><textarea id="commentText" placeholder="分享進度或留下你的想法…" required maxlength="5000" style="min-height:75px"></textarea><div class="row between" style="margin-top:8px"><span class="small muted">以 ${esc(me()?.name||'尚未登入')} 的身分留言</span><button class="primary">送出留言</button></div></form><div id="comments"></div></div></div><div class="detail-side"><div class="field"><label for="cardStage">所在階段</label><select id="cardStage" class="full">${board().columns.map(col=>`<option value="${col.id}" ${c.columnId===col.id?'selected':''}>${esc(col.name)}</option>`).join('')}</select></div><div class="field"><h3>負責人</h3><button type="button" id="manageAssignees" class="pill">管理負責人</button><p class="help-note">負責人由 Owner／Admin 管理。</p>${state.users.map(u=>`<label class="row" style="margin:8px 0;font-weight:400"><input type="checkbox" data-assignee="${u.id}" ${c.assignees.includes(u.id)?'checked':''}>${avatar(u)}<span>${esc(u.name)}</span></label>`).join('')}</div><div class="field"><label for="cardDue">截止日期</label><input id="cardDue" class="full" type="datetime-local" value="${esc(localDue(c.due))}"><label class="row" style="margin-top:10px;font-weight:400"><input id="cardDone" type="checkbox" ${c.done?'checked':''}>已完成任務</label></div><div class="field"><h3>標籤</h3>${Object.entries(labelOptions()).map(([key,label])=>`<label class="row" style="margin:7px 0;font-weight:400"><input type="checkbox" data-label="${key}" ${c.labels.includes(key)?'checked':''}><span class="tag ${esc(label.color)}">${esc(label.name)}</span></label>`).join('')}</div><div class="field"><h3>操作</h3><button id="copyCard" title="副本不會保留負責人與附件" class="full pill" style="margin-bottom:8px">▣ 複製卡片</button><button id="deleteCard" class="full danger pill">封存卡片</button></div><p class="help-note">變更會自動儲存至 Firebase，請確認上方儲存狀態。<br>建立於 ${formatDate(c.createdAt,true)}</p></div></div></div>`;const update=()=>{save();render()};$('#cardTitleInput').onchange=e=>{const title=e.target.value.trim();if(!title){e.target.value=c.title;toast('標題不可為空');return}c.title=title;update()};$('#cardDescription').onchange=e=>{c.description=e.target.value;update()};$('#cardStage').onchange=e=>{c.columnId=e.target.value;update()};$('#cardDue').onchange=e=>{c.due=e.target.value;update()};$('#cardDone').onchange=e=>{c.done=e.target.checked;update()};$('#manageAssignees').onclick=()=>openManagedAssignees(c.id);$$('[data-label]').forEach(el=>el.onchange=()=>{c.labels=el.checked?[...c.labels,el.dataset.label]:c.labels.filter(l=>l!==el.dataset.label);update()});$('#closeCard').onclick=()=>d.close();$('#checkForm').onsubmit=e=>{e.preventDefault();const text=$('#checkText').value.trim();if(!text)return;c.checklist.push({id:uid(),text,done:false});$('#checkText').value='';renderChecklist(c);update()};$('#commentForm').onsubmit=e=>{e.preventDefault();requireUser(()=>{const text=$('#commentText').value.trim();if(!text)return;c.comments.push({id:uid(),userId:me().id,text,at:new Date().toISOString()});$('#commentText').value='';renderComments(c);update()})};$('#deleteCard').onclick=()=>{if(confirm(`封存「${c.title}」？資料會保留於雲端，可由管理員復原。`)){board().archivedCards||=[];board().archivedCards.push({id:c.id,title:c.title,columnId:c.columnId});board().cards=board().cards.filter(x=>x.id!==c.id);update();d.close()}};$('#copyCard').onclick=()=>{const n=structuredClone(c);n.id=uid();n.title+='（副本）';n.comments=[];n.assignees=[];n.attachments=[];n.archivedAttachments=[];n.coverId=null;n.createdAt=new Date().toISOString();n.orderKey='z'+Date.now();board().cards.push(n);update();openCard(n.id);toast('正在儲存卡片副本')};renderChecklist(c);renderAttachments(c);renderComments(c);
+function openCard(id){const c=board().cards.find(x=>x.id===id);if(!c)return;currentCard=id;const d=$('#editor');d.innerHTML=`<div class="modal-head"><span class="muted">▤</span><input id="cardTitleInput" class="title-input" aria-label="卡片標題" maxlength="150" value="${esc(c.title)}"><button id="closeCard" aria-label="關閉卡片">✕</button></div><div class="modal-body"><div class="detail-grid"><div><div class="field"><label for="cardDescription">≡ &nbsp; 說明</label><textarea id="cardDescription" placeholder="加入更詳細的說明…">${esc(c.description)}</textarea></div><div class="field"><h3>☑ &nbsp; 待辦事項 <span id="checkCount" class="muted"></span></h3><div id="checklist"></div><form id="checkForm" class="row"><input id="checkText" class="grow" aria-label="新增待辦事項" placeholder="新增待辦事項…" required maxlength="200"><button aria-label="新增待辦事項">＋</button></form></div><div class="field"><h3>♧ &nbsp; 附件</h3><div id="attachments"></div><label class="file-label" for="attachmentInput">＋ 上傳附件（每檔最多 20 MiB）</label><input id="attachmentInput" type="file" multiple><p id="attachmentStatus" role="status" class="help-note"></p><button id="retryAttachment" type="button" hidden>重試未完成附件</button></div><div class="field"><h3>☏ &nbsp; 留言與討論</h3><form id="commentForm"><textarea id="commentText" aria-label="留言內容" placeholder="分享進度或留下你的想法…" required maxlength="5000" style="min-height:75px"></textarea><div class="row between" style="margin-top:8px"><span class="small muted">以 ${esc(me()?.name||'尚未登入')} 的身分留言</span><button class="primary">送出留言</button></div></form><div id="comments"></div></div></div><div class="detail-side"><div class="field"><label for="cardStage">所在階段</label><select id="cardStage" class="full">${board().columns.map(col=>`<option value="${col.id}" ${c.columnId===col.id?'selected':''}>${esc(col.name)}</option>`).join('')}</select></div><div class="field"><h3>負責人</h3><button type="button" id="manageAssignees" class="pill" aria-describedby="assigneeHelp">管理負責人</button><p class="help-note" id="assigneeHelp">負責人由 Owner／Admin 管理；下方勾選僅顯示目前指派。</p>${state.users.map(u=>`<label class="row" style="margin:8px 0;font-weight:400"><input type="checkbox" data-assignee="${u.id}" ${c.assignees.includes(u.id)?'checked':''}>${avatar(u)}<span>${esc(u.name)}</span></label>`).join('')}</div><div class="field"><label for="cardDue">截止日期</label><input id="cardDue" class="full" type="datetime-local" value="${esc(localDue(c.due))}"><label class="row" style="margin-top:10px;font-weight:400"><input id="cardDone" type="checkbox" ${c.done?'checked':''}>已完成任務</label></div><div class="field"><h3>標籤</h3>${Object.entries(labelOptions()).map(([key,label])=>`<label class="row" style="margin:7px 0;font-weight:400"><input type="checkbox" data-label="${key}" ${c.labels.includes(key)?'checked':''}><span class="tag ${Object.hasOwn(colors,label.color)?label.color:'purple'}">${esc(label.name)}</span></label>`).join('')}</div><div class="field"><h3>操作</h3><button id="copyCard" title="副本不會保留負責人與附件" class="full pill" style="margin-bottom:8px">▣ 複製卡片</button><button id="deleteCard" class="full danger pill">封存卡片</button></div><p class="help-note">變更會自動儲存至 Firebase，請確認上方儲存狀態。<br>建立於 ${formatDate(c.createdAt,true)}</p></div></div></div>`;const update=()=>{save();render()};$('#cardTitleInput').onchange=e=>{const title=e.target.value.trim();if(!title){e.target.value=c.title;toast('標題不可為空');return}c.title=title;update()};$('#cardDescription').onchange=e=>{c.description=e.target.value;update()};$('#cardStage').onchange=e=>{c.columnId=e.target.value;update()};$('#cardDue').onchange=e=>{c.due=e.target.value;update()};$('#cardDone').onchange=e=>{c.done=e.target.checked;update()};$('#manageAssignees').onclick=()=>openManagedAssignees(c.id);$$('[data-label]').forEach(el=>el.onchange=()=>{c.labels=el.checked?[...c.labels,el.dataset.label]:c.labels.filter(l=>l!==el.dataset.label);update()});$('#closeCard').onclick=()=>d.close();$('#checkForm').onsubmit=e=>{e.preventDefault();const text=$('#checkText').value.trim();if(!text)return;c.checklist.push({id:uid(),text,done:false});$('#checkText').value='';renderChecklist(c);update()};$('#commentForm').onsubmit=e=>{e.preventDefault();requireUser(()=>{const text=$('#commentText').value.trim();if(!text)return;c.comments.push({id:uid(),userId:me().id,text,at:new Date().toISOString()});$('#commentText').value='';renderComments(c);update()})};$('#deleteCard').onclick=()=>{if(confirm(`封存「${c.title}」？資料會保留於雲端，可由管理員復原。`)){board().archivedCards||=[];board().archivedCards.push({id:c.id,title:c.title,columnId:c.columnId});board().cards=board().cards.filter(x=>x.id!==c.id);update();d.close()}};$('#copyCard').onclick=()=>{const n=structuredClone(c);n.id=uid();n.title+='（副本）';n.comments=[];n.assignees=[];n.attachments=[];n.archivedAttachments=[];n.coverId=null;n.createdAt=new Date().toISOString();n.orderKey='z'+Date.now();board().cards.push(n);update();openCard(n.id);toast('正在儲存卡片副本')};renderChecklist(c);renderAttachments(c);renderComments(c);
 const uploadVersion=generation,uploadBoard=board().id;
 bindAttachmentUpload({input:$('#attachmentInput'),status:$('#attachmentStatus'),retry:$('#retryAttachment'),boardId:uploadBoard,cardId:c.id,canEdit,isCurrent:()=>uploadVersion===generation,
  busy:value=>{if(uploadVersion===generation){saving=value;applyPermissions();}},
@@ -200,7 +203,7 @@ async function restoreArchived(type,id,cardId){
     }
   }
 }
-$('#editor').onclose=()=>{currentCard=null;flushLiveSync()};$('#currentUser').onclick=openUsers;$('#membersBtn').onclick=openUsers;$('#inviteBtn').onclick=openUsers;$('#closeUser').onclick=()=>$('#userDialog').close();$('#addBoard').onclick=()=>editBoard(true);$('#editBoard').onclick=()=>editBoard();$('#starBoard').onclick=()=>{board().starred=!board().starred;save();render()};$('#quickCreate').onclick=()=>createCard();$('#workspaceNav').onclick=()=>{mine=false;$('#search').value='';$('#dueFilter').value='all';render()};$('#search').oninput=render;$('#mineFilter').onclick=()=>requireUser(()=>{mine=!mine;render()});$('#dueFilter').onchange=render;$('#clearFilters').onclick=()=>{mine=false;$('#search').value='';$('#dueFilter').value='all';render()};
+$('#editor').onclose=()=>{const id=currentCard;currentCard=null;const source=$$('[data-card]').find(el=>el.dataset.card===id);if(source)source.focus?.();else $('#quickCreate').focus?.();flushLiveSync()};$('#currentUser').onclick=openUsers;$('#membersBtn').onclick=openUsers;$('#inviteBtn').onclick=openUsers;$('#closeUser').onclick=()=>$('#userDialog').close();$('#addBoard').onclick=()=>editBoard(true);$('#editBoard').onclick=()=>editBoard();$('#starBoard').onclick=()=>{board().starred=!board().starred;save();render()};$('#quickCreate').onclick=()=>createCard();$('#workspaceNav').onclick=()=>{mine=false;$('#search').value='';$('#dueFilter').value='all';render()};$('#search').oninput=render;$('#mineFilter').onclick=()=>requireUser(()=>{mine=!mine;render()});$('#dueFilter').onchange=render;$('#clearFilters').onclick=()=>{mine=false;$('#search').value='';$('#dueFilter').value='all';render()};
 let baseline=null, loading=false, saving=false, generation=0, saveFailure='';
 let stopSubscription=null, livePending=false, liveTimer=null, liveBoards=new Set();
 function stopLiveSync(){
@@ -244,10 +247,11 @@ async function openManagedBoard(){
     if(!payload.name)return;
     const signature=JSON.stringify(payload);if(signature!==lastPayload){lastPayload=signature;operationId=uid();}
     runManagedWrite(()=>createManagedBoard({...payload,requestId:operationId}),async result=>{
-      state.activeBoard=result.boardId;
+      const actor=googleAccount;
       if(window.boardlyGoogleAuth?.refreshMembership)await window.boardlyGoogleAuth.refreshMembership();
-      else await refreshWorkspace();
-    });
+      if(googleAccount?.uid!==actor?.uid || googleAccount?.memberId!==actor?.memberId)return;
+      await refreshWorkspace(null,result.boardId);
+    },true);
   };
   try{
     const {members}=await listManagementMembers({});
@@ -283,13 +287,13 @@ async function openManagedAssignees(cardId){
     if(request===managementRequest&&version===generation){$('#managementError').textContent=error.message;$('#managedMembers').textContent='指派載入失敗，請關閉後重新開啟。';}
   }
 }
-async function runManagedWrite(write,reload){
+async function runManagedWrite(write,reload,allowMembershipRefresh=false){
   if(!canManage())return;
-  const version=generation,request=managementRequest;
+  const version=generation,request=managementRequest,actor=googleAccount;
   saving=true;saveFailure='';applyPermissions();$('#managementError').textContent='';syncStatus('正在儲存管理設定…');
   try{
     const result=await write();
-    if(version!==generation)return;
+    if(version!==generation && !(allowMembershipRefresh && googleAccount?.uid===actor?.uid && googleAccount?.memberId===actor?.memberId && ['owner','admin'].includes(googleAccount?.workspaceRole)))return;
     saving=false;
     if(request===managementRequest)$('#simpleDialog').close();
     await reload(result);
@@ -312,7 +316,13 @@ function renderEmpty(){
 }
 function applyPermissions(){
   const edit=canEdit() && Boolean(board());
-  for(const selector of ['#quickCreate','#editBoard','#starBoard','#addColumn','[data-add-card]','[data-edit-col]'])$$(selector).forEach(el=>el.disabled=!edit);
+  const reason=loading?'正在載入，請稍候。':saving?'正在儲存，完成後可繼續編輯。':!googleAccount?'請先使用 Google 登入。':!googleAccount.memberId?'尚未取得工作空間權限；請聯絡 Owner／Admin 核准。':!board()?'沒有可存取的看板；請聯絡 Owner／Admin 調整看板權限。':!edit?'目前為唯讀：可閱讀與下載；編輯需 Owner／Admin／Editor 權限。':'';
+  $('#permissionNotice').textContent=reason;
+  $('#mineFilter').disabled=!googleAccount?.memberId;
+  $('#mineFilter').setAttribute?.('aria-pressed',String(mine));
+  $('#starBoard').setAttribute?.('aria-pressed',String(Boolean(board()?.starred)));
+  $('#currentUser').setAttribute?.('aria-label',googleAccount ? `帳號與個人設定：${googleAccount.displayName}` : '使用 Google 登入');
+  for(const selector of ['#quickCreate','#editBoard','#starBoard','#addColumn','[data-add-card]','[data-edit-col]'])$$(selector).forEach(el=>{el.disabled=!edit;el.title=edit?'':reason;});
   $('#addBoard').disabled=!canManage();$('#addBoard').title='Owner／Admin 可建立看板並選擇授權會員';
   $$('.card').forEach(el=>el.draggable=edit);
   $$('#editor input, #editor textarea, #editor select, #editor button').forEach(el=>{
@@ -336,8 +346,8 @@ function clearWorkspaceDialogs(){
   $('#editor').close();$('#simpleDialog').close();$('#archiveDialog').close();
   for(const id of ['editor','simpleDialog','archiveBoardName','archivedCards','archivedAttachments'])$('#'+id).replaceChildren();
 }
-async function refreshWorkspace(boardIds=null){
-  const version=++generation,account=googleAccount,active=state.activeBoard,previous=state;
+async function refreshWorkspace(boardIds=null,preferredBoard=null){
+  const version=++generation,account=googleAccount,active=preferredBoard||state.activeBoard,previous=state;
   const partial=Boolean(boardIds?.length && previous.boards.length);
   clearTimeout(liveTimer);liveTimer=null;livePending=false;liveBoards.clear();
   baseline=null;loading=true;
