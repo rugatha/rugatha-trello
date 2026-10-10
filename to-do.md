@@ -82,13 +82,13 @@
 
 雙帳號與 Viewer 的部分驗證使用 localhost 連接正式 Firebase；以下仍需在 GitHub Pages 補驗，不以模擬器結果替代。
 
-- [ ] 部署管理 Cloud Functions 與新版前端，以正式 Owner／Admin 驗證建立看板、指定會員可見範圍、指派／取消與雙帳號衝突；確認 Editor／Viewer 不可呼叫管理操作。
+- [x] 部署管理 Cloud Functions 與新版前端，以正式 Owner／Admin 驗證建立看板、指定會員可見範圍、指派／取消與雙帳號衝突；確認 Editor／Viewer 不可呼叫管理操作。2026-10-10 Firefox Pages Admin 建立只授權本人與 Owner 的三欄看板，自動選取成功，Chrome Owner 可見；Owner 指派／取消／重试通過，兩帳號同版本指派草稿由 Owner 先送出，Admin 過期請求回覆 aborted；Editor／Viewer 直接管理端點遭拒。
 - [x] 部署附件延遲載入與會員授權即時更新，確認線上版本並複測封存清單；包含零附件牌卡的封存附件復原。2026-10-10 前端／規則上線並核對雜湊；Chrome GitHub Pages Owner 驗證初次省略、延遲查詢與復原計數 1，Firefox GitHub Pages Viewer 可載入零附件牌卡的封存清單，復原控制停用；角色變更訂閱即時生效。見 [正式驗證](docs/phase6-live-verification.md)。
-- [ ] 雙帳號複測撤銷／還原單一看板、角色降級、會員停用及站內重新整理；確認舊內容清空，其他授權看板仍可載入。授權變動時會關閉編輯視窗，未送出草稿不保留。
+- [x] 雙帳號複測撤銷／還原單一看板、角色降級、會員停用及站內重新整理；確認舊內容清空，其他授權看板仍可載入。2026-10-10 Firefox Pages Editor 開啟未送出留言後降級 Viewer，視窗即時關閉，重開草稿為空；撤銷主測試看板後只剩第二隔離看板，停用後清空全部內容，恢復授權後站內重新整理成功；Chrome Owner 工作階段仍有效。角色設定由經授權的受限 CLI 腳本完成。
 - [x] 補齊正式站各角色矩陣：已登入但未核准、一般會員、Admin，以及 Viewer 對正式後端直接寫入的拒絕驗證。2026-10-10 Firefox Pages 實際帳號切換 Pending／Member／Viewer／Admin；前三者管理／写入拒絕、本人与他人私人文件限制通過；Admin 實際建立三欄隔離看板並指定 Owner，建立後自動選取新看板。見 [正式驗證](docs/phase6-live-verification.md)。
 - [x] 補驗 Viewer 接收 Owner 即時更新、實際拖曳阻擋及封存附件復原按鈕停用。2026-10-10 Chrome Pages Owner 寫入新標題後，Firefox Pages Viewer 無重新整理即顯示新標題；實際拖曳原欄位未變，伺服器欄位確認一致；零附件牌卡的封存附件復原按鈕停用。見 [正式驗證](docs/phase6-live-verification.md)。
 - [ ] 擴充雙帳號的留言新增／更新／刪除、待辦、排序與封存／復原同步及衝突；指派修改待管理端點部署後驗證。
-- [ ] 驗證首次登入、跨瀏覽器名稱修改及多信箱對應同一會員。
+- [ ] 驗證首次登入、跨瀏覽器名稱修改及多信箱對應同一會員。2026-10-10 依使用者要求以既有 Google 測試帳號暫設空白名稱，Firefox Pages 名稱設定／儲存／載入通過；這是首次工作區設定情境，不能當作全新 OAuth 帳號或實際多信箱驗證。
 - [ ] 部署後核對資料總數與抽樣內容，確認資料來自 Firestore，並完成離線／失敗重試回歸。
 
 ### 持續維護

@@ -11,7 +11,7 @@ let context=null,stopWatch=null,draft=null,assigneeDraft=null;
 async function denied(task,label,code='permission-denied'){try{await task();}catch(e){if(e.code===code||e.code==='functions/'+code){log('PASS '+label);return;}throw e;}throw Error('FAIL '+label+' 未拒絕');}
 async function locate(){
  const m=member();if(!m?.workspaceRole)throw Error('需有效會員');
- for(const id of m.accessboard){const b=await getDocFromServer(doc(firestore,`${root}/boards/${id}`));if(b.data()?.name==='階段六驗證 20261010'){context={boardId:id,cardId:'phase6-card'};return context;}}
+ for(const id of m.accessboard){const b=await getDocFromServer(doc(firestore,`${root}/boards/${id}`));if(b.data()?.name==='階段六驗證 20261010'){const cardId=$('liveCardId').value.trim();if(!/^phase6-(card|empty-card)$/.test(cardId))throw Error('只允許指定測試牌卡');context={boardId:id,cardId};return context;}}
  throw Error('此帳號沒有隔離測試看板');
 }
 const ref=()=>doc(firestore,`${root}/boards/${context.boardId}/cards/${context.cardId}`);
@@ -52,6 +52,12 @@ button('liveOwner',async()=>{
  log('PASS 邀請／核准／角色與看板調整／停用；虛構邀請已停用');
 });
 button('liveWatch',async()=>{await locate();stopWatch?.();let first=true;stopWatch=onSnapshot(ref(),s=>{const d=s.data();log((first?'SNAPSHOT ':'SYNC ')+JSON.stringify({title:d?.title,columnId:d?.columnId,archived:d?.archived,commentCount:d?.commentCount,checklistCount:d?.checklistCount,attachmentCount:d?.attachmentCount,assigneeIds:d?.assigneeIds}));first=false;},e=>log('WATCH '+e.code));});
+button('liveFresh',async()=>{
+ $('liveCardId').value='phase6-empty-card';await locate();const m=member();if(!['owner','admin'].includes(m.workspaceRole))throw Error('需管理權限');
+ if((await getDocFromServer(ref())).exists())throw Error('空白測試牌卡已存在；不可覆寫');
+ const columns=await getDocsFromServer(collection(firestore,`${root}/boards/${context.boardId}/columns`));
+ await setDoc(ref(),{title:'階段六零筆新增驗證',columnId:columns.docs[0].id,description:'',createdBy:m.memberId,updatedBy:m.memberId,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),assigneeIds:[],attachmentCount:0,checklistCount:0,commentCount:0,orderKey:'000000000002',archived:false});log('PASS 新建零留言／待辦的測試牌卡');
+});
 button('liveData',async()=>{
  await locate();const m=member();if(!['owner','admin','editor'].includes(m.workspaceRole))throw Error('需編輯權限');
  const before=await loadWorkspace({...m,accessboard:[context.boardId]}),card=before.boards[0].cards.find(c=>c.id===context.cardId);if(!card)throw Error('先執行管理測試');
@@ -98,6 +104,8 @@ button('liveOffline',async()=>{
  try{await getDocFromServer(ref());throw Error('FAIL 離線伺服器讀取成功');}catch(e){if(e.code!=='unavailable')throw e;log('PASS 離線伺服器讀取失敗');}finally{await enableNetwork(firestore);}
  check((await getDocFromServer(ref())).exists(),'恢復連線後重試成功');
 });
+button('liveDisconnect',async()=>{await disableNetwork(firestore);log('PASS 本頁資料連線已暫停');});
+button('liveReconnect',async()=>{await enableNetwork(firestore);log('PASS 本頁資料連線已恢復；可重新整理重試');});
 button('liveHide',async()=>{$('livePanel').hidden=true;});
 button('liveShow',async()=>{$('livePanel').hidden=false;});
 window.addEventListener('boardly-auth-changed',e=>log('AUTH '+(e.detail?.workspaceRole||'無權限')));
