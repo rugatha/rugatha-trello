@@ -124,3 +124,27 @@ GitHub API 本輪確認 repository 為 public、可見 fork 數為 0。正式 Pa
 新版 Pages run `37778158198` 已完成且成功，產物 `11551206718` 對應清理後 main。舊產物 `11496432980` 對應清理前提交，已下載為私人 `old-pages-artifact.zip`（221,011 bytes，SHA-256 `f976ea253715a0f5478202db8bd665ba64f55ff3068bed713b589cb3d4b0e3b6`）；檢查其中 Markdown 與產生的 HTML 仍含私人測試信箱。刪除曾被自動核准審查拒絕，因不可復原操作尚缺明確授權，目前等待使用者確認。
 
 GitHub Support 申請草稿位於私人 `attachments_export/stage-one-audit/run-20261008/github-support-draft.md`，尚未送出；對資料持有人的必要通知也尚未對外發送。完成判準為舊資料入口不可再讀取及通知處理完成，不以 force push 成功視為全部完成。
+
+## 2026-10-10 公開入口重測與阻礙更新
+
+階段一剩餘兩項不是無法測試，而是測試仍發現舊資料可匿名取得，且 GitHub 伺服器端清理與必要通知未完成。新增唯讀工具 `node scripts/audit-public-exposure.mjs`，只記錄 HTTP 狀態與公開清單、不儲存敏感回應內容；報告存於被忽略的私人目錄 `attachments_export/stage-one-audit/run-20261010/`。遇到網路錯誤、非預期狀態或盤點失敗，均不當作通過。
+
+本輪實際結果：
+
+| 入口 | 結果 |
+| --- | --- |
+| Pages 首頁 | 200 |
+| Pages `data.json`、會員 CSV、`import/3d.json`、`import-report.json`、`.DS_Store` | 全部 404 |
+| 最早提交的舊資料 raw 與 Contents API | **皆 200，仍公開可讀** |
+| 清理前最後提交的 `data.json` raw | 404；不能替代最早提交的結果 |
+| 已識別的舊 Pages 產物 `11496432980` | 404，且完整 artifacts 清單不含此 ID；無須再要求刪除此產物，消失原因未知 |
+| 匿名 Firestore 看板、會員、登入索引集合 | 全部 403 |
+| 公開 GitHub 分頁盤點 | 僅 main，無 tags、PR（含已關閉）、release、fork；3 個目前可見產物皆對應清理後提交 |
+
+先前舊產物私人備份 ZIP 的完整性與 SHA-256 重新核對通過。這次沒有刪除遠端產物或重新改寫歷史。其他目前產物未逐一下載檢查內容，不宣稱所有產物內容均已核對。
+
+工具語法檢查通過，實際連線檢查以退出碼 1 正確指出舊資料仍可讀；這是安全驗證未通過，不是測試工具無法執行。工具涵蓋已知入口與公開清單，不代表所有歷史物件或第三方副本均已排除。
+
+依本輪核對的 [GitHub 官方流程](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository)，歷史改寫後的伺服器物件垃圾回收與快取清除須由 GitHub Support 處理，是否符合受理條件由 GitHub 判定。私人 `run-20261010/github-support-draft.md` 已加入最新證據與使用 filter-branch 的說明；`data-holder-notification-draft.md` 已備妥通知內容。
+
+使用者於 2026-10-10 授權送出後，已透過登入的 GitHub Support 表單提交清理申請。介面確認提交成功，工單清單顯示新工單為開啟狀態；編號、連結及聯絡信箱保存於私人 `run-20261010/github-support-submitted.json`。申請要求僅清除舊敏感物件與快取，保留 repository、目前 main 與 Pages。使用者自己的信箱可作為 Support 聯絡人及管理者紀錄，但不能替代通知其他受影響資料持有人。尚未另行寄送通知，也未將私人信箱寫入此公開文件。剩餘順序為：追蹤 GitHub 處理、重跑入口檢查、確認並完成必要通知，再評估勾選；送出工單不代表曝光清除完成。

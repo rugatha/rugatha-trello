@@ -1,6 +1,6 @@
 # 看板建立與負責人管理
 
-本機實作與測試已完成；Cloud Functions 與新版前端尚未部署，正式站尚未驗證。權限依使用者決定：只有有效的 Owner／Admin 能建立看板或修改負責人，Editor 保持既有牌卡編輯能力，Viewer／一般會員唯讀。
+2026-10-10 Cloud Functions 與新版前端已部署，Chrome Owner／Firefox Admin 建立、授權範圍、指派／取消及雙帳號衝突通過；詳細結果見 [階段六驗證](phase6-live-verification.md)。權限依使用者決定：只有有效的 Owner／Admin 能建立看板或修改負責人，Editor 保持既有牌卡編輯能力，Viewer／一般會員唯讀。
 
 ## 操作方式
 
@@ -46,7 +46,7 @@ Firefox 另使用獨立本機虛構資料預覽，確認新增表單、授權勾
 
 ## 部署與回歸
 
-先部署後端，再發佈新版 GitHub Pages 前端。Functions 需專案符合 Blaze 與部署權限要求，參考 [Firebase 部署說明](https://firebase.google.com/docs/functions/get-started)。本輪未變更計費方案、啟用服務、部署端點或修改正式會員／看板。
+先部署後端，再發佈新版 GitHub Pages 前端。Functions 需專案符合 Blaze 與部署權限要求，參考 [Firebase 部署說明](https://firebase.google.com/docs/functions/get-started)。2026-10-10 已更新管理端點，僅以隔離看板和經使用者授權的測試會員驗證；未變更計費方案。
 
 ```sh
 # 於 Functions 依賴已安裝、專案與計費已確認後執行
@@ -55,4 +55,4 @@ npx firebase deploy --only functions:management --project rugatha-trello
 
 本輪無 Firestore 規則修改需要部署。端點尚未部署或無法連線時，前端顯示管理服務未就緒，不能完成操作。
 
-部署後需用正式 Owner／Admin 建立專用測試看板，確認指定 Viewer 可見而未指定會員不可見，並驗證指派／取消、即時同步、衝突及撤權後的拒絕。新看板授權會透過會員訂閱重新載入，可能在 callable 回應之前關閉建立視窗；此時以重新載入後的看板清單確認結果。測試資料的清理需限定新建的測試範圍，不能還原整份會員文件而覆蓋後續授權變更。
+部署後需用正式 Owner／Admin 建立專用測試看板，確認指定 Viewer 可見而未指定會員不可見，並驗證指派／取消、即時同步、衝突及撤權後的拒絕。新看板授權會透過會員訂閱重新載入，可能在 callable 回應之前關閉建立視窗；已修正同一會員授權更新的競態，正式建立後會自動選取新看板。測試資料的清理需限定新建的測試範圍，不能還原整份會員文件而覆蓋後續授權變更。
