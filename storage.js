@@ -1,11 +1,15 @@
 import { firestore } from './auth.js';
-import { collection, doc, getDocFromServer, getDocsFromServer, onSnapshot, runTransaction } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
+import { collection, doc, onSnapshot, runTransaction } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
+import {getFirestore as getReadFirestore, doc as readDoc, collection as readCollection, getDoc, getDocs} from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-lite.js';
 import { documents, changes } from './workspace-data.js';
 import { compareOrderKey } from './order-key.js';
+// One-shot reads use REST, independent of the live SDK's already-current query view.
+// The same Firebase app supplies Authentication and enforces the same security rules.
+const readFirestore = getReadFirestore(firestore.app);
 const root = 'workspaces/main/boards';
 const ordered = items => items.sort((a,b) => compareOrderKey(a.orderKey,b.orderKey));
 async function rows(path) {
-  const snapshot = await getDocsFromServer(collection(firestore, path));
+  const snapshot = await getDocs(readCollection(readFirestore, path));
   return ordered(snapshot.docs.map(item => ({...item.data(), id:item.id})));
 }
 export async function loadWorkspace(account, {previous,boardIds}={}) {
@@ -14,7 +18,7 @@ export async function loadWorkspace(account, {previous,boardIds}={}) {
   const boards = await Promise.all([...new Set(account.accessboard || [])].map(async id => {
     if(reload && !reload.has(id) && saved.has(id))return saved.get(id);
     const path = `${root}/${id}`;
-    const snapshot = await getDocFromServer(doc(firestore, path));
+    const snapshot = await getDoc(readDoc(readFirestore, path));
     if (!snapshot.exists()) return null;
     const [columns, cards] = await Promise.all([rows(`${path}/columns`), rows(`${path}/cards`)]);
     // Fetch in small groups to avoid flooding the connection with subcollection requests.

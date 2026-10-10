@@ -2,7 +2,7 @@
 import {auth,firestore} from '../../auth.js';
 import {doc,collection,getDocFromServer,getDocsFromServer,setDoc,updateDoc,deleteDoc,writeBatch,onSnapshot,disableNetwork,enableNetwork} from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import {getFunctions,httpsCallable} from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-functions.js';
-import {loadWorkspace,loadDeferredAttachmentArchives,restoreAttachment,persistWorkspace} from '../../storage.js';
+import {loadWorkspace,loadDeferredAttachmentArchives,restoreAttachment,persistWorkspace} from '../../storage.js?v=20261010-rest';
 import {uploadAttachment} from '../../attachment-client.js';
 const root='workspaces/main', $=id=>document.getElementById(id), call=async(name,data)=>(await httpsCallable(getFunctions(auth.app,'asia-east1'),name)(data)).data;
 const results=[];const log=s=>{results.push(s);$('liveResults').textContent=results.slice(-8).join('\n');}, check=(condition,label)=>{if(!condition)throw Error('FAIL '+label);log('PASS '+label);};

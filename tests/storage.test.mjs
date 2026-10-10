@@ -5,13 +5,14 @@ import fs from 'node:fs/promises';
 import {documents,changes} from '../workspace-data.js';
 import {compareOrderKey} from '../order-key.js';
 async function setup(remote,fail=false){
- const writes=[],listeners=[],reads=[];
+ const writes=[],listeners=[],reads=[],oldView=structuredClone(remote);
  const context=vm.createContext({console,Set,Map,Date,JSON,Promise,Error});
- const deps={firestore:{},documents,changes,compareOrderKey,collection:(_,path)=>path,doc:(_,path)=>path,
- getDocFromServer:async path=>{reads.push(path);return {exists:()=>remote.has(path),data:()=>remote.get(path)}},
- getDocsFromServer:async path=>{reads.push(path);return {docs:[...remote].filter(([key])=>key.startsWith(path+'/')&&key.split('/').length===path.split('/').length+1).map(([key,value])=>({id:key.split('/').at(-1),data:()=>value}))}},
+ const deps={firestore:{app:{}},getFirestore:()=>({}),documents,changes,compareOrderKey,collection:(_,path)=>path,doc:(_,path)=>path,
+ getDoc:async path=>{reads.push(path);return {exists:()=>remote.has(path),data:()=>remote.get(path)}},
+ getDocs:async path=>{reads.push(path);return {docs:[...remote].filter(([key])=>key.startsWith(path+'/')&&key.split('/').length===path.split('/').length+1).map(([key,value])=>({id:key.split('/').at(-1),data:()=>value}))}},
  onSnapshot:(path,next,error)=>{const listener={path,next,error,active:true};listeners.push(listener);return()=>{listener.active=false}},
  runTransaction:async(_,fn)=>{const pending=[];await fn({get:async path=>({exists:()=>remote.has(path),data:()=>remote.get(path)}),update:(...v)=>pending.push(['update',...v]),set:(...v)=>pending.push(['set',...v]),delete:(...v)=>pending.push(['delete',...v])});if(fail)throw Error('offline');writes.push(...pending);}};
+ deps.getDocFromServer=deps.getDoc;deps.getDocsFromServer=async path=>({docs:[...oldView].filter(([key])=>key.startsWith(path+'/')&&key.split('/').length===path.split('/').length+1).map(([key,value])=>({id:key.split('/').at(-1),data:()=>value}))});
  const mod=new vm.SourceTextModule(await fs.readFile(new URL('../storage.js',import.meta.url),'utf8'),{context});
  await mod.link(async()=>new vm.SyntheticModule(Object.keys(deps),function(){for(const [k,v]of Object.entries(deps))this.setExport(k,v);},{context}));await mod.evaluate();
  return {api:mod.namespace,writes,listeners,reads};
@@ -169,4 +170,17 @@ test('600 zero-attachment cards require no attachment queries during initial loa
  for(let i=0;i<600;i++)remote.set(root+'/cards/'+i,{title:'Card',attachmentCount:0,checklistCount:0,commentCount:0});
  const {api,reads}=await setup(remote);await api.loadWorkspace({accessboard:['b']});
  assert.equal(reads.length,3);assert.ok(!reads.some(path=>path.endsWith('/attachments')));
+});
+
+test('first child reload uses current server counts even when the live query view still has zero',async()=>{
+ const root='workspaces/main/boards/b',remote=new Map([[root,{name:'Board'}],[root+'/cards/c',{title:'Card',commentCount:0,checklistCount:0,attachmentCount:0}]]);
+ const {api,writes}=await setup(remote),account={accessboard:['b']};
+ const before=await api.loadWorkspace(account),after=structuredClone(before);
+ after.boards[0].cards[0].comments.push({id:'comment',text:'First',userId:'m'});
+ after.boards[0].cards[0].checklist.push({id:'task',text:'First',done:false});
+ await api.persistWorkspace(before,after,'m');
+ for(const [kind,path,payload] of writes){if(kind==='set')remote.set(path,payload);else if(kind==='update')Object.assign(remote.get(path),payload);}
+ const loaded=await api.loadWorkspace(account),card=loaded.boards[0].cards[0];
+ assert.equal(card.commentCount,1);assert.equal(card.checklistCount,1);
+ assert.equal(card.comments[0].text,'First');assert.equal(card.checklist[0].text,'First');
 });

@@ -1,6 +1,6 @@
 import {clearAttachmentUI,hydrateAttachmentImages,downloadAttachment,bindAttachmentUpload} from './attachment-ui.js';
 import { listManagementMembers, createManagedBoard, setManagedAssignees } from './management.js';
-import { loadWorkspace, subscribeWorkspace, persistWorkspace, restoreCard, restoreAttachment, loadDeferredAttachmentArchives } from './storage.js';
+import { loadWorkspace, subscribeWorkspace, persistWorkspace, restoreCard, restoreAttachment, loadDeferredAttachmentArchives } from './storage.js?v=20261010-rest';
 import { assignMovedOrderKey } from './order-key.js';
 // UI rendering, interaction handlers, and workspace state.
 'use strict';
