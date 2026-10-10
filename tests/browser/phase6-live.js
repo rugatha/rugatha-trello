@@ -11,7 +11,7 @@ let context=null,stopWatch=null,draft=null,assigneeDraft=null;
 async function denied(task,label,code='permission-denied'){try{await task();}catch(e){if(e.code===code||e.code==='functions/'+code){log('PASS '+label);return;}throw e;}throw Error('FAIL '+label+' 未拒絕');}
 async function locate(){
  const m=member();if(!m?.workspaceRole)throw Error('需有效會員');
- for(const id of m.accessboard){const b=await getDocFromServer(doc(firestore,`${root}/boards/${id}`));if(b.data()?.name==='階段六驗證 20261010'){const cardId=$('liveCardId').value.trim();if(!/^phase6-(card|empty-card)$/.test(cardId))throw Error('只允許指定測試牌卡');context={boardId:id,cardId};return context;}}
+ for(const id of m.accessboard){const b=await getDocFromServer(doc(firestore,`${root}/boards/${id}`));if(b.data()?.name==='階段六驗證 20261010'){const cardId=$('liveCardId').value.trim();if(!/^phase6-(card|empty-card|rest-card)$/.test(cardId))throw Error('只允許指定測試牌卡');context={boardId:id,cardId};return context;}}
  throw Error('此帳號沒有隔離測試看板');
 }
 const ref=()=>doc(firestore,`${root}/boards/${context.boardId}/cards/${context.cardId}`);
@@ -53,7 +53,7 @@ button('liveOwner',async()=>{
 });
 button('liveWatch',async()=>{await locate();stopWatch?.();let first=true;stopWatch=onSnapshot(ref(),s=>{const d=s.data();log((first?'SNAPSHOT ':'SYNC ')+JSON.stringify({title:d?.title,columnId:d?.columnId,archived:d?.archived,commentCount:d?.commentCount,checklistCount:d?.checklistCount,attachmentCount:d?.attachmentCount,assigneeIds:d?.assigneeIds}));first=false;},e=>log('WATCH '+e.code));});
 button('liveFresh',async()=>{
- $('liveCardId').value='phase6-empty-card';await locate();const m=member();if(!['owner','admin'].includes(m.workspaceRole))throw Error('需管理權限');
+ $('liveCardId').value='phase6-rest-card';await locate();const m=member();if(!['owner','admin'].includes(m.workspaceRole))throw Error('需管理權限');
  if((await getDocFromServer(ref())).exists())throw Error('空白測試牌卡已存在；不可覆寫');
  const columns=await getDocsFromServer(collection(firestore,`${root}/boards/${context.boardId}/columns`));
  await setDoc(ref(),{title:'階段六零筆新增驗證',columnId:columns.docs[0].id,description:'',createdBy:m.memberId,updatedBy:m.memberId,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),assigneeIds:[],attachmentCount:0,checklistCount:0,commentCount:0,orderKey:'000000000002',archived:false});log('PASS 新建零留言／待辦的測試牌卡');
