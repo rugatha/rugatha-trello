@@ -5,9 +5,9 @@ import {getFunctions,httpsCallable} from 'https://www.gstatic.com/firebasejs/12.
 import {loadWorkspace,loadDeferredAttachmentArchives,restoreAttachment,persistWorkspace} from '../../storage.js';
 import {uploadAttachment} from '../../attachment-client.js';
 const root='workspaces/main', $=id=>document.getElementById(id), call=async(name,data)=>(await httpsCallable(getFunctions(auth.app,'asia-east1'),name)(data)).data;
-const results=[];const log=s=>{results.push(s);$('liveResults').textContent=results.slice(-22).join('\n');}, check=(condition,label)=>{if(!condition)throw Error('FAIL '+label);log('PASS '+label);};
+const results=[];const log=s=>{results.push(s);$('liveResults').textContent=results.slice(-8).join('\n');}, check=(condition,label)=>{if(!condition)throw Error('FAIL '+label);log('PASS '+label);};
 const member=()=>window.boardlyGoogleUser;
-let context=null,stopWatch=null;
+let context=null,stopWatch=null,draft=null;
 async function denied(task,label,code='permission-denied'){try{await task();}catch(e){if(e.code===code||e.code==='functions/'+code){log('PASS '+label);return;}throw e;}throw Error('FAIL '+label+' 未拒絕');}
 async function locate(){
  const m=member();if(!m?.workspaceRole)throw Error('需有效會員');
@@ -24,7 +24,7 @@ button('liveMatrix',async()=>{
  await locate();await getDocFromServer(doc(firestore,`${root}/members/${m.memberId}`));log('PASS 本人私人文件可讀');
  const roster=await call('listDisplayMembers',{});check(roster.members.every(x=>Object.keys(x).every(k=>['id','name'].includes(k))),'顯示名冊只有 ID／名稱');
  const other=roster.members.find(x=>x.id!==m.memberId);await denied(()=>getDocFromServer(doc(firestore,`${root}/members/${other.id}`)),'他人私人文件遭拒');
- await denied(()=>updateDoc(doc(firestore,`${root}/members/${m.memberId}`),{role:'owner'}),'本人不可提升角色');
+ await denied(()=>updateDoc(doc(firestore,`${root}/members/${m.memberId}`),{role:role==='owner'?'admin':'owner'}),'本人不可改寫角色');
  if(!['owner','admin'].includes(role)){
   await denied(()=>call('listMembershipDirectory',{}),'管理私人名冊遭拒');
   await denied(()=>call('createManagedBoard',{requestId:crypto.randomUUID(),name:'Denied',description:'',color:'#455f56',memberIds:[]}),'建立看板管理端點遭拒');
@@ -63,6 +63,17 @@ button('liveData',async()=>{
  const latest=await loadWorkspace({...m,accessboard:[context.boardId]}),removed=structuredClone(latest),r=removed.boards[0].cards.find(c=>c.id===context.cardId);r.comments=r.comments.filter(x=>x.id!==id);r.checklist=r.checklist.filter(x=>x.id!==id);await persistWorkspace(latest,removed,m.memberId);log('PASS 刪除本人留言／待辦');
  await updateDoc(ref(),{archived:true,updatedBy:m.memberId,updatedAt:new Date().toISOString()});log('PASS 牌卡封存');
  await updateDoc(ref(),{archived:false,updatedBy:m.memberId,updatedAt:new Date().toISOString()});log('PASS 牌卡復原');
+});
+button('liveDraft',async()=>{
+ await locate();const m=member();if(!['owner','admin','editor'].includes(m.workspaceRole))throw Error('需編輯權限');
+ const before=await loadWorkspace({...m,accessboard:[context.boardId]}),after=structuredClone(before);
+ const c=after.boards[0].cards.find(c=>c.id===context.cardId);c.title='階段六衝突 '+m.workspaceRole+' '+Date.now();
+ draft={before,after,uid:m.uid,memberId:m.memberId};log('PASS 已建立尚未寫入的牌卡草稿');
+});
+button('liveCommit',async()=>{
+ const m=member();if(!draft||draft.uid!==m?.uid||draft.memberId!==m?.memberId)throw Error('請先在目前帳號建立草稿');
+ try{await persistWorkspace(draft.before,draft.after,m.memberId);log('PASS 草稿成功寫入');}
+ catch(e){if(!/其他成員|資料已變更/.test(e.message))throw e;log('PASS 另一帳號先寫入後，過期草稿遭衝突阻擋');}finally{draft=null;}
 });
 button('liveZero',async()=>{
  await locate();const m=member();if(!['owner','admin','editor'].includes(m.workspaceRole))throw Error('需編輯權限');
