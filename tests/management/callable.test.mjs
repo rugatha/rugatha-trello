@@ -16,7 +16,7 @@ async function call(name,data,who='owner') {
 const newBoard=()=>({requestId:randomUUID(),name:'New board',description:'Description',color:'#455f56',memberIds:['viewer']});
 const assignment=(patch={})=>({requestId:randomUUID(),boardId:'allowed',cardId:'card',assigneeIds:['viewer'],expectedAssigneeIds:[],...patch});
 before(async()=>{
- if(!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_AUTH_EMULATOR_HOST || process.env.GCLOUD_PROJECT!==projectId)throw Error('Only run through test:management against demo emulators.');
+ if(!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_AUTH_EMULATOR_HOST || !process.env.FIREBASE_STORAGE_EMULATOR_HOST || process.env.GCLOUD_PROJECT!==projectId)throw Error('Only run through test:management against demo Auth, Firestore and Storage emulators.');
  app=initializeApp({projectId});db=getFirestore(app);auth=getAuth(app);
  const roles=['owner','admin','editor','viewer','member','disabled','outsider','unverified','unapproved'];
  for(const name of roles){
