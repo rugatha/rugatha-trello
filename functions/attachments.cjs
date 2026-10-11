@@ -36,7 +36,7 @@ function createAttachments(db,bucket,{now=()=>Date.now()}={}) {
   const memberId=await actor(tx,auth,session.boardId);
   const cardRef=db.doc(`${ROOT}/boards/${session.boardId}/cards/${session.cardId}`);
   const [board,card]=await Promise.all([tx.get(cardRef.parent.parent),tx.get(cardRef)]);
-  if(!board.exists||board.data().archived||!card.exists||card.data().archived)fail('failed-precondition','牌卡或看板已封存或不存在');
+  if(!board.exists||board.data().archived||!card.exists||card.data().archived||board.data().deleting||card.data().deleting)fail('failed-precondition','牌卡或看板已封存或不存在');
   return {memberId,cardRef,card:card.data()};
  }
  async function getSession(auth,data){
@@ -85,7 +85,7 @@ function createAttachments(db,bucket,{now=()=>Date.now()}={}) {
    const target=bucket.file(s.storagePath);
    try{await target.save(bytes,{resumable:false,preconditionOpts:{ifGenerationMatch:0},metadata:{contentType:s.type,cacheControl:'private, no-store',metadata:{uploadedBy:s.memberId,boardId:s.boardId,cardId:s.cardId,attachmentId:s.attachmentId}}});}
    catch(error){if(error.code!==412)throw error;const [old]=await target.download();if(!old.equals(bytes))fail('already-exists','附件路徑已存在不同內容');}
-   await db.runTransaction(async tx=>{
+   try {await db.runTransaction(async tx=>{
     const {memberId,cardRef}=await context(tx,auth,s),current=await tx.get(ref);
     if(current.data().status==='expired')fail('failed-precondition','上傳已過期');
     if(current.data().status==='complete')return;
@@ -96,7 +96,12 @@ function createAttachments(db,bucket,{now=()=>Date.now()}={}) {
     tx.create(attachmentRef,{name:s.name,type:s.type,size:s.size,storageBucket:bucket.name,storagePath:s.storagePath,createdBy:memberId,createdAt:at,archived:false});
     tx.update(cardRef,{attachmentCount:attachments.docs.filter(d=>!d.data().archived).length+1,updatedBy:memberId,updatedAt:at});
     tx.update(ref,{status:'complete',completedAt:now()});
-   });
+   });} catch(error) {
+    const board=await db.doc(`${ROOT}/boards/${s.boardId}`).get();
+    const card=await db.doc(`${ROOT}/boards/${s.boardId}/cards/${s.cardId}`).get();
+    if(!board.exists||!card.exists||board.data().deleting||card.data().deleting) await remove(s.storagePath);
+    throw error;
+   }
    // A cleanup error must not turn an already committed upload into a failure.
    await remove(s.stagingPath).catch(()=>{});
    return {attachmentId:s.attachmentId};

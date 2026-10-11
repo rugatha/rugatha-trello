@@ -40,7 +40,7 @@ function createManagement(db) {
     if (!member.accessboard.includes(boardId)) fail('permission-denied','沒有此看板的管理權限');
     const boardRef=db.doc(`${ROOT}/boards/${boardId}`),cardRef=boardRef.collection('cards').doc(cardId);
     const [board,card]=await Promise.all([tx.get(boardRef),tx.get(cardRef)]);
-    if (!board.exists || !card.exists || board.data().archived || card.data().archived) fail('failed-precondition','看板或牌卡已封存或不存在，請重新整理');
+    if (!board.exists || !card.exists || board.data().archived || card.data().archived || board.data().deleting || card.data().deleting) fail('failed-precondition','看板或牌卡已封存或不存在，請重新整理');
     return {ref:cardRef,data:card.data()};
   }
   function operation(auth, operationId, kind, payload) {
@@ -110,7 +110,7 @@ function createManagement(db) {
         if (manager.role!=='owner' && changedBoards.some(b=>!manager.accessboard.includes(b)))
           fail('permission-denied','不可調整自己無權存取的看板');
         const boards=await Promise.all(accessboard.map(b=>tx.get(db.doc(`${ROOT}/boards/${b}`))));
-        if(boards.some(b=>!b.exists))fail('failed-precondition','授權看板不存在');
+        if(boards.some(b=>!b.exists || b.data().deleting))fail('failed-precondition','授權看板不存在或正在刪除');
         if (!creating && old.role==='owner' && old.status==='active' && (data.role!=='owner' || data.status!=='active')) {
           const owners=await tx.get(db.collection(`${ROOT}/members`).where('role','==','owner'));
           if(!owners.docs.some(d=>d.id!==memberId && d.data().status==='active'))fail('failed-precondition','必須保留至少一位有效 Owner');

@@ -54,3 +54,7 @@ Illustration 看板的 Stefano 牌卡（`66251c646c0ea6b5f43215cb`）有兩筆�
 - `66251c7c1c1f2b2722965b2e`
 
 未變更或刪除這兩筆附件。逐筆網址、狀態與時間保存在忽略追蹤的 `attachments_export/migration/external-link-audit.json`。
+
+## 2026-10-11 Socials 補入
+
+依使用者新指示完成 Socials 看板及附件匯入，先前略過的 176 個檔案與本次補上的 1 個 PNG 均已移至授權 Storage，缺檔為 0。此次使用無下載 token 的現行授權讀取方式。詳細來源限制與驗證見 [Socials 匯入](socials-import.md)。

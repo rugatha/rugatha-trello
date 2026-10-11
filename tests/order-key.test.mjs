@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {assignMovedOrderKey,compareOrderKey} from '../order-key.js';
-import {documents,changes} from '../workspace-data.js';
+import {assignMovedOrderKey,compareOrderKey} from '../src/order-key.js';
+import {documents,changes} from '../src/workspace-data.js';
 
 test('moving one card among 600 writes only that card',()=>{
   const cards=Array.from({length:600},(_,index)=>({id:`c${index}`,columnId:'col',orderKey:String(index).padStart(12,'0'),

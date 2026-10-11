@@ -174,3 +174,19 @@ test('concurrent invitations cannot create two members for one email',async()=>{
  assert.equal(results.filter(r=>!r.error).length,1);
  assert.equal(results.filter(r=>r.error==='ALREADY_EXISTS').length,1);
 });
+
+test('Owner lifecycle callable enforces role, confirmation, archival and idempotent deletion',async()=>{
+ const created=await call('createManagedBoard',newBoard());assert.ok(created.boardId);
+ const boardRef=db.doc(`${root}/boards/${created.boardId}`);
+ const p=action=>({requestId:randomUUID(),boardId:created.boardId,action,confirmName:'New board',expectedArchived:action!=='archive'});
+ for(const who of ['anonymous','unverified','unapproved','disabled','admin','editor','viewer','member']){
+  assert.ok(['UNAUTHENTICATED','PERMISSION_DENIED'].includes((await call('manageContentLifecycle',p('archive'),who)).error));
+ }
+ assert.equal((await call('manageContentLifecycle',{...p('delete'),expectedArchived:false})).error,'FAILED_PRECONDITION');
+ assert.equal((await call('manageContentLifecycle',{...p('archive'),confirmName:'Wrong'})).error,'ABORTED');
+ assert.equal((await call('manageContentLifecycle',p('archive'))).action,'archive');
+ const deletion=p('delete'),result=await call('manageContentLifecycle',deletion);assert.equal(result.action,'delete',JSON.stringify(result));
+ assert.deepEqual(await call('manageContentLifecycle',deletion),result);
+ assert.equal((await boardRef.get()).exists,false);assert.equal((await boardRef.collection('columns').get()).size,0);
+ assert(!(await db.doc(root+'/members/owner').get()).data().accessboard.includes(created.boardId));
+});

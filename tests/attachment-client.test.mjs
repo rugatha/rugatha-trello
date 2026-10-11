@@ -9,7 +9,7 @@ async function setup({begin,finish,blob,upload}={}){
   httpsCallable:(_,name)=>async data=>{calls.push({name,data});return {data:await (name==='beginAttachmentUpload'?begin?.(data)||{stagingPath:'temporary',memberId:'m',attachmentId:'a',status:'pending'}:finish?.(data)||{attachmentId:'a'})};},
   getBlob:()=>blob?.()||Promise.resolve({}),uploadBytesResumable:()=>({cancel(){cancelled.push(true);},on(event,progress,reject,resolve){if(upload)upload({progress,reject,resolve});else resolve();}})};
  const context=vm.createContext({console,Set,Error,URL:{createObjectURL:()=> 'blob:test',revokeObjectURL:url=>revoked.push(url)}});
- const mod=new vm.SourceTextModule(await readFile(new URL('../attachment-client.js',import.meta.url),'utf8'),{context});
+ const mod=new vm.SourceTextModule(await readFile(new URL('../src/attachment-client.js',import.meta.url),'utf8'),{context});
  await mod.link(()=>new vm.SyntheticModule(Object.keys(deps),function(){for(const [k,v] of Object.entries(deps))this.setExport(k,v);},{context}));await mod.evaluate();
  return {api:mod.namespace,calls,revoked,cancelled};
 }

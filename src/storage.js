@@ -23,7 +23,7 @@ export async function loadWorkspace(account, {previous,boardIds}={}) {
     const [columns, cards] = await Promise.all([rows(`${path}/columns`), rows(`${path}/cards`)]);
     // Fetch in small groups to avoid flooding the connection with subcollection requests.
     const visible = cards.filter(card => !card.archived);
-    const archivedCards = cards.filter(card => card.archived).map(({id,title,columnId}) => ({id,title,columnId}));
+    const archivedCards = cards.filter(card => card.archived).map(({id,title,columnId,deleting}) => ({id,title,columnId,...(deleting?{deleting:true}:{})}));
     for (let start=0; start<visible.length; start+=10) {
       await Promise.all(visible.slice(start,start+10).map(async card => {
         [card.checklist, card.comments, card.attachments] = await Promise.all(

@@ -24,6 +24,16 @@ exports.listMembershipDirectory=callable('membershipDirectory');
 exports.saveManagedMembership=callable('saveMembership');
 
 const {getStorage}=require('firebase-admin/storage');
+const {createContentLifecycle}=require('./content-lifecycle.cjs');
+const contentLifecycle=createContentLifecycle(getFirestore(),getStorage().bucket());
+exports.manageContentLifecycle=onCall({...options,invoker:'public',timeoutSeconds:540,memory:'512MiB'},async request=>{
+  try {return await contentLifecycle.manage(request.auth,request.data);}
+  catch(error) {
+    if(error instanceof ManagementError)throw new HttpsError(error.code,error.message);
+    console.error('Content lifecycle failed',{code:error.code||'unknown'});
+    throw new HttpsError('internal','操作尚未確認完成，請重新整理後重試；刪除中的內容會保持鎖定');
+  }
+});
 const {onSchedule}=require('firebase-functions/v2/scheduler');
 const {createAttachments}=require('./attachments.cjs');
 const attachments=createAttachments(getFirestore(),getStorage().bucket());

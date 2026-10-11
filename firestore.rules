@@ -20,7 +20,9 @@ service cloud.firestore {
       return active(w) && b in member(w).accessboard;
     }
     function canEdit(w, b) {
-      return boardAccess(w, b) && member(w).role in ['owner', 'admin', 'editor'];
+      return boardAccess(w, b) && member(w).role in ['owner', 'admin', 'editor']
+        && exists(/databases/$(database)/documents/workspaces/$(w)/boards/$(b))
+        && !get(/databases/$(database)/documents/workspaces/$(w)/boards/$(b)).data.get('deleting', false);
     }
     function isAdmin(w, b) {
       return boardAccess(w, b) && member(w).role in ['owner', 'admin'];
@@ -55,8 +57,10 @@ service cloud.firestore {
           return request.resource.data.get('color', '#455f56') in
             ['#455f56', '#c8b58f', '#8fa697', '#bca582', '#ad9790'];
         }
-        allow create: if canEdit(w, b) && validBoard() && validColor();
+        allow create: if false;
         allow update: if canEdit(w, b) && validBoard()
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['deleting'])
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['archived']) || member(w).role == 'owner')
           && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['color']) || validColor());
         allow delete: if false;
         match /columns/{columnId} {
@@ -65,17 +69,24 @@ service cloud.firestore {
             && request.resource.data.name is string
             && request.resource.data.name.size() > 0
             && request.resource.data.name.size() <= 50;
-          allow delete: if isAdmin(w, b);
+          allow delete: if canEdit(w, b) && isAdmin(w, b);
         }
         match /cards/{cardId} {
+          function mutableCard() {
+            // Child documents can be created together with their parent card.
+            return getAfter(/databases/$(database)/documents/workspaces/$(w)/boards/$(b)/cards/$(cardId)).data != null
+              && !getAfter(/databases/$(database)/documents/workspaces/$(w)/boards/$(b)/cards/$(cardId)).data.get('deleting', false);
+          }
           allow read: if boardAccess(w, b);
           allow create: if canEdit(w, b)
+            && !request.resource.data.keys().hasAny(['deleting'])
             && request.resource.data.title is string
             && request.resource.data.title.size() > 0
             && request.resource.data.title.size() <= 150
             && request.resource.data.createdBy == memberId(w)
             && request.resource.data.get('assigneeIds', []) == [];
-          allow update: if canEdit(w, b)
+          allow update: if canEdit(w, b) && mutableCard()
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['deleting'])
             && request.resource.data.title is string
             && request.resource.data.title.size() > 0
             && request.resource.data.title.size() <= 150
@@ -85,28 +96,28 @@ service cloud.firestore {
           allow delete: if false;
           match /comments/{commentId} {
             allow read: if boardAccess(w, b);
-            allow create: if canEdit(w, b)
+            allow create: if canEdit(w, b) && mutableCard()
               && request.resource.data.memberId == memberId(w)
               && request.resource.data.text is string
               && request.resource.data.text.size() > 0
               && request.resource.data.text.size() <= 5000;
-            allow update: if canEdit(w, b)
+            allow update: if canEdit(w, b) && mutableCard()
               && resource.data.memberId == memberId(w)
               && request.resource.data.memberId == resource.data.memberId
               && request.resource.data.text is string
               && request.resource.data.text.size() > 0
               && request.resource.data.text.size() <= 5000;
-            allow delete: if canEdit(w, b)
+            allow delete: if canEdit(w, b) && mutableCard()
               && resource.data.memberId == memberId(w);
           }
           match /checklist/{itemId} {
             allow read: if boardAccess(w, b);
-            allow create, update, delete: if canEdit(w, b);
+            allow create, update, delete: if canEdit(w, b) && mutableCard();
           }
           match /attachments/{attachmentId} {
             allow read: if boardAccess(w, b);
             allow create, delete: if false;
-            allow update: if canEdit(w, b)
+            allow update: if canEdit(w, b) && mutableCard()
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['archived', 'updatedBy']);
           }
         }

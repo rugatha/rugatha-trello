@@ -7,12 +7,13 @@ class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(root), **kwargs)
     def do_GET(self):
-        if self.path.split('?')[0] == '/phase5-app':
+        if self.path.split('?')[0] in ['/phase5-app', '/owner-app']:
             source = (root / 'index.html').read_text()
-            fixture = '/tests/browser/phase5-fixture.js'
+            fixture = '/tests/browser/owner-fixture.js' if self.path.split('?')[0] == '/owner-app' else '/tests/browser/phase5-fixture.js'
             imports = {f'https://www.gstatic.com/firebasejs/12.19.0/firebase-{name}.js': fixture for name in ['app','auth','firestore','functions']}
-            imports.update({f'/{name}.js':fixture for name in ['storage','management','attachment-ui']})
-            source=source.replace('<head>', '<head><base href="/phase5-app"><script type="importmap">'+json.dumps({'imports':imports})+'</script><script type="module" src="/auth.js"></script>')
+            imports.update({f'/src/{name}.js':fixture for name in ['storage','management','attachment-ui']})
+            imports['/src/storage.js?v=20261010-rest'] = fixture
+            source=source.replace('<head>', '<head><base href="/phase5-app"><script type="importmap">'+json.dumps({'imports':imports})+'</script><script type="module" src="/src/auth.js"></script>')
             self.send_response(200); self.send_header('Content-Type','text/html; charset=utf-8'); self.end_headers();self.wfile.write(source.encode())
         else:
             super().do_GET()

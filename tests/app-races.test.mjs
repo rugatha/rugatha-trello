@@ -3,15 +3,15 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import fs from 'node:fs/promises';
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
-async function setup({archiveLoad=async()=>[],deferredArchives=false,workspaceLoad,managementLoad=async()=>({members:[],assigneeIds:[]}),managedCreate=async()=>({boardId:'new'}),managedAssign=async()=>({})}={}){
+async function setup({archiveLoad=async()=>[],deferredArchives=false,workspaceLoad,managementLoad=async()=>({members:[],assigneeIds:[]}),managedCreate=async()=>({boardId:'new'}),managedAssign=async()=>({}),managedLifecycle=async()=>({})}={}){
  const elements=new Map(),writes=[],restores=[],subscriptions=[];
  const element=s=>{if(!elements.has(s))elements.set(s,{value:s==='#dueFilter'?'all':'',classList:{add(){},remove(){},toggle(){}},style:{},replaceChildren(){this.innerHTML='';},close(){this.open=false;},showModal(){this.open=true;}});return elements.get(s);};
  const context=vm.createContext({console,structuredClone,setTimeout:()=>0,clearTimeout,Intl,Date,crypto:{randomUUID:()=>'copy-id'},
  document:{querySelector:element,querySelectorAll:s=>/^#[a-zA-Z]+$/.test(s)?[element(s)]:[],addEventListener(){}},window:{addEventListener(){}}});
  const data=()=>({users:[],boards:[{id:'b',name:'Board',columns:[{id:'col',name:'Todo'}],cards:[{id:'c',title:'Assigned',columnId:'col',createdAt:'2026-10-01T00:00:00Z',description:'',assignees:['viewer'],labels:[],checklist:[],comments:[],attachments:[],attachmentArchiveLoaded:!deferredArchives}]}]});
- const deps={clearAttachmentUI:()=>{},hydrateAttachmentImages:()=>{},downloadAttachment:()=>{},bindAttachmentUpload:()=>{},listManagementMembers:managementLoad,createManagedBoard:managedCreate,setManagedAssignees:managedAssign,loadDeferredAttachmentArchives:archiveLoad,loadWorkspace:async(account,options)=>workspaceLoad?workspaceLoad(account,options,data):data(),subscribeWorkspace:(account,next,error)=>{const sub={account,next,error,stopped:false};subscriptions.push(sub);return ()=>sub.stopped=true;},persistWorkspace:(before,after,member)=>{const d=deferred();Object.assign(d,{before,after,member});writes.push(d);return d.promise;},restoreCard:()=>{const d=deferred();restores.push(d);return d.promise;},restoreAttachment:async()=>{},assignMovedOrderKey:()=>{}};
- const source=await fs.readFile(new URL('../app.js',import.meta.url),'utf8');
- const mod=new vm.SourceTextModule(source+'\nexport {applyGoogleAccount,save,restoreArchived,canEdit,openCard,refreshWorkspace,showArchive,canManage,openManagedBoard,openManagedAssignees,runManagedWrite};',{context});
+ const deps={clearAttachmentUI:()=>{},hydrateAttachmentImages:()=>{},downloadAttachment:()=>{},bindAttachmentUpload:()=>{},listManagementMembers:managementLoad,createManagedBoard:managedCreate,setManagedAssignees:managedAssign,manageContentLifecycle:managedLifecycle,loadDeferredAttachmentArchives:archiveLoad,loadWorkspace:async(account,options)=>workspaceLoad?workspaceLoad(account,options,data):data(),subscribeWorkspace:(account,next,error)=>{const sub={account,next,error,stopped:false};subscriptions.push(sub);return ()=>sub.stopped=true;},persistWorkspace:(before,after,member)=>{const d=deferred();Object.assign(d,{before,after,member});writes.push(d);return d.promise;},restoreCard:()=>{const d=deferred();restores.push(d);return d.promise;},restoreAttachment:async()=>{},assignMovedOrderKey:()=>{}};
+ const source=await fs.readFile(new URL('../src/app.js',import.meta.url),'utf8');
+ const mod=new vm.SourceTextModule(source+'\nexport {applyGoogleAccount,save,restoreArchived,canEdit,openCard,refreshWorkspace,showArchive,canManage,openManagedBoard,openManagedAssignees,runManagedWrite,openLifecycle,canOwn};',{context});
  await mod.link(()=>new vm.SyntheticModule(Object.keys(deps),function(){for(const [k,v] of Object.entries(deps))this.setExport(k,v);},{context}));await mod.evaluate();
  return {api:mod.namespace,writes,restores,element,subscriptions,window:context.window};
 }
@@ -231,4 +231,26 @@ test('board completion after switching Google accounts for the same member canno
  const operation=deferred();const pending=api.runManagedWrite(()=>operation.promise,()=>assert.fail('stale account reload'),true);
  await api.applyGoogleAccount({...owner('owner'),uid:'second'});
  operation.resolve({boardId:'new'});await pending;
+});
+
+for(const role of ['admin','editor','viewer'])test(`${role} cannot open the Owner lifecycle dialog`,async()=>{
+ const {api,element}=await setup();await api.applyGoogleAccount({...account(role),workspaceRole:role});
+ api.openLifecycle('archive');assert.equal(element('#simpleDialog').open,false);assert.equal(api.canOwn(),false);
+});
+test('Owner deletion requires an archived target and matching typed name',async()=>{
+ const calls=[];
+ const {api,element}=await setup({managedLifecycle:async data=>{calls.push(data);return {};},workspaceLoad:async(_,__,data)=>{const state=data();state.boards[0].archivedCards=[{id:'old',title:'Archived card'}];return state;}});
+ await api.applyGoogleAccount({...account('owner'),workspaceRole:'owner',uid:'owner'});
+ api.openLifecycle('delete','c');assert.equal(calls.length,0);assert.match(element('#toast').textContent,/先封存/);
+ api.openLifecycle('delete','old');element('#lifecycleConfirm').value='Wrong';element('#simpleForm').onsubmit({preventDefault(){}});
+ assert.equal(calls.length,0);assert.match(element('#managementError').textContent,/名稱不一致/);
+ element('#lifecycleConfirm').value='Archived card';element('#simpleForm').onsubmit({preventDefault(){}});
+ await new Promise(resolve=>setImmediate(resolve));assert.equal(calls.length,1);
+ assert.equal(calls[0].action,'delete');assert.equal(calls[0].cardId,'old');assert.equal(calls[0].expectedArchived,true);
+});
+test('Owner can open archive, restore and retry deletion for an archived board',async()=>{
+ const {api,element}=await setup({workspaceLoad:async(_,__,data)=>{const state=data();state.boards[0].archived=true;state.boards[0].deleting=true;return state;}});
+ await api.applyGoogleAccount({...account('owner'),workspaceRole:'owner'});
+ assert.equal(element('#editBoard').disabled,false);assert.equal(element('#quickCreate').disabled,true);
+ api.openLifecycle('delete');assert.equal(element('#simpleDialog').open,true);assert.equal(element('#managementSubmit').disabled,false);
 });

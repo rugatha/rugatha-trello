@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {documents,changes} from '../workspace-data.js';
+import {documents,changes} from '../src/workspace-data.js';
 const fixture=()=>({boards:[{id:'b',name:'Board',columns:[{id:'col',name:'Todo'}],cards:[{
  id:'c',title:'Card',columnId:'col',assignees:['member-01'],checklist:[{id:'t',text:'Task',done:false}],
  comments:[{id:'m',userId:'member-01',text:'Hello'}],attachments:[{id:'a',url:'https://example.com'}]

@@ -1,7 +1,7 @@
 <!doctype html><html lang="zh-Hant"><meta charset="utf-8"><title>階段三 · Firefox 會員介面測試</title>
-<link rel="stylesheet" href="../../style.css">
+<link rel="stylesheet" href="../../assets/style.css">
 <style>body{padding:24px}#results{white-space:pre-wrap}button{margin:4px}</style>
-<script type="importmap">{"imports":{"/management.js":"/tests/browser/membership-fixture.js"}}</script>
+<script type="importmap">{"imports":{"/src/management.js":"/tests/browser/membership-fixture.js"}}</script>
 <h1>會員管理介面測試</h1><p>僅使用記憶體測試資料，不連接 Firebase。</p>
 <button id="manageMembers" hidden>會員管理</button><button id="run">執行介面回歸測試</button>
 <button id="owner">Owner</button><button id="viewer">Viewer／撤權</button><button id="failure">下次儲存失敗</button>
@@ -9,7 +9,7 @@
 <script type="module">
 import {fixture} from './membership-fixture.js';
 window.boardlyGoogleUser={memberId:'owner',workspaceRole:'owner'};
-await import('../../membership-ui.js');
+await import('../../src/membership-ui.js');
 const $=s=>document.querySelector(s), tick=()=>new Promise(r=>setTimeout(r,30));
 function role(value){window.boardlyGoogleUser={memberId:value,workspaceRole:value};window.dispatchEvent(new Event('boardly-auth-changed'));}
 $('#owner').onclick=()=>role('owner');$('#viewer').onclick=()=>role('viewer');$('#failure').onclick=()=>fixture.fail=true;

@@ -29,6 +29,7 @@ jobs:
       - run: npm run test:storage-rules
       - run: npm run test:management
       - run: npm run test:attachments
+      - run: npm run test:content
   dependency-review:
     runs-on: ubuntu-latest
     timeout-minutes: 10

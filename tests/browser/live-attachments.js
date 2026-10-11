@@ -1,9 +1,9 @@
 // Explicit, manual production probes. No credentials or private URLs are logged.
-import {auth,firestore} from '../../auth.js';
+import {auth,firestore} from '../../src/auth.js';
 import {collection,query,where,limit,getDocs,getDoc,doc,setDoc,updateDoc} from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import {getFunctions,httpsCallable} from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-functions.js';
-import {attachmentBlobURL,releaseAttachmentURL,uploadAttachment} from '../../attachment-client.js';
-import {downloadAttachment} from '../../attachment-ui.js';
+import {attachmentBlobURL,releaseAttachmentURL,uploadAttachment} from '../../src/attachment-client.js';
+import {downloadAttachment} from '../../src/attachment-ui.js';
 const $=id=>document.getElementById(id),root='workspaces/main';
 let selected=null,lastRead=null;
 const log=s=>{$('probeResults').textContent+=s+'\n';};

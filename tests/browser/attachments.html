@@ -1,11 +1,11 @@
 <!doctype html><html lang="zh-Hant"><meta charset="utf-8"><title>階段四 · Firefox 附件介面測試</title>
-<link rel="stylesheet" href="../../style.css"><style>body{padding:24px}#results{white-space:pre-wrap}button{margin:4px}</style>
-<script type="importmap">{"imports":{"../../attachment-client.js":"./attachment-fixture.js"}}</script>
+<link rel="stylesheet" href="../../assets/style.css"><style>body{padding:24px}#results{white-space:pre-wrap}button{margin:4px}</style>
+<script type="importmap">{"imports":{"../../src/attachment-client.js":"./attachment-fixture.js"}}</script>
 <h1>附件介面測試</h1><p>僅使用記憶體測試資料，不連接 Firebase。</p>
 <button id="run">執行附件介面測試</button><input id="file" type="file" multiple><p id="status" role="status"></p><button id="retry" hidden>重試</button><div id="images"></div><pre id="results">等待測試</pre>
 <script type="module">
 import {fixture} from './attachment-fixture.js';
-import {bindAttachmentUpload,hydrateAttachmentImages,clearAttachmentUI,downloadAttachment} from '../../attachment-ui.js';
+import {bindAttachmentUpload,hydrateAttachmentImages,clearAttachmentUI,downloadAttachment} from '../../src/attachment-ui.js';
 const $=id=>document.getElementById(id),tick=()=>new Promise(r=>setTimeout(r,30));
 $('run').onclick=async()=>{
 const results=[],check=(value,name)=>{if(!value)throw Error(name);results.push('PASS '+name);};let allowed=true,current=true,busy=false,complete=0;

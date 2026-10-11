@@ -9,3 +9,6 @@ node_modules/
 member_info.csv
 member_*.csv
 attachments_export/
+# Private Trello source exports.
+*-trello.json
+import/

@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import fs from 'node:fs/promises';
-import {documents,changes} from '../workspace-data.js';
-import {compareOrderKey} from '../order-key.js';
+import {documents,changes} from '../src/workspace-data.js';
+import {compareOrderKey} from '../src/order-key.js';
 async function setup(remote,fail=false){
  const writes=[],listeners=[],reads=[],oldView=structuredClone(remote);
  const context=vm.createContext({console,Set,Map,Date,JSON,Promise,Error});
@@ -13,7 +13,7 @@ async function setup(remote,fail=false){
  onSnapshot:(path,next,error)=>{const listener={path,next,error,active:true};listeners.push(listener);return()=>{listener.active=false}},
  runTransaction:async(_,fn)=>{const pending=[];await fn({get:async path=>({exists:()=>remote.has(path),data:()=>remote.get(path)}),update:(...v)=>pending.push(['update',...v]),set:(...v)=>pending.push(['set',...v]),delete:(...v)=>pending.push(['delete',...v])});if(fail)throw Error('offline');writes.push(...pending);}};
  deps.getDocFromServer=deps.getDoc;deps.getDocsFromServer=async path=>({docs:[...oldView].filter(([key])=>key.startsWith(path+'/')&&key.split('/').length===path.split('/').length+1).map(([key,value])=>({id:key.split('/').at(-1),data:()=>value}))});
- const mod=new vm.SourceTextModule(await fs.readFile(new URL('../storage.js',import.meta.url),'utf8'),{context});
+ const mod=new vm.SourceTextModule(await fs.readFile(new URL('../src/storage.js',import.meta.url),'utf8'),{context});
  await mod.link(async()=>new vm.SyntheticModule(Object.keys(deps),function(){for(const [k,v]of Object.entries(deps))this.setExport(k,v);},{context}));await mod.evaluate();
  return {api:mod.namespace,writes,listeners,reads};
 }

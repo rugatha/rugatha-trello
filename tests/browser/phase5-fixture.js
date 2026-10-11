@@ -17,3 +17,5 @@ export async function loadWorkspace(account){fixture.loads++;return {users,board
 export const subscribeWorkspace=()=>()=>{};export const persistWorkspace=async()=>[];export const restoreCard=async()=>{};export const restoreAttachment=async()=>{};export const loadDeferredAttachmentArchives=async()=>[];
 export const listManagementMembers=async()=>({members:users.map(u=>({...u,eligible:true})),assigneeIds:['viewer']});export const createManagedBoard=async()=>({boardId:'b'});export const setManagedAssignees=async()=>({});export const listMembershipDirectory=async()=>({members:[],boards:[]});export const saveManagedMembership=async()=>({});
 export const clearAttachmentUI=()=>{};export const hydrateAttachmentImages=()=>{};export const downloadAttachment=async()=>{};export const bindAttachmentUpload=()=>{};
+
+export const manageContentLifecycle=async()=>({});

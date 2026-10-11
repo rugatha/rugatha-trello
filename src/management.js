@@ -16,3 +16,4 @@ export const setManagedAssignees = data => call('setManagedAssignees', data);
 
 export const listMembershipDirectory = () => call('listMembershipDirectory', {});
 export const saveManagedMembership = data => call('saveManagedMembership', data);
+export const manageContentLifecycle = data => httpsCallable(functions, 'manageContentLifecycle', {timeout:540000})(data).then(result=>result.data);

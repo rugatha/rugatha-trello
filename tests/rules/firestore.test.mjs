@@ -2,7 +2,7 @@ import {before, after, test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {initializeTestEnvironment, assertFails, assertSucceeds} from '@firebase/rules-unit-testing';
-import {doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot} from 'firebase/firestore';
+import {doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch} from 'firebase/firestore';
 
 const projectId='demo-rugatha-trello';
 const root='workspaces/main';
@@ -208,4 +208,45 @@ test('personal themes are self-only preset preferences without identity or privi
  await assertFails(updateDoc(doc(dbFor('owner'),root+'/members/viewer'),{theme:'light'}));
  for(const id of ['disabled','pending','unapproved'])await assertFails(updateDoc(doc(dbFor(id),root+'/members/'+id),{theme:'dark'}));
  await assertFails(updateDoc(doc(env.unauthenticatedContext().firestore(),root+'/members/viewer'),{theme:'dark'}));
+});
+
+test('client cannot forge deletion locks; locked cards and boards reject all writes',async()=>{
+ const owner=dbFor('owner');
+ for(const patch of [{deleting:true},{deleting:false}]){
+  await assertFails(updateDoc(doc(owner,board),patch));
+  await assertFails(updateDoc(doc(owner,card),{...patch,updatedBy:'owner'}));
+ }
+ await assertFails(setDoc(doc(owner,board+'/cards/forged-lock'),{title:'Locked',createdBy:'owner',deleting:false}));
+ await env.withSecurityRulesDisabled(c=>updateDoc(doc(c.firestore(),card),{deleting:true}));
+ for(const role of ['owner','admin','editor']){
+  const db=dbFor(role);
+  await assertFails(updateDoc(doc(db,card),{title:'Changed',updatedBy:role}));
+  await assertFails(setDoc(doc(db,card+'/checklist/late'),{text:'Late'}));
+  await assertFails(setDoc(doc(db,card+'/comments/late'),{text:'Late',memberId:role}));
+  await assertFails(updateDoc(doc(db,card+'/attachments/file'),{archived:false}));
+ }
+ await env.withSecurityRulesDisabled(c=>updateDoc(doc(c.firestore(),card),{deleting:false}));
+ await env.withSecurityRulesDisabled(c=>updateDoc(doc(c.firestore(),board),{deleting:true}));
+ await assertFails(updateDoc(doc(owner,board),{name:'Changed'}));
+ await assertFails(setDoc(doc(owner,board+'/cards/late'),{title:'Late',createdBy:'owner'}));
+ await assertFails(updateDoc(doc(owner,card),{title:'Changed',updatedBy:'owner'}));
+ await assertFails(setDoc(doc(owner,board+'/columns/late'),{name:'Late'}));
+ await env.withSecurityRulesDisabled(c=>updateDoc(doc(c.firestore(),board),{deleting:false}));
+});
+
+test('only Owner can archive and restore a board through direct client writes',async()=>{
+ for(const role of ['admin','editor','viewer','member'])await assertFails(updateDoc(doc(dbFor(role),board),{archived:true}));
+ await assertSucceeds(updateDoc(doc(dbFor('owner'),board),{archived:true}));
+ for(const role of ['admin','editor'])await assertFails(updateDoc(doc(dbFor(role),board),{archived:false}));
+ await assertSucceeds(updateDoc(doc(dbFor('owner'),board),{archived:false}));
+});
+
+
+test('copying a card can atomically create its checklist while orphan child writes remain blocked',async()=>{
+ const db=dbFor('editor'),path=board+'/cards/copied-with-checklist';
+ const batch=writeBatch(db);
+ batch.set(doc(db,path),{title:'Copied card',createdBy:'editor',assigneeIds:[]});
+ batch.set(doc(db,path+'/checklist/task'),{text:'Copied task',done:false});
+ await assertSucceeds(batch.commit());
+ await assertFails(setDoc(doc(db,board+'/cards/missing-parent/checklist/orphan'),{text:'Orphan'}));
 });

@@ -21,8 +21,8 @@ const fields=data=>Object.fromEntries(Object.entries(data).map(([k,v])=>[k,decod
  }
  const lookup=await get('workspaces/main/memberLookup/'+encodeURIComponent(account.user.email));
  const member=fields((await get('workspaces/main/members/'+lookup.fields.memberId.stringValue)).fields);
- const {documents,changes}=await import('../workspace-data.js');
- const {compareOrderKey}=await import('../order-key.js');
+ const {documents,changes}=await import('../src/workspace-data.js');
+ const {compareOrderKey}=await import('../src/order-key.js');
  const results=[];
  for(const mode of ['baseline','optimized']){
   const stats={};
@@ -33,7 +33,7 @@ const fields=data=>Object.fromEntries(Object.entries(data).map(([k,v])=>[k,decod
    onSnapshot:()=>{throw Error('Audit does not open listeners');},runTransaction:()=>{throw Error('Audit never writes');}
   };
   const context=vm.createContext({console});
-  const source=mode==='baseline'?execFileSync('git',['show',baselineRef+':storage.js'],{encoding:'utf8'}):fs.readFileSync(path.join(__dirname,'../storage.js'),'utf8');
+  const source=mode==='baseline'?execFileSync('git',['show',baselineRef+':storage.js'],{encoding:'utf8'}):fs.readFileSync(path.join(__dirname,'../src/storage.js'),'utf8');
   const mod=new vm.SourceTextModule(source,{context});
   await mod.link(()=>new vm.SyntheticModule(Object.keys(deps),function(){for(const [k,v]of Object.entries(deps))this.setExport(k,v)},{context}));await mod.evaluate();
   const start=Date.now();const state=await mod.namespace.loadWorkspace({accessboard:member.accessboard,roster:[]});

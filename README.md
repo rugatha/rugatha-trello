@@ -110,7 +110,7 @@
 
 要找回時，在看板按「封存項目」，再按「復原牌卡」或「復原附件」。如果整張卡片已經封存，先復原卡片，再找它的附件。編輯者、管理員與擁有者都能復原；閱讀者只能查看。
 
-整個專案暫時不用時，也能在看板設定按「封存看板」。之後從左側「封存看板」找到它，打開看板設定，按「復原看板」即可。
+整個專案暫時不用時，Owner 可在看板設定按「封存看板」。之後從左側「封存看板」找到它，打開看板設定，按「復原看板」即可。
 
 ## 管理員：讓團隊加入並安排工作
 
@@ -176,3 +176,11 @@
 管理員調整你的身分或能查看的看板時，編輯視窗可能關閉。重新整理、切換帳號或權限變動前，尚未送出的文字請先自行保留。
 
 如果仍需要協助，請把操作步驟與畫面上的錯誤訊息告訴團隊管理員。
+
+## 專案檔案與安裝
+
+前端入口為根目錄的 `index.html`；程式集中於 `src/`，樣式與圖示位於 `assets/`。工作清單見 [docs/to-do.md](docs/to-do.md)，整理與保留檔案的理由見 [docs/project-structure.md](docs/project-structure.md)。Firebase 設定、規則、npm 設定及 PWA 的 manifest／service worker 保留於根目錄。
+
+網站提供 PWA manifest，可從支援的瀏覽器安裝或加入主畫面，使用 `assets/rugatha-trello-icon.png` 縮小後的圖示。部署後需透過 HTTPS 存取；本機驗證可使用 localhost。離線啟動會顯示重新連線提示，看板及附件不加入 service worker 快取。規格參考：[MDN manifest](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Manifest/Reference)、[service worker](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API/Using_Service_Workers)。
+
+Owner 可在看板設定封存／復原看板；永久刪除須先封存並輸入名稱確認。封存牌卡的永久刪除位於「封存項目」。詳見 [Owner 管理設計與部署狀態](docs/content-lifecycle.md)。

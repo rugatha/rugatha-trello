@@ -32,7 +32,7 @@ async function setup(member = {name:'會員名稱',status:'active',role:'viewer'
   };
   const window={dispatchEvent(){}};
   const context=vm.createContext({document:{querySelector:element,body:{dataset:{}}},window,setTimeout:()=>{},CustomEvent:class{}});
-  const module=new vm.SourceTextModule(await fs.readFile(new URL('../auth.js',import.meta.url),'utf8'),{context});
+  const module=new vm.SourceTextModule(await fs.readFile(new URL('../src/auth.js',import.meta.url),'utf8'),{context});
   const dep=new vm.SyntheticModule(Object.keys(api),function(){for(const [key,value] of Object.entries(api))this.setExport(key,value);},{context});
   await module.link(()=>dep);await module.evaluate();
   return {element,window,body:context.document.body,writes,reads,listeners,setFail:()=>fail=true,
