@@ -1,4 +1,4 @@
-"""Build transparent Rugatha icons from the original black-matted PNG.
+"""Build transparent favicons and full-bleed PWA icons from the original PNG.
 
 Requires Pillow. Only the connected dark exterior and its antialiased edge
 are changed; the emblem interior keeps its original RGB values.
@@ -64,12 +64,25 @@ assert result.getpixel((width // 2, height // 2)) == pixels[width // 2, height /
 result.save(ROOT / "assets/rugatha-trello-icon-transparent.png", optimize=True)
 icons = ROOT / "assets/icons"
 icons.mkdir(exist_ok=True)
-for name, size in (("favicon-32-transparent.png", 32),
-                   ("apple-touch-icon-transparent.png", 180),
-                   ("icon-192-transparent.png", 192),
-                   ("icon-512-transparent.png", 512)):
+for name, size in (("favicon-32-transparent.png", 32),):
     icon = result.resize((size, size), Image.Resampling.LANCZOS)
     icon.save(icons / name, optimize=True)
     assert icon.mode == "RGBA" and icon.getpixel((0, 0))[3] == 0
     print(f"{name}: {size} x {size}, RGBA, {(icons / name).stat().st_size:,} bytes")
+
+# Installed app icons fill the entire platform mask. Preserve the original
+# full-width circular artwork; extend its forest-green background to all
+# corners instead of making the browser supply a white padded backing.
+full_bleed = Image.new("RGBA", result.size, (45, 79, 70, 255))
+full_bleed.alpha_composite(result)
+full_bleed = full_bleed.convert("RGB")
+for name, size in (("apple-touch-icon-full.png", 180),
+                   ("icon-192-full.png", 192),
+                   ("icon-512-full.png", 512)):
+    icon = full_bleed.resize((size, size), Image.Resampling.LANCZOS)
+    icon.save(icons / name, optimize=True)
+    assert icon.mode == "RGB" and icon.size == (size, size)
+    assert all(icon.getpixel(position) == (45, 79, 70) for position in
+               ((0, 0), (size - 1, 0), (0, size - 1), (size - 1, size - 1)))
+    print(f"{name}: {size} x {size}, opaque full-bleed PNG, {(icons / name).stat().st_size:,} bytes")
 print(f"Exterior transparent pixels: {transparent:,}; antialiased edge pixels: {changed:,}")

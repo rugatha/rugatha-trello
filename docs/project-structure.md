@@ -31,11 +31,13 @@
 
 ## PWA 行為
 
-Manifest、圖示和註冊程式都使用相對 URL，支援 GitHub Pages 的專案子路徑。Worker 放在根目錄以涵蓋入口；只攔截工作空間首頁導覽，網路失敗才顯示 `offline.html`。快取只含靜態離線提示，不含登入資訊、Firestore 回應、附件、前端程式或看板畫面；更新仍從網路載入。測試頁不註冊 worker。Android 圖示採 `any`，不假設原圖具備 maskable 安全邊界。
+Manifest、圖示和註冊程式都使用相對 URL，支援 GitHub Pages 的專案子路徑。Worker 放在根目錄以涵蓋入口；只攔截工作空間首頁導覽，網路失敗才顯示 `offline.html`。快取只含靜態離線提示，不含登入資訊、Firestore 回應、附件、前端程式或看板畫面；更新仍從網路載入。測試頁不註冊 worker。
 
-圖示使用 `assets/rugatha-trello-icon-transparent.png` 產生的 RGBA PNG：favicon 32 px、Apple Touch 180 px、PWA 192／512 px。Manifest 和入口引用帶 `-transparent` 的新檔名，避免沿用舊圖示 URL；已確認無引用後移除四個舊的不透明縮圖，原始 PNG 保留。
+2026-10-12：安裝圖示改為滿版 PNG。`scripts/build-icons.py` 保留原圖案尺寸與顏色，在圓形外補上森林綠背景，填滿全部像素，不添加留白或縮小圖案。Manifest 提供 192／512 px 的 `icon-*-full.png`，分別宣告一般 `any` 和自適應 `maskable` 用途，支援平台直接裁切至圓形或圓角形狀。Apple Touch 使用 `apple-touch-icon-full.png`（180 px）；favicon 仍使用 32 px 透明 PNG。
 
-原圖圓形外是黑色背景。使用者於 2026-10-11 明確同意改用程式精準去背後，以 `scripts/build-icons.py`（需 Pillow）從原圖建立透明版本：只移除連通外部背景並處理黑底反鋸齒邊緣，內部圖案及顏色保持原始 RGB。透明版不是重繪圖案；192 px 約 64 KB、512 px 約 317 KB，32 px favicon 約 3 KB。已核對全部尺寸、RGBA、四角透明及圓內原始像素，並視覺檢查縮圖。
+新的安裝圖示使用新 URL，以更新圖示資產；保留前一版透明縮圖供仍快取舊 manifest 的安裝版本使用。圖示建置已核對 RGB／完全不透明、尺寸和四角填滿，以及圓形／圓角裁切預覽。系統可能仍保存已安裝的舊圖示，需要從正式網站重新安裝。用途與安全區域參考：[MDN icons](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Manifest/Reference/icons)、[Chrome maskable icon](https://web.dev/articles/maskable-icon)。
+
+原圖圓形外是黑色背景。使用者於 2026-10-11 明確同意改用程式精準去背後，以 `scripts/build-icons.py`（需 Pillow）從原圖建立透明版本：只移除連通外部背景並處理黑底反鋸齒邊緣，內部圖案及顏色保持原始 RGB。透明版不是重繪圖案；滿版版本從此圖案合成，192 px 約 56 KB、512 px 約 279 KB，32 px favicon 約 3 KB。
 
 imagegen 內建模式曾嘗試去背，檢查發現色彩偏移與邊緣雜點，產物沒有用在網站。最後嘗試的提示如下，正式交付圖示以原圖及上述腳本生成，沒有使用 AI 產物：
 
