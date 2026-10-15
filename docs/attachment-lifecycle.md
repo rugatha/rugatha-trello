@@ -29,3 +29,13 @@
 - token 撤銷後，Firefox 的 GitHub Pages 正式主畫面仍能從牌卡附件按鈕下載 `Ian_Portrait.jpg`；下載面板確認已完成 718 KB，圖片預覽正常，Viewer 上傳／封存按鈕停用。正式驗證頁亦已觀察撤權還原後再次解碼同一圖片成功。
 - 遷移記錄複核：160 張牌卡、218 個 Storage 檔案、69 個外部連結，附件計數與中繼資料錯誤為 0。原本 2 個外部 404 連結仍沿用既有盤點，不在 token 切換中改寫來源。
 - 階段四全部勾選完成，本輪停止於階段四；階段五、六的未完成項目保留。
+
+## 2026-10-16：附件不限類型
+
+依使用者明確授權，已發布 `management:beginAttachmentUpload`、`management:finishAttachmentUpload`（asia-east1）及 `storage.rules`。取消 MIME 白名單與內容格式辨識；每檔仍須大於 0 bytes 且不超過 20 MiB。無 MIME 的檔案使用 `application/octet-stream`。會員／看板授權、不可覆寫、暫存隱私與上傳大小／資料連結驗證沿用。
+
+兩支正式函式均由 Cloud Functions API 確認為 ACTIVE，並下載各自部署來源封存檔，確認其中的 `attachments.cjs` 與本機測試版本逐字一致。正式 Storage 規則重讀後與本機一致，已無類型白名單，仍保留 20 MiB 上限。`http://localhost:8000` Origin 的 OPTIONS 回傳 204，匿名 POST 回傳 401／UNAUTHENTICATED；未建立正式測試附件。
+
+本機驗證：134 項應用測試、17 項 Storage 規則測試、9 項附件整合測試通過。整合測試包含 Excel MIME、自訂類型、無 MIME 與二進位內容的上傳／下載。
+
+Firebase CLI 在兩支函式更新成功後，因既有 Artifact Registry 映像清理政策未設定而回傳非零狀態；未修改保存政策，已另以正式 API 及原始碼比對確認發布結果。這次未發布 GitHub Pages 前端；localhost 使用工作目錄中已更新的前端。
