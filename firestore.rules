@@ -34,6 +34,13 @@ service cloud.firestore {
         allow get: if verified() && email == request.auth.token.email.lower();
         allow list, write: if false;
       }
+      match /members/{id}/notifications/{notificationId} {
+        allow read: if active(w) && id == memberId(w);
+        allow update: if active(w) && id == memberId(w)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
+          && request.resource.data.read is bool;
+        allow create, delete: if false;
+      }
       match /members/{id} {
         allow get: if active(w) && id == memberId(w);
         allow list: if false;
@@ -107,12 +114,15 @@ service cloud.firestore {
             allow read: if boardAccess(w, b);
             allow create: if canEdit(w, b) && mutableCard()
               && request.resource.data.memberId == memberId(w)
+              && request.resource.data.get('mentions', []) == []
               && request.resource.data.text is string
               && request.resource.data.text.size() > 0
               && request.resource.data.text.size() <= 5000;
             allow update: if canEdit(w, b) && mutableCard()
               && resource.data.memberId == memberId(w)
               && request.resource.data.memberId == resource.data.memberId
+              && request.resource.data.get('mentions', []) == resource.data.get('mentions', [])
+              && (resource.data.get('mentions', []) == [] || request.resource.data.text == resource.data.text)
               && request.resource.data.text is string
               && request.resource.data.text.size() > 0
               && request.resource.data.text.size() <= 5000;

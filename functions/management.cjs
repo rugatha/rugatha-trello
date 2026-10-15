@@ -25,6 +25,19 @@ function requestId(value) {
   return value.toLowerCase();
 }
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+function commentMentions(data) {
+  if(typeof data.text!=='string' || !data.text.trim() || data.text.length>5000 || !Array.isArray(data.mentions) || data.mentions.length>100)
+    fail('invalid-argument','留言內容或標註格式不正確');
+  let end=0;
+  const mentions=data.mentions.map(m=>{
+    input(m,['memberId','start','end','label']);
+    if(!m || !Number.isInteger(m.start) || !Number.isInteger(m.end) || m.start<end || m.end<=m.start || m.end>data.text.length || typeof m.label!=='string' || data.text.slice(m.start,m.end)!=='@'+m.label)
+      fail('invalid-argument','標註位置不正確，請重新選取會員');
+    end=m.end;
+    return {memberId:id(m.memberId),start:m.start,end:m.end,label:m.label};
+  });
+  return mentions;
+}
 function createManagement(db) {
   async function actor(tx, auth, management = true) {
     const email=auth?.token?.email;
@@ -52,6 +65,78 @@ function createManagement(db) {
     return snapshot.data().result;
   }
   return {
+    async mentionMembers(auth, data) {
+      input(data,['boardId','cardId']);
+      const boardId=id(data.boardId),cardId=id(data.cardId);
+      return db.runTransaction(async tx=>{
+        const member=await actor(tx,auth,false);
+        await cardContext(tx,member,boardId,cardId);
+        const snapshot=await tx.get(db.collection(`${ROOT}/members`));
+        return {members:snapshot.docs.filter(d=>d.data().status==='active' && d.data().accessboard?.includes(boardId))
+          .map(d=>({id:d.id,name:d.data().name || '未設定名稱'}))};
+      });
+    },
+    async postComment(auth, data) {
+      input(data,['requestId','boardId','cardId','text','mentions']);
+      const operationId=requestId(data.requestId),boardId=id(data.boardId),cardId=id(data.cardId);
+      const mentions=commentMentions(data);
+      const targets=ids([...new Set(mentions.map(m=>m.memberId))]);
+      const payload={boardId,cardId,text:data.text,mentions};
+      return db.runTransaction(async tx=>{
+        const member=await actor(tx,auth,false);
+        if(!['owner','admin','editor'].includes(member.role))fail('permission-denied','沒有留言權限');
+        const card=await cardContext(tx,member,boardId,cardId);
+        const op=operation(auth,operationId,'postComment',payload),previous=await tx.get(op.ref),result=replay(previous,op.fingerprint);
+        if(result)return result;
+        const recipients=await Promise.all(targets.map(m=>tx.get(db.doc(`${ROOT}/members/${m}`))));
+        if(recipients.some(s=>!s.exists || s.data().status!=='active' || !s.data().accessboard?.includes(boardId)))
+          fail('failed-precondition','被標註的會員已無此牌卡權限，請重新選取');
+        const at=new Date().toISOString(),commentId=`comment-${operationId}`;
+        tx.create(card.ref.collection('comments').doc(commentId),{memberId:member.id,text:data.text,mentions,at});
+        tx.update(card.ref,{commentCount:(card.data.commentCount||0)+1,updatedBy:member.id,updatedAt:at});
+        for(const recipient of targets)if(recipient!==member.id)tx.create(db.doc(`${ROOT}/members/${recipient}/notifications/mention-${operationId}`),
+          {type:'mention',actorId:member.id,actorName:member.name || '未設定名稱',boardId,cardId,cardTitle:card.data.title,commentId,createdAt:at,read:false});
+        const posted={boardId,cardId,commentId};
+        tx.create(op.ref,{kind:'postComment',actorId:member.id,fingerprint:op.fingerprint,result:posted,createdAt:at});
+        return posted;
+      });
+    },
+    async manageComment(auth,data) {
+      input(data,['requestId','boardId','cardId','commentId','action','text','mentions','expected']);
+      const operationId=requestId(data.requestId),boardId=id(data.boardId),cardId=id(data.cardId),commentId=id(data.commentId);
+      if(!['edit','delete'].includes(data.action))fail('invalid-argument','留言操作不正確');
+      input(data.expected,['text','mentions','editedAt']);
+      if(typeof data.expected.text!=='string' || !Array.isArray(data.expected.mentions))fail('invalid-argument','缺少原始留言');
+      const mentions=data.action==='edit'?commentMentions(data):[];
+      const targets=[...new Set(mentions.map(m=>m.memberId))];ids(targets);
+      const payload={boardId,cardId,commentId,action:data.action,expected:data.expected,...(data.action==='edit'?{text:data.text,mentions}:{})};
+      return db.runTransaction(async tx=>{
+        const member=await actor(tx,auth,false);
+        if(!['owner','admin','editor'].includes(member.role))fail('permission-denied','沒有留言權限');
+        const card=await cardContext(tx,member,boardId,cardId);
+        const op=operation(auth,operationId,'manageComment',payload),previous=await tx.get(op.ref),result=replay(previous,op.fingerprint);
+        if(result)return result;
+        const ref=card.ref.collection('comments').doc(commentId),snapshot=await tx.get(ref),comment=snapshot.data();
+        if(!snapshot.exists)fail('not-found','留言已刪除，請重新整理');
+        if(comment.memberId!==member.id)fail('permission-denied','只有留言作者可以編輯或刪除');
+        if(comment.text!==data.expected.text || JSON.stringify(comment.mentions||[])!==JSON.stringify(data.expected.mentions) || (comment.editedAt||null)!==(data.expected.editedAt||null))
+          fail('aborted','留言已在其他視窗變更，請重新整理後再試');
+        const recipients=await Promise.all(targets.map(m=>tx.get(db.doc(`${ROOT}/members/${m}`))));
+        if(recipients.some(s=>!s.exists || s.data().status!=='active' || !s.data().accessboard?.includes(boardId)))
+          fail('failed-precondition','被標註的會員已無此牌卡權限，請重新選取');
+        const comments=data.action==='delete'?await tx.get(card.ref.collection('comments')):null;
+        const at=new Date().toISOString();
+        if(data.action==='delete')tx.delete(ref);
+        else tx.update(ref,{text:data.text,mentions,editedAt:at});
+        tx.update(card.ref,{...(data.action==='delete'?{commentCount:Math.max(0,comments.size-1)}:{}),updatedBy:member.id,updatedAt:at});
+        const oldTargets=new Set((comment.mentions||[]).map(m=>m.memberId));
+        for(const recipient of targets)if(recipient!==member.id && !oldTargets.has(recipient))tx.create(db.doc(`${ROOT}/members/${recipient}/notifications/mention-${operationId}`),
+          {type:'mention',actorId:member.id,actorName:member.name||'未設定名稱',boardId,cardId,cardTitle:card.data.title,commentId,createdAt:at,read:false});
+        const changed={boardId,cardId,commentId,action:data.action};
+        tx.create(op.ref,{kind:'manageComment',actorId:member.id,fingerprint:op.fingerprint,result:changed,createdAt:at});
+        return changed;
+      });
+    },
     async displayMembers(auth, data) {
       input(data, []);
       return db.runTransaction(async tx => {
@@ -191,6 +276,10 @@ function createManagement(db) {
         if(targets.some(s=>!s.exists || s.data().status!=='active' || !Array.isArray(s.data().accessboard) || !s.data().accessboard.includes(boardId))) fail('failed-precondition','負責人必須是仍可存取此看板的有效會員；請取消無效的歷史指派');
         const now=new Date().toISOString(),updated={boardId,cardId,assigneeIds};
         tx.update(card.ref,{assigneeIds,updatedBy:member.id,updatedAt:now});
+        for(const recipient of assigneeIds.filter(m=>!(card.data.assigneeIds||[]).includes(m))) {
+          tx.create(db.doc(`${ROOT}/members/${recipient}/notifications/assignment-${operationId}`),
+            {type:'assignment',actorId:member.id,actorName:member.name || '未設定名稱',boardId,cardId,cardTitle:card.data.title,createdAt:now,read:false});
+        }
         tx.create(op.ref,{kind:'setAssignees',actorId:member.id,fingerprint:op.fingerprint,result:updated,createdAt:now});
         return updated;
       });

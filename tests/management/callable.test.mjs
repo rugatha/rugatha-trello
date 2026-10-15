@@ -198,3 +198,78 @@ test('display directory includes the avatar without private member settings',asy
  const member=result.members.find(m=>m.id==='viewer');
  assert.deepEqual(member,{id:'viewer',name:'viewer',avatar});
 });
+
+test('mention picker enforces card access and exposes only eligible display fields',async()=>{
+ const result=await call('listMentionMembers',{boardId:'allowed',cardId:'card'},'viewer');
+ assert.ok(result.members.some(m=>m.id==='editor'));
+ assert.ok(!result.members.some(m=>['disabled','outsider'].includes(m.id)));
+ for(const member of result.members)assert.deepEqual(Object.keys(member).sort(),['id','name']);
+ assert.equal((await call('listMentionMembers',{boardId:'allowed',cardId:'card'},'outsider')).error,'PERMISSION_DENIED');
+});
+test('comments and mention notifications commit once, validate permission, and retain identity',async()=>{
+ const payload={requestId:randomUUID(),boardId:'allowed',cardId:'card',text:'Hi @viewer and @viewer',mentions:[{memberId:'viewer',label:'viewer',start:3,end:10},{memberId:'viewer',label:'viewer',start:15,end:22}]};
+ const result=await call('postComment',payload,'editor');
+ assert.ok(result.commentId,JSON.stringify(result));
+ assert.deepEqual(await call('postComment',payload,'editor'),result);
+ const comment=(await db.doc(`${root}/boards/allowed/cards/card/comments/${result.commentId}`).get()).data();
+ assert.equal(comment.memberId,'editor');assert.deepEqual(comment.mentions,payload.mentions);
+ const notification=db.doc(`${root}/members/viewer/notifications/mention-${payload.requestId}`);
+ assert.equal((await notification.get()).data().commentId,result.commentId);
+ assert.equal((await notification.get()).data().read,false);
+ assert.equal((await call('postComment',{...payload,text:'different'},'editor')).error,'INVALID_ARGUMENT');
+ for(const memberId of ['outsider','disabled','missing']){
+  const bad={...payload,requestId:randomUUID(),mentions:payload.mentions.map(m=>({...m,memberId}))};
+  assert.equal((await call('postComment',bad,'editor')).error,'FAILED_PRECONDITION');
+  assert.equal((await db.doc(`${root}/boards/allowed/cards/card/comments/comment-${bad.requestId}`).get()).exists,false);
+ }
+ for(const who of ['viewer','member','outsider','disabled','anonymous'])assert.ok((await call('postComment',{...payload,requestId:randomUUID()},who)).error);
+ const plain={requestId:randomUUID(),boardId:'allowed',cardId:'card',text:'Just a comment',mentions:[]};
+ assert.ok((await call('postComment',plain,'editor')).commentId);
+});
+test('assignment notifications only cover newly added recipients and are idempotent',async()=>{
+ const current=(await db.doc(`${root}/boards/allowed/cards/card`).get()).data().assigneeIds||[];
+ const desired=current.includes('editor')?current:[...current,'editor'];
+ const payload=assignment({expectedAssigneeIds:current,assigneeIds:desired});
+ assert.ok(!(await call('setManagedAssignees',payload)).error);
+ const notification=db.doc(`${root}/members/editor/notifications/assignment-${payload.requestId}`);
+ assert.equal((await notification.get()).exists,!current.includes('editor'));
+ await call('setManagedAssignees',payload);
+ const unchanged=assignment({expectedAssigneeIds:desired,assigneeIds:desired});
+ await call('setManagedAssignees',unchanged);
+ assert.equal((await db.doc(`${root}/members/editor/notifications/assignment-${unchanged.requestId}`).get()).exists,false);
+});
+
+test('only comment author can edit/delete; updates keep identity and notify only new mentions',async()=>{
+ const card=db.doc(`${root}/boards/allowed/cards/card`),ref=card.collection('comments').doc('author-actions');
+ const at='2026-10-16T00:00:00Z',original={text:'@viewer',mentions:[{memberId:'viewer',label:'viewer',start:0,end:7}],editedAt:null};
+ await ref.set({memberId:'editor',text:original.text,mentions:original.mentions,at});
+ const count=(await card.collection('comments').get()).size;await card.update({commentCount:count});
+ const payload={requestId:randomUUID(),boardId:'allowed',cardId:'card',commentId:ref.id,action:'edit',text:'@viewer @owner',mentions:[...original.mentions,{memberId:'owner',label:'owner',start:8,end:14}],expected:original};
+ for(const who of ['owner','admin','viewer','member','outsider','disabled','anonymous'])assert.ok((await call('manageComment',payload,who)).error);
+ const edited=await call('manageComment',payload,'editor');assert.equal(edited.action,'edit',JSON.stringify(edited));
+ assert.deepEqual(await call('manageComment',payload,'editor'),edited);
+ const data=(await ref.get()).data();assert.equal(data.memberId,'editor');assert.equal(data.at,at);assert.ok(data.editedAt);assert.equal(data.text,payload.text);
+ assert.equal((await card.get()).data().commentCount,count);
+ assert.equal((await db.doc(`${root}/members/owner/notifications/mention-${payload.requestId}`).get()).exists,true);
+ assert.equal((await db.doc(`${root}/members/viewer/notifications/mention-${payload.requestId}`).get()).exists,false);
+ assert.equal((await call('manageComment',{...payload,requestId:randomUUID()},'editor')).error,'ABORTED');
+ const expected={text:data.text,mentions:data.mentions,editedAt:data.editedAt};
+ const invalid={...payload,requestId:randomUUID(),text:'@missing',mentions:[{memberId:'missing',label:'missing',start:0,end:8}],expected};
+ assert.equal((await call('manageComment',invalid,'editor')).error,'FAILED_PRECONDITION');
+ assert.equal((await ref.get()).data().text,data.text);
+ const deletion={requestId:randomUUID(),boardId:'allowed',cardId:'card',commentId:ref.id,action:'delete',expected};
+ assert.equal((await call('manageComment',deletion,'owner')).error,'PERMISSION_DENIED');
+ const removed=await call('manageComment',deletion,'editor');assert.equal(removed.action,'delete');
+ assert.deepEqual(await call('manageComment',deletion,'editor'),removed);
+ assert.equal((await ref.get()).exists,false);assert.equal((await card.get()).data().commentCount,count-1);
+});
+test('comment management rechecks archival and board access',async()=>{
+ const card=db.doc(`${root}/boards/allowed/cards/card`),ref=card.collection('comments').doc('revoked-author');
+ await ref.set({memberId:'editor',text:'legacy',at:'2026-10-16T00:00:00Z'});
+ const payload={requestId:randomUUID(),boardId:'allowed',cardId:'card',commentId:ref.id,action:'delete',expected:{text:'legacy',mentions:[],editedAt:null}};
+ await card.update({archived:true});assert.equal((await call('manageComment',payload,'editor')).error,'FAILED_PRECONDITION');await card.update({archived:false});
+ const member=db.doc(`${root}/members/editor`),accessboard=(await member.get()).data().accessboard;
+ await member.update({accessboard:[]});assert.equal((await call('manageComment',payload,'editor')).error,'PERMISSION_DENIED');await member.update({accessboard});
+ assert.equal((await ref.get()).exists,true);
+ assert.equal((await call('manageComment',payload,'editor')).action,'delete');
+});

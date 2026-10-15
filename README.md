@@ -192,3 +192,16 @@ Owner 可在看板設定封存／復原看板；永久刪除須先封存並輸�
 新增設定使用既有 `members` 文件的 `boardOrder` 與 `avatar`，無須資料遷移。大頭貼為 160×160 JPEG 縮圖（最多 50,000 字元），只在有權限的會員名單傳送。部署時需同步更新前端、`firestore.rules` 與 `listDisplayMembers` Cloud Function；只更新前端會因舊規則而無法儲存。
 
 本機驗證：`npm test`、`npm run test:rules`、`npm run test:management`。執行 `python3 scripts/serve-phase5-test.py` 後開啟 `http://127.0.0.1:8005/tests/browser/preferences.html`，按「執行測試」可驗證排序、實際圖片縮放與手機設定畫面；此頁使用記憶體資料，不會存取正式 Firebase。
+
+
+### 留言標註與通知
+
+牌卡留言輸入 `@` 可搜尋並選取會員，也支援上下鍵、Enter／Tab 選取及 Escape 關閉。候選名單僅包含有效且有該看板權限的會員（牌卡沿用看板權限）；後端送出時會再次驗證。標註以會員 ID 與文字位置儲存，編輯或刪除標註文字會取消該次標註，純文字輸入名字不會發送通知。留言權限沿用 Owner／Admin／Editor。
+
+頂端「通知」顯示最近 100 則個人通知與其中的未讀數量。新增指派與被其他人標註時會產生通知，連線期間新通知另有即時提示；支援單則及整批設為已讀。點擊指派通知可開啟牌卡，標註通知會捲動並標示對應留言。失去權限、封存或刪除的牌卡不會被開啟。通知、留言與指派透過同一交易寫入，重試不會重複通知。
+
+此功能需同步部署前端、`firestore.rules` 與 Functions `listMentionMembers`、`postComment`、`setManagedAssignees`，無須遷移既有資料；既有指派與留言不會補發歷史通知。通知存於 `workspaces/main/members/{memberId}/notifications`，僅本人可讀且只能修改已讀狀態，客戶端不能建立通知。本機驗證使用 `npm test`、`npm run test:rules`、`npm run test:management`。
+
+2026-10-16 已部署上述三支 Functions 與 Firestore 規則，正式端點與 CORS 驗證通過；詳見 [通知後端部署紀錄](docs/notifications-deployment.md)。本次後端部署未發布 GitHub Pages 前端。
+
+留言作者可在自己的留言旁選擇「編輯」或「刪除」（仍需具有有效看板編輯權限，封存中的牌卡不可修改）。編輯沿用留言輸入框與 @ 選單，支援取消，並顯示「已編輯」；刪除前需確認。兩者皆由 `manageComment` callable 驗證作者、看板權限與原始留言版本，避免覆蓋其他視窗的變更；刪除同步更新牌卡留言數。編輯僅通知新增的被標註者。需要部署新增的 `management:manageComment` 與更新後的前端，沿用既有 Firestore 規則。

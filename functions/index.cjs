@@ -6,7 +6,7 @@ const {createManagement,ManagementError}=require('./management.cjs');
 initializeApp();
 const service=createManagement(getFirestore());
 const options={region:'asia-east1',maxInstances:3,timeoutSeconds:30,memory:'256MiB'};
-const callable=method=>onCall(options,async request=>{
+const callable=(method,extra={})=>onCall({...options,...extra},async request=>{
   try{return await service[method](request.auth,request.data);}
   catch(error){
     if(error instanceof ManagementError)throw new HttpsError(error.code,error.message);
@@ -20,6 +20,9 @@ exports.createManagedBoard=callable('createBoard');
 exports.setManagedAssignees=callable('setAssignees');
 
 exports.listDisplayMembers=callable('displayMembers');
+exports.listMentionMembers=callable('mentionMembers',{invoker:'public'});
+exports.postComment=callable('postComment',{invoker:'public'});
+exports.manageComment=callable('manageComment',{invoker:'public'});
 exports.listMembershipDirectory=callable('membershipDirectory');
 exports.saveManagedMembership=callable('saveMembership');
 

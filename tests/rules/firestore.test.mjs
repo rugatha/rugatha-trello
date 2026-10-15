@@ -267,3 +267,24 @@ test('obsolete personal board IDs do not prevent changing a name or avatar',asyn
   await assertSucceeds(updateDoc(ref,{name:'Viewer renamed',avatar:''}));
   await assertSucceeds(updateDoc(ref,{boardOrder:['allowed']}));
 });
+
+test('notifications are private, server-created and only read state is editable',async()=>{
+ const path=root+'/members/viewer/notifications/test';
+ await env.withSecurityRulesDisabled(async context=>setDoc(doc(context.firestore(),path),{type:'mention',read:false,boardId:'allowed',cardId:'card',createdAt:'2026-10-16T00:00:00Z'}));
+ const viewer=dbFor('viewer');
+ await assertSucceeds(getDocs(collection(viewer,root+'/members/viewer/notifications')));
+ await assertSucceeds(updateDoc(doc(viewer,path),{read:true}));
+ await assertFails(updateDoc(doc(viewer,path),{type:'assignment'}));
+ await assertFails(setDoc(doc(viewer,root+'/members/viewer/notifications/forged'),{read:false}));
+ await assertFails(getDoc(doc(dbFor('owner'),path)));
+ await assertFails(getDoc(doc(dbFor('disabled'),path)));
+ await assertFails(deleteDoc(doc(viewer,path)));
+});
+test('clients cannot forge mention identities or modify text behind stored mention offsets',async()=>{
+ const path=card+'/comments/mentioned';
+ const mentions=[{memberId:'viewer',start:0,end:7,label:'viewer'}];
+ await assertFails(setDoc(doc(dbFor('editor'),path),{memberId:'editor',text:'@viewer',mentions}));
+ await env.withSecurityRulesDisabled(async context=>setDoc(doc(context.firestore(),path),{memberId:'editor',text:'@viewer',mentions}));
+ await assertFails(updateDoc(doc(dbFor('editor'),path),{text:'changed'}));
+ await assertFails(updateDoc(doc(dbFor('editor'),path),{mentions:[]}));
+});

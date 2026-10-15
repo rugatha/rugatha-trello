@@ -926,3 +926,18 @@ button:disabled { opacity:.65; cursor:not-allowed; }
 @media(max-width:600px) {
   .sidebar-boards-heading { flex-wrap:wrap; justify-content:center; }
 }
+
+/* Mentions and personal notifications */
+.mention-list{border:1px solid var(--line);border-radius:8px;max-height:210px;overflow:auto;padding:6px;margin-top:6px;background:var(--surface)}
+.mention-list[hidden]{display:none}
+.mention-list button{display:block;text-align:left;width:100%;padding:9px 12px}
+.mention-list button[aria-selected="true"]{background:var(--primary);color:var(--on-primary)}
+.mention{background:var(--selected-surface);color:var(--ink);border-radius:4px;padding:1px 3px;font-weight:600}
+.comment p{white-space:pre-wrap;overflow-wrap:anywhere}
+.comment-target{outline:2px solid var(--primary);outline-offset:4px;border-radius:6px}
+.notifications-dialog{max-width:560px}
+.notification-item{display:flex;flex-direction:column;gap:6px;width:100%;text-align:left;border-bottom:1px solid var(--line);padding:16px 12px;white-space:normal;overflow-wrap:anywhere}
+.notification-item.unread{background:var(--selected-surface);border-left:3px solid var(--primary)}
+.notification-item time{font-size:12px;color:var(--muted)}
+.comment-actions{gap:8px;margin-top:6px}
+.comment-actions button{font-size:12px;padding:3px 7px}

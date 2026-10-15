@@ -4,16 +4,16 @@ import vm from 'node:vm';
 import fs from 'node:fs/promises';
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
 async function setup({archiveLoad=async()=>[],deferredArchives=false,workspaceLoad,managementLoad=async()=>({members:[],assigneeIds:[]}),managedCreate=async()=>({boardId:'new'}),managedAssign=async()=>({}),managedLifecycle=async()=>({})}={}){
- const elements=new Map(),writes=[],restores=[],subscriptions=[];
+ const elements=new Map(),writes=[],restores=[],subscriptions=[],commentTargets=[];
  const element=s=>{if(!elements.has(s))elements.set(s,{value:s==='#dueFilter'?'all':'',classList:{add(){},remove(){},toggle(){}},style:{},replaceChildren(){this.innerHTML='';},close(){this.open=false;},showModal(){this.open=true;}});return elements.get(s);};
  const context=vm.createContext({console,structuredClone,setTimeout:()=>0,clearTimeout,Intl,Date,crypto:{randomUUID:()=>'copy-id'},
- document:{querySelector:element,querySelectorAll:s=>/^#[a-zA-Z]+$/.test(s)?[element(s)]:[],addEventListener(){}},window:{addEventListener(){}}});
+ document:{querySelector:element,querySelectorAll:s=>s==='[data-comment-id]'?commentTargets:/^#[a-zA-Z]+$/.test(s)?[element(s)]:[],addEventListener(){}},window:{addEventListener(){}}});
  const data=()=>({users:[],boards:[{id:'b',name:'Board',columns:[{id:'col',name:'Todo'}],cards:[{id:'c',title:'Assigned',columnId:'col',createdAt:'2026-10-01T00:00:00Z',description:'',assignees:['viewer'],labels:[],checklist:[],comments:[],attachments:[],attachmentArchiveLoaded:!deferredArchives}]}]});
- const deps={clearAttachmentUI:()=>{},hydrateAttachmentImages:()=>{},downloadAttachment:()=>{},bindAttachmentUpload:()=>{},listManagementMembers:managementLoad,createManagedBoard:managedCreate,setManagedAssignees:managedAssign,manageContentLifecycle:managedLifecycle,loadDeferredAttachmentArchives:archiveLoad,loadWorkspace:async(account,options)=>workspaceLoad?workspaceLoad(account,options,data):data(),subscribeWorkspace:(account,next,error)=>{const sub={account,next,error,stopped:false};subscriptions.push(sub);return ()=>sub.stopped=true;},persistWorkspace:(before,after,member)=>{const d=deferred();Object.assign(d,{before,after,member});writes.push(d);return d.promise;},restoreCard:()=>{const d=deferred();restores.push(d);return d.promise;},restoreAttachment:async()=>{},assignMovedOrderKey:()=>{}};
+ const deps={bindCommentComposer:()=>{},connectNotifications:()=>{},renderMentionText:()=>{},clearAttachmentUI:()=>{},hydrateAttachmentImages:()=>{},downloadAttachment:()=>{},bindAttachmentUpload:()=>{},listManagementMembers:managementLoad,createManagedBoard:managedCreate,setManagedAssignees:managedAssign,manageContentLifecycle:managedLifecycle,loadDeferredAttachmentArchives:archiveLoad,loadWorkspace:async(account,options)=>workspaceLoad?workspaceLoad(account,options,data):data(),subscribeWorkspace:(account,next,error)=>{const sub={account,next,error,stopped:false};subscriptions.push(sub);return ()=>sub.stopped=true;},persistWorkspace:(before,after,member)=>{const d=deferred();Object.assign(d,{before,after,member});writes.push(d);return d.promise;},restoreCard:()=>{const d=deferred();restores.push(d);return d.promise;},restoreAttachment:async()=>{},assignMovedOrderKey:()=>{}};
  const source=await fs.readFile(new URL('../src/app.js',import.meta.url),'utf8');
- const mod=new vm.SourceTextModule(source+'\nexport {applyGoogleAccount,save,restoreArchived,canEdit,openCard,refreshWorkspace,showArchive,canManage,openManagedBoard,openManagedAssignees,runManagedWrite,openLifecycle,canOwn};',{context});
+ const mod=new vm.SourceTextModule(source+'\nexport {applyGoogleAccount,save,restoreArchived,canEdit,openCard,refreshWorkspace,showArchive,canManage,openManagedBoard,openManagedAssignees,runManagedWrite,openLifecycle,canOwn,openNotification};',{context});
  await mod.link(()=>new vm.SyntheticModule(Object.keys(deps),function(){for(const [k,v] of Object.entries(deps))this.setExport(k,v);},{context}));await mod.evaluate();
- return {api:mod.namespace,writes,restores,element,subscriptions,window:context.window};
+ return {api:mod.namespace,writes,restores,element,subscriptions,commentTargets,window:context.window};
 }
 const account=id=>({memberId:id,workspaceRole:'editor',accessboard:['b']});
 test('old save completion cannot unlock a new account write',async()=>{
@@ -253,4 +253,43 @@ test('Owner can open archive, restore and retry deletion for an archived board',
  await api.applyGoogleAccount({...account('owner'),workspaceRole:'owner'});
  assert.equal(element('#editBoard').disabled,false);assert.equal(element('#quickCreate').disabled,true);
  api.openLifecycle('delete');assert.equal(element('#simpleDialog').open,true);assert.equal(element('#managementSubmit').disabled,false);
+});
+
+
+test('notification opens its card across boards and refuses revoked access or failed refresh',async()=>{
+ const {api,element}=await setup();
+ await api.applyGoogleAccount(account('reader'));
+ await api.openNotification({boardId:'b',cardId:'c'});
+ assert.equal(element('#editor').open,true);
+ await assert.rejects(api.openNotification({boardId:'forbidden',cardId:'c'}),/存取權限/);
+ let fail=false;
+ const other=await setup({workspaceLoad:async(_,__,data)=>{if(fail)throw Error('offline');return data();}});
+ await other.api.applyGoogleAccount(account('reader'));fail=true;
+ await assert.rejects(other.api.openNotification({boardId:'b',cardId:'c'}),/連線已變更/);
+ assert.equal(other.element('#editor').open,false);
+});
+
+test('mention notification scrolls, highlights and focuses the exact comment',async()=>{
+ const {api,element,commentTargets}=await setup({workspaceLoad:async(_,__,data)=>{
+  const result=data();result.boards[0].cards[0].comments=[{id:'target',userId:'reader',text:'Hi',at:'2026-10-16T00:00:00Z'}];return result;
+ }});
+ let highlighted=false,scrolled=false,focused=false;
+ commentTargets.push({dataset:{commentId:'target'},classList:{add:name=>highlighted=name==='comment-target'},scrollIntoView:()=>scrolled=true,focus:()=>focused=true});
+ await api.applyGoogleAccount(account('reader'));
+ await api.openNotification({boardId:'b',cardId:'c',commentId:'target'});
+ assert.match(element('#comments').innerHTML,/data-comment-id="target"/);
+ assert.ok(highlighted && scrolled && focused);
+});
+
+test('comment actions are shown only beside the signed-in author’s own comments',async()=>{
+ const {api,element}=await setup({workspaceLoad:async(_,__,data)=>{
+  const result=data();result.boards[0].cards[0].comments=[
+   {id:'mine',userId:'reader',text:'Mine',at:'2026-10-16T00:00:00Z',editedAt:'2026-10-16T01:00:00Z'},
+   {id:'other',userId:'someone',text:'Other',at:'2026-10-16T00:00:00Z'}
+  ];return result;
+ }});
+ await api.applyGoogleAccount(account('reader'));api.openCard('c');
+ const html=element('#comments').innerHTML;
+ assert.match(html,/data-edit-comment="mine"/);assert.match(html,/data-delete-comment="mine"/);assert.match(html,/已編輯/);
+ assert.doesNotMatch(html,/data-(?:edit|delete)-comment="other"/);
 });
