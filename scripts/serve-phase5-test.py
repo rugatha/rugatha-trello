@@ -7,9 +7,11 @@ class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(root), **kwargs)
     def do_GET(self):
-        if self.path.split('?')[0] in ['/phase5-app', '/owner-app']:
+        if self.path.split('?')[0] in ['/phase5-app', '/owner-app', '/preferences-app']:
             source = (root / 'index.html').read_text()
             fixture = '/tests/browser/owner-fixture.js' if self.path.split('?')[0] == '/owner-app' else '/tests/browser/phase5-fixture.js'
+            if self.path.split('?')[0] == '/preferences-app':
+                fixture = '/tests/browser/preferences-fixture.js'
             imports = {f'https://www.gstatic.com/firebasejs/12.19.0/firebase-{name}.js': fixture for name in ['app','auth','firestore','functions']}
             imports.update({f'/src/{name}.js':fixture for name in ['storage','management','attachment-ui']})
             imports['/src/storage.js?v=20261010-rest'] = fixture

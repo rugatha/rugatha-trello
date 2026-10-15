@@ -190,3 +190,11 @@ test('Owner lifecycle callable enforces role, confirmation, archival and idempot
  assert.equal((await boardRef.get()).exists,false);assert.equal((await boardRef.collection('columns').get()).size,0);
  assert(!(await db.doc(root+'/members/owner').get()).data().accessboard.includes(created.boardId));
 });
+
+test('display directory includes the avatar without private member settings',async()=>{
+ const avatar='data:image/jpeg;base64,YXZhdGFy';
+ await db.doc(`${root}/members/viewer`).update({avatar,boardOrder:['allowed']});
+ const result=await call('listDisplayMembers',{},'viewer');
+ const member=result.members.find(m=>m.id==='viewer');
+ assert.deepEqual(member,{id:'viewer',name:'viewer',avatar});
+});

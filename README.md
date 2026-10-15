@@ -20,7 +20,7 @@
 
 ## 把看板想成一面工作牆
 
-登入後，你會在左側「我的看板」看到可以參與的專案。點一個名稱，就能打開它。
+登入後，你會在左側「我的看板」看到可以參與的專案。點一個名稱，就能打開它。按「我的看板」旁的「↕」，用上下箭頭調整看板順序，再按「儲存順序」。排序只影響自己的清單，會隨帳號保留；新加入的看板排在最後。
 
 一個看板就像一面工作牆。例如「活動籌備」看板，可以分成「待辦」、「進行中」、「已完成」三欄。每一欄稱為一個「階段」，每張卡片則代表一件工作。
 
@@ -152,6 +152,7 @@
 
 點右上角帳號名稱，可以開啟個人設定。
 
+- 在「大頭貼」選擇 JPG、PNG 或 WebP 圖片（最多 5 MiB），會自動置中裁切並儲存；也能按「移除大頭貼」恢復名字首字。團隊在成員名單、卡片及留言都能看到圖片，其他成員重新整理後可看到更新。
 - 按「修改顯示名稱」，更換團隊看到的名字。
 - 在「個人主題」選擇明亮或深色，讓閱讀更舒適。這只會影響你自己的畫面。
 - 按「登出 Google」離開帳號。使用共用電腦後，記得登出。
@@ -184,3 +185,10 @@
 網站提供 PWA manifest，可從支援的瀏覽器安裝或加入主畫面，使用 `assets/rugatha-trello-icon.png` 縮小後的圖示。部署後需透過 HTTPS 存取；本機驗證可使用 localhost。離線啟動會顯示重新連線提示，看板及附件不加入 service worker 快取。規格參考：[MDN manifest](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Manifest/Reference)、[service worker](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API/Using_Service_Workers)。
 
 Owner 可在看板設定封存／復原看板；永久刪除須先封存並輸入名稱確認。封存牌卡的永久刪除位於「封存項目」。詳見 [Owner 管理設計與部署狀態](docs/content-lifecycle.md)。
+
+
+### 個人排序與大頭貼的部署／驗證
+
+新增設定使用既有 `members` 文件的 `boardOrder` 與 `avatar`，無須資料遷移。大頭貼為 160×160 JPEG 縮圖（最多 50,000 字元），只在有權限的會員名單傳送。部署時需同步更新前端、`firestore.rules` 與 `listDisplayMembers` Cloud Function；只更新前端會因舊規則而無法儲存。
+
+本機驗證：`npm test`、`npm run test:rules`、`npm run test:management`。執行 `python3 scripts/serve-phase5-test.py` 後開啟 `http://127.0.0.1:8005/tests/browser/preferences.html`，按「執行測試」可驗證排序、實際圖片縮放與手機設定畫面；此頁使用記憶體資料，不會存取正式 Firebase。

@@ -250,3 +250,20 @@ test('copying a card can atomically create its checklist while orphan child writ
  await assertSucceeds(batch.commit());
  await assertFails(setDoc(doc(db,board+'/cards/missing-parent/checklist/orphan'),{text:'Orphan'}));
 });
+
+test('personal board order and raster avatar are self-service without changing grants',async()=>{
+  const ref=doc(dbFor('viewer'),root+'/members/viewer');
+  await assertSucceeds(updateDoc(ref,{boardOrder:['allowed'],avatar:'data:image/jpeg;base64,YXZhdGFy'}));
+  for(const patch of [{boardOrder:['forbidden']},{boardOrder:['allowed','allowed']},{boardOrder:'allowed'},
+    {avatar:'https://example.com/avatar.jpg'},{avatar:'data:image/svg+xml;base64,PHN2Zz4='},
+    {avatar:'data:image/jpeg;base64,'+'A'.repeat(50000)},{avatar:42},
+    {boardOrder:['allowed'],role:'owner'}])await assertFails(updateDoc(ref,patch));
+  await assertFails(updateDoc(doc(dbFor('editor'),root+'/members/viewer'),{avatar:''}));
+  await assertSucceeds(updateDoc(ref,{avatar:'',boardOrder:[]}));
+});
+test('obsolete personal board IDs do not prevent changing a name or avatar',async()=>{
+  await env.withSecurityRulesDisabled(c=>updateDoc(doc(c.firestore(),root+'/members/viewer'),{boardOrder:['revoked']}));
+  const ref=doc(dbFor('viewer'),root+'/members/viewer');
+  await assertSucceeds(updateDoc(ref,{name:'Viewer renamed',avatar:''}));
+  await assertSucceeds(updateDoc(ref,{boardOrder:['allowed']}));
+});

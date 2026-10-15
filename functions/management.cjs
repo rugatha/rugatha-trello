@@ -57,7 +57,7 @@ function createManagement(db) {
       return db.runTransaction(async tx => {
         await actor(tx, auth, false);
         const snapshot = await tx.get(db.collection(`${ROOT}/members`));
-        return {members: snapshot.docs.map(d => ({id:d.id, name:d.data().name || '未設定名稱'}))};
+        return {members: snapshot.docs.map(d => ({id:d.id, name:d.data().name || '未設定名稱', ...(d.data().avatar ? {avatar:d.data().avatar} : {})}))};
       });
     },
     async membershipDirectory(auth, data) {

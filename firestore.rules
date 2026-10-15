@@ -38,11 +38,20 @@ service cloud.firestore {
         allow get: if active(w) && id == memberId(w);
         allow list: if false;
         allow update: if active(w) && id == memberId(w)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'theme'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'theme', 'avatar', 'boardOrder'])
           && request.resource.data.name is string
           && request.resource.data.name.size() > 0
           && request.resource.data.name.size() <= 40
-          && request.resource.data.get('theme', 'light') in ['light', 'dark'];
+          && request.resource.data.get('theme', 'light') in ['light', 'dark']
+          && request.resource.data.get('avatar', '') is string
+          && request.resource.data.get('avatar', '').size() <= 50000
+          && (request.resource.data.get('avatar', '') == ''
+            || request.resource.data.avatar.matches('data:image/jpeg;base64,[A-Za-z0-9+/=]+'))
+          && request.resource.data.get('boardOrder', []) is list
+          && request.resource.data.get('boardOrder', []).size() <= 500
+          && request.resource.data.get('boardOrder', []).toSet().size() == request.resource.data.get('boardOrder', []).size()
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['boardOrder'])
+            || request.resource.data.boardOrder.toSet().hasOnly(resource.data.accessboard));
         allow create, delete: if false;
       }
       match /boards/{b} {

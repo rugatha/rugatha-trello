@@ -56,9 +56,65 @@ themeSelect.addEventListener('change', async () => {
 });
 syncTheme();
 
+// Store a small, raster-only thumbnail with the member so the roster needs no public URLs.
+const avatarInput = document.querySelector('#avatarInput');
+const avatarStatus = document.querySelector('#avatarStatus');
+const removeAvatar = document.querySelector('#removeAvatar');
+let avatarSaving = false;
+function syncAvatar() {
+  avatarInput.disabled = !currentMember || avatarSaving;
+  removeAvatar.disabled = !currentMember?.avatar || avatarSaving;
+  const preview = document.querySelector('#avatarPreview');
+  preview.hidden = !currentMember?.avatar;
+  preview.src = currentMember?.avatar || '';
+}
+async function avatarThumbnail(file) {
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw Error('請選擇 JPG、PNG 或 WebP 圖片');
+  if (!file.size || file.size > 5 * 1024 * 1024) throw Error('圖片不可超過 5 MiB');
+  const bitmap = await createImageBitmap(file);
+  try {
+    const size = Math.min(bitmap.width, bitmap.height);
+    if (!size) throw Error('無法讀取圖片');
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 160;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, 160, 160);
+    ctx.drawImage(bitmap, (bitmap.width-size)/2, (bitmap.height-size)/2, size, size, 0, 0, 160, 160);
+    const data = canvas.toDataURL('image/jpeg', 0.8);
+    if (!/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(data) || data.length > 50000) throw Error('圖片處理失敗，請換一張圖片');
+    return data;
+  } finally { bitmap.close(); }
+}
+async function saveAvatar(file) {
+  if (!currentUser || !currentMember || avatarSaving) return;
+  const user = currentUser, memberId = currentMember.id, version = membershipVersion;
+  const isCurrent = () => currentUser === user && membershipVersion === version && currentMember?.id === memberId;
+  avatarSaving = true; syncAvatar(); avatarStatus.textContent = '正在儲存大頭貼…';
+  try {
+    const avatar = file ? await avatarThumbnail(file) : '';
+    if (!isCurrent()) return;
+    await updateDoc(doc(firestore, 'workspaces', 'main', 'members', memberId), { avatar });
+    if (!isCurrent()) return;
+    currentMember.avatar = avatar;
+    currentMember.roster = currentMember.roster.map(item => item.id === memberId ? {...item, avatar} : item);
+    publish(user, currentMember);
+    avatarStatus.textContent = file ? '大頭貼已儲存' : '已移除大頭貼';
+  } catch (error) {
+    if (isCurrent()) avatarStatus.textContent = '大頭貼未儲存：' + error.message;
+  } finally {
+    if (isCurrent()) { avatarSaving = false; avatarInput.value = ''; syncAvatar(); }
+  }
+}
+avatarInput.addEventListener('change', () => { const file = avatarInput.files?.[0]; if (file) return saveAvatar(file); });
+removeAvatar.addEventListener('click', () => saveAvatar(null));
+
 function resetMembership() {
   membershipVersion++;
   themeRequest++;
+  avatarSaving = false;
+  avatarStatus.textContent = '';
+  avatarInput.value = '';
   themeSaving = false;
   themeStatus.textContent = '';
   stopMembership?.();
@@ -75,6 +131,7 @@ function notify(message) {
 
 function publish(user, member = null) {
   syncTheme();
+  syncAvatar();
   const previous = JSON.stringify(window.boardlyGoogleUser);
   window.boardlyGoogleUser = user ? {
     uid: user.uid,
@@ -83,6 +140,8 @@ function publish(user, member = null) {
     memberId: member?.status === 'active' ? member.id : null,
     workspaceRole: member?.status === 'active' ? member.role : null,
     accessboard: member?.accessboard || [],
+    boardOrder: member?.boardOrder || [],
+    avatar: member?.avatar || '',
     roster: member?.roster || []
   } : null;
   if (previous === JSON.stringify(window.boardlyGoogleUser)) return;
@@ -128,7 +187,7 @@ async function finishSignIn(user) {
         return;
       }
       const next = { ...data, id: snapshot.id, roster: currentMember.roster.map(item =>
-        item.id === snapshot.id ? { ...item, name: data.name || snapshot.id } : item) };
+        item.id === snapshot.id ? { ...item, name: data.name || snapshot.id, avatar: data.avatar || '' } : item) };
       if (JSON.stringify(next) === JSON.stringify(currentMember)) return;
       currentMember = next;
       publish(user, next);
@@ -218,6 +277,16 @@ nameForm.addEventListener('submit', async event => {
 });
 
 window.boardlyGoogleAuth = {
+  async saveBoardOrder(boardOrder) {
+    if (!currentUser || !currentMember) throw Error('尚未取得有效會員資格');
+    if (!Array.isArray(boardOrder) || boardOrder.length > 500 || new Set(boardOrder).size !== boardOrder.length || boardOrder.some(id => !currentMember.accessboard?.includes(id))) throw Error('看板順序無效，請重新整理');
+    const user = currentUser, memberId = currentMember.id, version = membershipVersion;
+    await updateDoc(doc(firestore, 'workspaces', 'main', 'members', memberId), {boardOrder});
+    if (currentUser !== user || membershipVersion !== version || currentMember?.id !== memberId) return false;
+    currentMember.boardOrder = boardOrder;
+    publish(user, currentMember);
+    return true;
+  },
   async refreshMembership() {
     const user = currentUser;
     resetMembership();

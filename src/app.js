@@ -15,7 +15,7 @@ function me(){return state.users.find(u=>u.id===userId())}
 
 function board(){return state.boards.find(b=>b.id===state.activeBoard)||state.boards[0]}
 
-function avatar(u){return u?`<span class="avatar" title="${esc(u.name)}">${esc([...u.name].slice(0,1).join(''))}</span>`:''}
+function avatar(u){return u?`<span class="avatar" title="${esc(u.name)}">${/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(u.avatar||'')?`<img src="${esc(u.avatar)}" alt="">`:esc([...(u.name||'')].slice(0,1).join(''))}</span>`:''}
 
 function overdue(c){return c.due&&!c.done&&new Date(c.due)<new Date()}
 
@@ -28,11 +28,56 @@ function applyBoardColor(value){
   const dark=color===boardColors[0];
   $('.main').style.cssText=`--board-bg:${color};--on-primary:${dark?'var(--board-light-ink)':'var(--board-dark-ink)'};--on-primary-muted:${dark?'var(--board-light-muted)':'var(--board-dark-ink)'}`;
 }
+function personalBoards() {
+  const positions = new Map((googleAccount?.boardOrder || []).map((id, i) => [id, i]));
+  return [...state.boards].sort((a, b) => (positions.get(a.id) ?? Infinity) - (positions.get(b.id) ?? Infinity));
+}
+let boardOrderDraft = [], boardOrderSaving = false;
+function renderBoardOrder() {
+  $('#boardOrderList').innerHTML = boardOrderDraft.map((id, i) => {
+    const b = state.boards.find(item => item.id === id);
+    return `<div class="row board-order-row"><span class="grow">${esc(b.name)}${b.archived?'（已封存）':''}</span><button type="button" data-board-up="${i}" aria-label="上移 ${esc(b.name)}" ${i===0||boardOrderSaving?'disabled':''}>↑</button><button type="button" data-board-down="${i}" aria-label="下移 ${esc(b.name)}" ${i===boardOrderDraft.length-1||boardOrderSaving?'disabled':''}>↓</button></div>`;
+  }).join('');
+  const move = (from, to) => {
+    if (boardOrderSaving || to < 0 || to >= boardOrderDraft.length) return;
+    const id = boardOrderDraft.splice(from, 1)[0]; boardOrderDraft.splice(to, 0, id);
+    renderBoardOrder();
+    $(`[data-board-${to===0?'down':'up'}="${to}"]`)?.focus?.();
+  };
+  $$('[data-board-up]').forEach(el => el.onclick = () => move(Number(el.dataset.boardUp), Number(el.dataset.boardUp)-1));
+  $$('[data-board-down]').forEach(el => el.onclick = () => move(Number(el.dataset.boardDown), Number(el.dataset.boardDown)+1));
+}
+$('#sortBoards').onclick = () => {
+  if (!googleAccount?.memberId || loading || saving || boardOrderSaving) return;
+  boardOrderDraft = personalBoards().map(b => b.id);
+  $('#boardOrderStatus').textContent = '';
+  renderBoardOrder(); $('#boardOrderDialog').showModal();
+};
+$('#closeBoardOrder').onclick = () => $('#boardOrderDialog').close();
+$('#saveBoardOrder').onclick = async () => {
+  if (boardOrderSaving || !googleAccount?.memberId) return;
+  const actor = googleAccount, version = generation;
+  boardOrderSaving = true; $('#saveBoardOrder').disabled = true; renderBoardOrder();
+  $('#boardOrderStatus').textContent = '正在儲存順序…';
+  try {
+    const saved = await window.boardlyGoogleAuth.saveBoardOrder([...boardOrderDraft]);
+    if (saved && googleAccount?.uid === actor.uid && googleAccount?.memberId === actor.memberId) {
+      $('#boardOrderDialog').close(); toast('看板順序已儲存');
+    }
+  } catch (error) {
+    if (version === generation) $('#boardOrderStatus').textContent = '順序未儲存：' + error.message;
+  } finally {
+    if (version === generation) {
+      boardOrderSaving = false; $('#saveBoardOrder').disabled = false; renderBoardOrder(); flushLiveSync();
+    }
+  }
+};
 function renderBoardNavigation(active) {
   const expanded = $('#archivedBoards')?.open || false;
   const boardButton = x=>`<button class="nav-button ${x.id===active.id?'active':''}" data-board="${x.id}" title="${esc(x.name)}"><span class="board-dot" style="background:${boardColors.includes(x.color)?x.color:boardColors[0]}"></span><span class="nav-text grow">${esc(x.name)}</span>${x.starred?'<span class="nav-text">★</span>':''}</button>`;
-  const current = state.boards.filter(board => !board.archived);
-  const archived = state.boards.filter(board => board.archived);
+  const boards = personalBoards();
+  const current = boards.filter(board => !board.archived);
+  const archived = boards.filter(board => board.archived);
   $('#boardNav').innerHTML = current.map(boardButton).join('') + (archived.length ?
     `<details id="archivedBoards" class="archived-boards" ${expanded?'open':''}>
       <summary title="展開封存看板"><span>封存看板</span><span class="count">${archived.length}</span></summary>
@@ -214,10 +259,10 @@ function stopLiveSync(){
   clearTimeout(liveTimer);liveTimer=null;livePending=false;liveBoards.clear();
 }
 function flushLiveSync(){
-  if(!livePending||liveTimer||saving||loading||$('#editor').open||$('#simpleDialog').open||$('#archiveDialog').open)return;
+  if(!livePending||liveTimer||saving||loading||$('#editor').open||$('#simpleDialog').open||$('#archiveDialog').open||$('#boardOrderDialog').open||boardOrderSaving)return;
   liveTimer=setTimeout(()=>{
     liveTimer=null;
-    if(saving||loading||$('#editor').open||$('#simpleDialog').open||$('#archiveDialog').open)return;
+    if(saving||loading||$('#editor').open||$('#simpleDialog').open||$('#archiveDialog').open||$('#boardOrderDialog').open||boardOrderSaving)return;
     const boardIds=[...liveBoards];
     livePending=false;liveBoards.clear();
     refreshWorkspace(boardIds.length?boardIds:null);
@@ -227,6 +272,7 @@ function queueLiveSync(boardId){livePending=true;if(boardId)liveBoards.add(board
 let managementRequest=0,managementLoading=false;
 $('#simpleDialog').onclose=()=>{managementRequest++;managementLoading=false;flushLiveSync()};
 $('#archiveDialog').onclose=()=>{archiveRequest++;flushLiveSync()};
+$('#boardOrderDialog').onclose=()=>{flushLiveSync();$('#sortBoards').focus?.()};
 function canEdit(){return !loading && !saving && Boolean(baseline) && ['owner','admin','editor'].includes(googleAccount?.workspaceRole)}
 function canManage(){return canEdit() && ['owner','admin'].includes(googleAccount?.workspaceRole)}
 function canOwn(){return canEdit() && googleAccount?.workspaceRole==='owner'}
@@ -341,7 +387,7 @@ function renderEmpty(){
   $('#boardTitle').textContent=loading?'正在讀取 Firebase…':googleAccount?.workspaceRole?'沒有可存取的看板':googleAccount?'尚未取得工作空間權限':'請先使用 Google 登入';
   $('#boardDescription').textContent=googleAccount&&!googleAccount.workspaceRole?'此帳號尚未取得工作空間權限。':'看板與牌卡由 Firebase 提供。';
   for(const id of ['crumb','boardNav','columns','boardStats','headerMembers'])$('#'+id).replaceChildren();
-  $('#currentUser').textContent=googleAccount?.displayName||'Google 登入';
+  $('#currentUser').innerHTML=googleAccount?avatar({name:googleAccount.displayName,avatar:googleAccount.avatar})+`<span class="user-name">${esc(googleAccount.displayName)}</span>`:'Google 登入';
   applyPermissions();
 }
 function applyPermissions(){
@@ -357,6 +403,7 @@ function applyPermissions(){
   if($('#archiveBoard'))$('#archiveBoard').disabled=!canOwn() || Boolean(board()?.deleting);
   if($('#deleteBoard'))$('#deleteBoard').disabled=!canOwn() || !board()?.archived;
   if(board()?.archived || board()?.deleting)$('#permissionNotice').textContent=board().deleting?'此看板正在永久刪除中；Owner 可重試完成清理。':'此看板已封存；Owner 可復原或永久刪除。';
+  $('#sortBoards').disabled=loading||saving||!googleAccount?.memberId||state.boards.length<2;
   $('#addBoard').disabled=!canManage();$('#addBoard').title='Owner／Admin 可建立看板並選擇授權會員';
   $$('.card').forEach(el=>el.draggable=edit);
   $$('#editor input, #editor textarea, #editor select, #editor button').forEach(el=>{
@@ -380,7 +427,8 @@ function clearWorkspaceDialogs(){
   clearAttachmentUI();
   managementRequest++;managementLoading=false;
   currentCard=null;dragged=null;
-  $('#editor').close();$('#simpleDialog').close();$('#archiveDialog').close();
+  $('#editor').close();$('#simpleDialog').close();$('#archiveDialog').close();$('#boardOrderDialog').close();
+  boardOrderSaving=false;$('#saveBoardOrder').disabled=false;
   for(const id of ['editor','simpleDialog','archiveBoardName','archivedCards','archivedAttachments'])$('#'+id).replaceChildren();
 }
 async function refreshWorkspace(boardIds=null,preferredBoard=null){

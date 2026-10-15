@@ -31,7 +31,7 @@ async function setup(member = {name:'會員名稱',status:'active',role:'viewer'
     updateDoc:async(path,patch)=>{if(hooks.updateDoc)await hooks.updateDoc();if(fail)throw Error('offline');writes.push({path,patch});Object.assign(member,patch);}
   };
   const window={dispatchEvent(){}};
-  const context=vm.createContext({document:{querySelector:element,body:{dataset:{}}},window,setTimeout:()=>{},CustomEvent:class{}});
+  const context=vm.createContext({document:{querySelector:element,createElement:()=>({getContext:()=>({fillRect(){},drawImage(...args){hooks.drawImage?.(args);}}),toDataURL:()=>hooks.thumbnail || 'data:image/jpeg;base64,YXZhdGFy'}),body:{dataset:{}}},createImageBitmap:async()=>{if(hooks.bitmap)return hooks.bitmap();return {width:400,height:200,close(){}};},window,setTimeout:()=>{},CustomEvent:class{}});
   const module=new vm.SourceTextModule(await fs.readFile(new URL('../src/auth.js',import.meta.url),'utf8'),{context});
   const dep=new vm.SyntheticModule(Object.keys(api),function(){for(const [key,value] of Object.entries(api))this.setExport(key,value);},{context});
   await module.link(()=>dep);await module.evaluate();
@@ -210,4 +210,57 @@ test('Google sign in offers account selection for real multi-account testing',as
  let parameters;const h=await setup(undefined,{provider:p=>parameters=p});
  await h.element('#googleSignIn').events.click();
  assert.equal(parameters.prompt,'select_account');
+});
+
+const imageFile = {type:'image/png', size:1024};
+test('avatar upload crops, saves the thumbnail and updates the published roster; removal restores initials', async()=>{
+  let draw;
+  const h=await setup(undefined,{drawImage:args=>draw=args});await h.login();
+  h.element('#avatarInput').files=[imageFile];await h.element('#avatarInput').events.change();
+  assert.deepEqual(draw.slice(1),[100,0,200,200,0,0,160,160]);
+  assert.equal(h.writes[0].patch.avatar,'data:image/jpeg;base64,YXZhdGFy');
+  assert.equal(h.window.boardlyGoogleUser.roster[0].avatar,h.writes[0].patch.avatar);
+  assert.equal(h.element('#avatarPreview').hidden,false);
+  await h.element('#removeAvatar').events.click();
+  assert.equal(h.writes[1].patch.avatar,'');assert.equal(h.window.boardlyGoogleUser.avatar,'');
+  assert.equal(h.element('#avatarPreview').hidden,true);
+});
+for(const file of [{type:'image/svg+xml',size:100},{type:'image/png',size:6*1024*1024},{type:'image/jpeg',size:0}])test('invalid avatar '+JSON.stringify(file)+' never writes',async()=>{
+  const h=await setup();await h.login();h.element('#avatarInput').files=[file];await h.element('#avatarInput').events.change();
+  assert.equal(h.writes.length,0);assert.match(h.element('#avatarStatus').textContent,/未儲存/);assert.equal(h.element('#avatarInput').disabled,false);
+});
+test('avatar failure keeps the previous image and permits retry',async()=>{
+  const avatar='data:image/jpeg;base64,b2xk';const h=await setup({name:'Member',status:'active',avatar});await h.login();h.setFail();
+  h.element('#avatarInput').files=[imageFile];await h.element('#avatarInput').events.change();
+  assert.equal(h.window.boardlyGoogleUser.avatar,avatar);assert.equal(h.element('#avatarPreview').src,avatar);
+  assert.match(h.element('#avatarStatus').textContent,/offline/);assert.equal(h.element('#avatarInput').disabled,false);
+});
+test('account change while decoding an avatar prevents the old upload',async()=>{
+  const pending=deferred();const h=await setup(undefined,{bitmap:()=>pending.promise});await h.login();
+  h.element('#avatarInput').files=[imageFile];const upload=h.element('#avatarInput').events.change();await h.login('new');
+  pending.resolve({width:160,height:160,close(){}});await upload;
+  assert.equal(h.writes.length,0);assert.equal(h.window.boardlyGoogleUser.uid,'new');assert.equal(h.element('#avatarStatus').textContent,'');
+});
+test('revocation while saving an avatar cannot restore membership',async()=>{
+  const pending=deferred();const h=await setup(undefined,{updateDoc:()=>pending.promise});await h.login();
+  const save=h.element('#removeAvatar').events.click();h.listeners[0].next(snapshot(null));pending.resolve();await save;
+  assert.equal(h.window.boardlyGoogleUser.memberId,null);assert.equal(h.element('#avatarInput').disabled,true);
+});
+test('board order persists for viewers and survives another email login',async()=>{
+  const member={name:'Member',status:'active',role:'viewer',accessboard:['a','b']};const h=await setup(member);await h.login();
+  assert.equal(await h.window.boardlyGoogleAuth.saveBoardOrder(['b','a']),true);
+  assert.deepEqual(Array.from(h.writes[0].patch.boardOrder),['b','a']);
+  await h.login('alternate');assert.deepEqual(Array.from(h.window.boardlyGoogleUser.boardOrder),['b','a']);
+  for(const order of [['a','a'],['forbidden'],'a'])await assert.rejects(h.window.boardlyGoogleAuth.saveBoardOrder(order));
+  assert.equal(h.writes.length,1);
+});
+test('failed board order write preserves saved order',async()=>{
+  const h=await setup({name:'Member',status:'active',accessboard:['a','b'],boardOrder:['a','b']});await h.login();h.setFail();
+  await assert.rejects(h.window.boardlyGoogleAuth.saveBoardOrder(['b','a']),/offline/);
+  assert.deepEqual(Array.from(h.window.boardlyGoogleUser.boardOrder),['a','b']);
+});
+test('old board order save cannot publish after sign out',async()=>{
+  const pending=deferred();const h=await setup({name:'Member',status:'active',accessboard:['a']},{updateDoc:()=>pending.promise});await h.login();
+  const save=h.window.boardlyGoogleAuth.saveBoardOrder(['a']);await h.window.boardlyGoogleAuth.signOut();pending.resolve();
+  assert.equal(await save,false);assert.equal(h.window.boardlyGoogleUser,null);
 });

@@ -914,3 +914,15 @@ button:disabled { opacity:.65; cursor:not-allowed; }
 @media(prefers-reduced-motion:reduce) {
   *,*::before,*::after { transition:none!important; animation:none!important; scroll-behavior:auto!important; }
 }
+
+.avatar { overflow:hidden; }
+.avatar img { width:100%; height:100%; object-fit:cover; }
+.profile-avatar { width:64px; height:64px; border-radius:50%; object-fit:cover; }
+#avatarInput { min-width:0; max-width:100%; }
+#googleAccountPanel .field > .row { flex-wrap:wrap; }
+.board-order-row { padding:8px 0; border-bottom:1px solid var(--line); }
+.board-order-row .grow { min-width:0; overflow-wrap:anywhere; }
+#boardOrderList { margin-bottom:16px; }
+@media(max-width:600px) {
+  .sidebar-boards-heading { flex-wrap:wrap; justify-content:center; }
+}
