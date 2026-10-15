@@ -26,6 +26,8 @@ Storage 規則核對 metadata 僅含 `uploadedBy`、`boardId`、`cardId`、`atta
 
 前端使用 Firebase SDK `getBlob`，不使用 `getDownloadURL` 或 Firestore 的舊 token URL。圖片與下載採短期 Blob URL；重新渲染移除圖片時釋放，下載後釋放，帳號／會員授權變更時取消正在上傳的工作並釋放全部 URL。延遲完成的圖片讀取不得重新建立可用 URL；舊帳號的批次不得繼續下一個檔案。
 
+預覽接近可視範圍（160px）才開始讀取，避免畫面外圖片搶用頻寬。相同 Storage 路徑的並行預覽共用一次讀取；在目前授權期間內以記憶體保留原始 Blob，最多 32 MiB／48 筆，超限依最近使用順序淘汰，讓重繪、篩選及詳情視窗重用位元組。每個圖片仍有獨立可釋放的 Blob URL。快取不寫入磁碟或 Service Worker；帳號／權限變更時連同進行中讀取的索引一起清除，舊回應不能填回新快取。明確下載不使用此預覽快取，每次重新經 Storage 授權讀取。首次顯示仍需下載原圖，尚未產生縮圖。
+
 2026-10-09 已設定 CORS：允許 `https://rugatha.github.io`、`http://localhost:8765`、`http://127.0.0.1:8765` 的 GET／HEAD。CORS 不授予資料存取权，仍需 Firebase 身分與 Storage 規則。參考 [Firebase SDK 下載與 CORS](https://firebase.google.com/docs/storage/web/download-files)。
 
 `node scripts/storage-auth-cutover.cjs` 預設唯讀核對 218 個遷移檔案的大小／MD5；備份寫入忽略追蹤、0600 權限的 `attachments_export/migration/storage-auth-cutover/`。`--apply-cors` 只更新 CORS；`--apply-tokens` 以 generation／metageneration 前置條件移除舊 token、設定 no-store，並以 Firestore updateTime 前置條件移除舊 `url` 欄位。外部連結不變。`--verify-denied` 驗證原 token 連結失效。參考 [Cloud Storage metadata 前置條件](https://docs.cloud.google.com/storage/docs/request-preconditions)。

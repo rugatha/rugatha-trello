@@ -4,11 +4,31 @@ import {getFunctions,httpsCallable} from 'https://www.gstatic.com/firebasejs/12.
 const storage=getStorage(auth.app),functions=getFunctions(auth.app,'asia-east1');
 const call=async(name,data)=>(await httpsCallable(functions,name,{timeout:120000})(data)).data;
 const jobs=new Set(),urls=new Set();let epoch=0;
-export function clearAttachmentAccess(){epoch++;for(const job of jobs)job.cancel();jobs.clear();for(const url of urls)URL.revokeObjectURL(url);urls.clear();}
+// Published objects are immutable. Keep a bounded, memory-only preview cache for
+// this access epoch; downloads still perform a fresh authorized Storage read.
+const previewBlobs=new Map(),previewReads=new Map();let previewBytes=0;
+const MAX_PREVIEW_BYTES=32*1024*1024,MAX_PREVIEWS=48;
+export function clearAttachmentAccess(){epoch++;previewBlobs.clear();previewReads.clear();previewBytes=0;for(const job of jobs)job.cancel();jobs.clear();for(const url of urls)URL.revokeObjectURL(url);urls.clear();}
 export function releaseAttachmentURL(url){URL.revokeObjectURL(url);urls.delete(url);}
-export async function attachmentBlobURL(attachment){
+function previewBlob(path,version){
+ if(previewBlobs.has(path)){
+  const blob=previewBlobs.get(path);previewBlobs.delete(path);previewBlobs.set(path,blob);return Promise.resolve(blob);
+ }
+ if(previewReads.has(path))return previewReads.get(path);
+ const read=getBlob(ref(storage,path)).then(blob=>{
+  if(version===epoch&&blob.size<=MAX_PREVIEW_BYTES){
+   previewBlobs.set(path,blob);previewBytes+=blob.size;
+   while(previewBytes>MAX_PREVIEW_BYTES||previewBlobs.size>MAX_PREVIEWS){
+    const oldest=previewBlobs.keys().next().value;previewBytes-=previewBlobs.get(oldest).size;previewBlobs.delete(oldest);
+   }
+  }
+  return blob;
+ }).finally(()=>{if(previewReads.get(path)===read)previewReads.delete(path);});
+ previewReads.set(path,read);return read;
+}
+export async function attachmentBlobURL(attachment,{preview=false}={}){
  const version=epoch;
- const blob=await getBlob(ref(storage,attachment.storagePath));
+ const blob=await (preview?previewBlob(attachment.storagePath,version):getBlob(ref(storage,attachment.storagePath)));
  if(version!==epoch)throw Error('存取權限已變更');
  const url=URL.createObjectURL(blob);urls.add(url);return url;
 }

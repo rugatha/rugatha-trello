@@ -1,13 +1,28 @@
 import {attachmentBlobURL,releaseAttachmentURL,uploadAttachment,clearAttachmentAccess} from './attachment-client.js';
 const previews=new Map();
-export function clearAttachmentUI(){for(const url of previews.values())releaseAttachmentURL(url);previews.clear();clearAttachmentAccess();}
+let observer;
+function releasePreview(img,entry){
+ observer?.unobserve(img);if(entry.url)releaseAttachmentURL(entry.url);delete img.dataset.loading;previews.delete(img);
+}
+export function clearAttachmentUI(){for(const [img,entry] of previews){releasePreview(img,entry);img.removeAttribute('src');}observer?.disconnect();clearAttachmentAccess();}
+function loadPreview(img,entry){
+ observer?.unobserve(img);
+ if(!img.isConnected){releasePreview(img,entry);return;}
+ if(entry.loading)return;entry.loading=true;
+ attachmentBlobURL({storagePath:img.dataset.storagePath},{preview:true}).then(url=>{
+  if(previews.get(img)!==entry||!img.isConnected){releaseAttachmentURL(url);return;}
+  entry.url=url;img.src=url;
+ }).catch(()=>{if(previews.get(img)===entry&&img.isConnected){img.alt+='（預覽無法載入，請重新開啟重試）';img.removeAttribute('src');}});
+}
 export function hydrateAttachmentImages(root=document){
- for(const [img,url] of previews)if(!img.isConnected){releaseAttachmentURL(url);previews.delete(img);}
+ for(const [img,entry] of previews)if(!img.isConnected)releasePreview(img,entry);
+ if(!observer&&typeof IntersectionObserver!=='undefined')observer=new IntersectionObserver(entries=>{
+  for(const {target:img,isIntersecting} of entries){const entry=previews.get(img);if(isIntersecting&&entry)loadPreview(img,entry);}
+ },{rootMargin:'160px'});
  root.querySelectorAll('img[data-storage-path]').forEach(img=>{
-  if(img.dataset.loading)return;img.dataset.loading='true';
-  attachmentBlobURL({storagePath:img.dataset.storagePath}).then(url=>{
-   if(!img.isConnected){releaseAttachmentURL(url);return;}previews.set(img,url);img.src=url;
-  }).catch(()=>{if(img.isConnected){img.alt+='（預覽無法載入，請重新開啟重試）';img.removeAttribute('src');}});
+  if(previews.has(img))return;img.dataset.loading='true';
+  const entry={url:null,loading:false};previews.set(img,entry);
+  if(observer)observer.observe(img);else loadPreview(img,entry);
  });
 }
 export async function downloadAttachment(attachment){
