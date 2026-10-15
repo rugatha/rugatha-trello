@@ -40,3 +40,19 @@ test('late private image never creates an accessible Blob URL after revocation',
 test('revocation releases existing image and download URLs',async()=>{
  const {api,revoked}=await setup();await api.attachmentBlobURL({storagePath:'private'});api.clearAttachmentAccess();assert.deepEqual(revoked,['blob:test']);
 });
+
+test('all file types including xlsx and unknown extensions are accepted; missing MIME uses binary fallback',async()=>{
+ const {api,calls}=await setup();
+ for(const [name,type] of [['sheet.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],['data.xls','application/vnd.ms-excel'],['script.js','application/javascript'],['page.html','text/html'],['file.custom','application/x-custom-file'],['unknown','']]){
+  await api.uploadAttachment({name,type,size:18*1024},'b','c',name);
+  assert.equal(calls.at(-2).data.type,type||'application/octet-stream');
+ }
+});
+test('20 MiB is allowed; oversized and empty files have distinct size errors before any requests',async()=>{
+ const {api,calls}=await setup();
+ await api.uploadAttachment({name:'file.any',type:'',size:20*1024*1024},'b','c','limit');
+ const before=calls.length;
+ await assert.rejects(api.uploadAttachment({name:'large.any',type:'',size:20*1024*1024+1},'b','c','large'),/超過 20 MiB/);
+ await assert.rejects(api.uploadAttachment({name:'empty.any',type:'',size:0},'b','c','empty'),/空白/);
+ assert.equal(calls.length,before);
+});

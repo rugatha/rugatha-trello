@@ -40,8 +40,8 @@ test('completion is atomic and concurrent/repeated completions count exactly onc
  assert.deepEqual(await service.finish(auth('editor'),{requestId:'good'}),{attachmentId:s.attachmentId});
  await assert.rejects(service.begin(auth('editor'),{...payload('good'),name:'changed'}),{code:'already-exists'});
 });
-test('format mismatch never creates a record or changes count',async()=>{
- const s=await stage('bad','editor',Buffer.alloc(bytes.length,255));
+test('size mismatch never creates a record or changes count',async()=>{
+ const s=await stage('bad','editor',Buffer.alloc(bytes.length+1,255));
  await assert.rejects(service.finish(auth('editor'),{requestId:'bad'}),{code:'invalid-argument'});
  assert.equal((await db.doc(cardPath+'/attachments/'+s.attachmentId).get()).exists,false);
  assert.equal((await db.doc(cardPath).get()).data().attachmentCount,1);
@@ -83,4 +83,18 @@ test('cleanup removes expired unlinked bytes, preserves committed/archived objec
  const good=await service.begin(auth('owner'),{...payload('blocked'),cardId:'missing'}).catch(e=>e);assert.equal(good.code,'failed-precondition');
  const records=await db.doc(cardPath).collection('attachments').get();for(const d of records.docs)assert.equal((await bucket.file(d.data().storagePath).exists())[0],true);
  await db.doc(cardPath).update({archived:false});await assert.rejects(service.finish(auth('editor'),{requestId:'expired'}),{code:'failed-precondition'});
+});
+
+test('arbitrary file types and binary bytes complete without format sniffing',async()=>{
+ const body=Buffer.from([0,255,80,75,1,2,3]);
+ for(const [index,type] of ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/javascript','text/plain','application/octet-stream','application/x-custom-file',''].entries()){
+  const requestId='any-type-'+index;
+  const session=await service.begin(auth('editor'),{...payload(requestId),name:index===0?'sheet.xlsx':'file.custom',type,size:body.length});
+  await bucket.file(session.stagingPath).save(body,{resumable:false,metadata:{contentType:session.type,metadata:{uploadedBy:session.memberId,boardId:session.boardId,cardId:session.cardId,attachmentId:session.attachmentId}}});
+  const before=(await db.doc(cardPath).get()).data().attachmentCount;
+  await service.finish(auth('editor'),{requestId});
+  const file=(await db.doc(cardPath+'/attachments/'+session.attachmentId).get()).data();
+  assert.equal(file.type,type||'application/octet-stream');assert.equal((await db.doc(cardPath).get()).data().attachmentCount,before+1);
+  assert.deepEqual((await bucket.file(session.storagePath).download())[0],body);
+ }
 });

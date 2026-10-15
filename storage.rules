@@ -29,9 +29,6 @@ service firebase.storage {
       allow read, update, delete: if false;
       allow create: if resource == null && uploadAccess(u, b)
         && request.resource.size > 0 && request.resource.size <= 20 * 1024 * 1024
-        && request.resource.contentType in ['image/png', 'image/jpeg', 'image/gif',
-          'image/webp', 'image/avif', 'application/pdf', 'text/plain',
-          'application/zip', 'model/gltf-binary', 'model/stl']
         && request.resource.metadata.keys().hasOnly(['uploadedBy', 'boardId', 'cardId', 'attachmentId'])
         && request.resource.metadata.uploadedBy == u
         && request.resource.metadata.boardId == b

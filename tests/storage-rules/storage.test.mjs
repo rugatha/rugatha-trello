@@ -56,11 +56,8 @@ test('multi-email membership and email case resolve to the same member',async()=
   await assertSucceeds(getMetadata(ref(ctx.storage(),path())));
   await assertSucceeds(uploadBytes(ref(ctx.storage(),staging('alias')),new Uint8Array([1]),metadata('alias','editor')));
 });
-test('invalid type, empty file, forged linkage and extra metadata are rejected',async()=>{
+test('empty file, forged linkage and extra metadata are rejected',async()=>{
   const client=storage('editor');
-  for(const type of ['text/html','image/svg+xml','application/javascript','application/octet-stream']){
-    await assertFails(uploadBytes(ref(client,staging('badtype')),new Uint8Array([1]),metadata('badtype','editor',{contentType:type})));
-  }
   await assertFails(uploadBytes(ref(client,staging('empty')),new Uint8Array(),metadata('empty')));
   for(const patch of [{uploadedBy:'owner'},{boardId:'forbidden'},{cardId:'other'},{attachmentId:'other'},{unexpected:'x'}]){
     const meta=metadata('forged');Object.assign(meta.customMetadata,patch);
@@ -73,9 +70,9 @@ test('20 MiB boundary is accepted; larger uploads are rejected',async()=>{
   await assertSucceeds(uploadBytes(ref(client,staging('limit')),new Uint8Array(20*1024*1024),metadata('limit')));
   await assertFails(uploadBytes(ref(client,staging('large')),new Uint8Array(20*1024*1024+1),metadata('large')));
 });
-test('supported document, image and model MIME types can be uploaded with matching linkage',async()=>{
+test('arbitrary file types can be uploaded with matching linkage',async()=>{
   const client=storage('editor');
-  const types=['image/jpeg','image/gif','image/webp','image/avif','application/pdf','text/plain','application/zip','model/gltf-binary','model/stl'];
+  const types=['image/jpeg','image/gif','image/webp','image/avif','application/pdf','text/plain','application/zip','model/gltf-binary','model/stl','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/vnd.ms-excel','text/html','image/svg+xml','application/javascript','application/octet-stream','application/x-custom-file'];
   for(const [index,contentType] of types.entries()){
     const id='type-'+index;
     await assertSucceeds(uploadBytes(ref(client,staging(id)),new Uint8Array([1]),metadata(id,'editor',{contentType})));

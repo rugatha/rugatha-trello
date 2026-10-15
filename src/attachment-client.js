@@ -3,7 +3,6 @@ import {getStorage,ref,uploadBytesResumable,getBlob} from 'https://www.gstatic.c
 import {getFunctions,httpsCallable} from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-functions.js';
 const storage=getStorage(auth.app),functions=getFunctions(auth.app,'asia-east1');
 const call=async(name,data)=>(await httpsCallable(functions,name,{timeout:120000})(data)).data;
-const types=['image/png','image/jpeg','image/gif','image/webp','image/avif','application/pdf','text/plain','application/zip','model/gltf-binary','model/stl'];
 const jobs=new Set(),urls=new Set();let epoch=0;
 export function clearAttachmentAccess(){epoch++;for(const job of jobs)job.cancel();jobs.clear();for(const url of urls)URL.revokeObjectURL(url);urls.clear();}
 export function releaseAttachmentURL(url){URL.revokeObjectURL(url);urls.delete(url);}
@@ -15,8 +14,9 @@ export async function attachmentBlobURL(attachment){
 }
 export async function uploadAttachment(file,boardId,cardId,requestId,onProgress=()=>{}){
  const version=epoch;
- const type=types.includes(file.type)?file.type:({glb:'model/gltf-binary',stl:'model/stl'})[file.name.split('.').at(-1).toLowerCase()];
- if(!type||!file.size||file.size>20*1024*1024)throw Error('不支援此檔案格式或超過 20 MiB');
+ const type=file.type||'application/octet-stream';
+ if(!Number.isSafeInteger(file.size)||file.size<=0)throw Error('無法上傳空白或大小不正確的檔案');
+ if(file.size>20*1024*1024)throw Error('檔案超過 20 MiB 上限');
  const session=await call('beginAttachmentUpload',{requestId,boardId,cardId,name:file.name,size:file.size,type});
  const check=()=>{if(version!==epoch)throw Error('存取權限已變更，已停止上傳');};check();
  if(session.status!=='complete'){

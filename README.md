@@ -205,3 +205,5 @@ Owner 可在看板設定封存／復原看板；永久刪除須先封存並輸�
 2026-10-16 已部署上述三支 Functions 與 Firestore 規則，正式端點與 CORS 驗證通過；詳見 [通知後端部署紀錄](docs/notifications-deployment.md)。本次後端部署未發布 GitHub Pages 前端。
 
 留言作者可在自己的留言旁選擇「編輯」或「刪除」（仍需具有有效看板編輯權限，封存中的牌卡不可修改）。編輯沿用留言輸入框與 @ 選單，支援取消，並顯示「已編輯」；刪除前需確認。兩者皆由 `manageComment` callable 驗證作者、看板權限與原始留言版本，避免覆蓋其他視窗的變更；刪除同步更新牌卡留言數。編輯僅通知新增的被標註者。需要部署新增的 `management:manageComment` 與更新後的前端，沿用既有 Firestore 規則。
+
+附件上傳不限副檔名、MIME 類型或內容格式，每檔須大於 0 bytes 且不超過 20 MiB。瀏覽器無法辨識類型時使用 `application/octet-stream`。前端、附件 Functions 與 Storage 規則一致保留大小限制、會員／看板權限、上傳資料連結與檔案大小一致性檢查；部署時需同步發布前端、`storage.rules`、`beginAttachmentUpload` 與 `finishAttachmentUpload`。

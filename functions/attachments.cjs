@@ -2,25 +2,8 @@
 const {createHash}=require('node:crypto');
 const {ManagementError}=require('./management.cjs');
 const ROOT='workspaces/main', MAX=20*1024*1024;
-const TYPES=['image/png','image/jpeg','image/gif','image/webp','image/avif','application/pdf','text/plain','application/zip','model/gltf-binary','model/stl'];
 const fail=(code,message)=>{throw new ManagementError(code,message);};
 const id=x=>{if(typeof x!=='string'||!/^[\w-]{1,128}$/.test(x))fail('invalid-argument','附件 ID 不正確');return x;};
-function validContent(bytes,type) {
- const hex=bytes.subarray(0,16).toString('hex'),s=bytes.subarray(0,256).toString('ascii');
- switch(type){
- case 'image/png':return hex.startsWith('89504e470d0a1a0a');
- case 'image/jpeg':return hex.startsWith('ffd8ff');
- case 'image/gif':return /^GIF8[79]a/.test(s);
- case 'image/webp':return s.startsWith('RIFF')&&s.slice(8,12)==='WEBP';
- case 'image/avif':return s.slice(4,8)==='ftyp'&&/avif|avis/.test(s.slice(8,40));
- case 'application/pdf':return s.startsWith('%PDF-');
- case 'application/zip':return /^(504b0304|504b0506|504b0708)/.test(hex);
- case 'model/gltf-binary':return bytes.length>=12&&s.startsWith('glTF')&&bytes.readUInt32LE(4)===2&&bytes.readUInt32LE(8)===bytes.length;
- case 'model/stl':return bytes.length>=84&&84+bytes.readUInt32LE(80)*50===bytes.length || /^solid\s/.test(s)&&/endsolid\s*[^\r\n]*\s*$/.test(bytes.toString('utf8'));
- case 'text/plain':try{new TextDecoder('utf-8',{fatal:true}).decode(bytes);return !bytes.includes(0);}catch{return false;}
- default:return false;
- }
-}
 function createAttachments(db,bucket,{now=()=>Date.now()}={}) {
  async function actor(tx,auth,boardId) {
   const email=auth?.token?.email;
@@ -50,10 +33,14 @@ function createAttachments(db,bucket,{now=()=>Date.now()}={}) {
   async begin(auth,data){
    if(!auth?.uid)fail('unauthenticated','請先登入');
    const requestId=id(data?.requestId),boardId=id(data.boardId),cardId=id(data.cardId);
-   if(typeof data.name!=='string'||!data.name.trim()||data.name.length>180||!TYPES.includes(data.type)||!Number.isInteger(data.size)||data.size<=0||data.size>MAX)fail('invalid-argument','檔案格式或大小不符合限制（最多 20 MiB）');
+   if(typeof data.name!=='string'||!data.name.trim()||data.name.length>180)fail('invalid-argument','檔案名稱不正確');
+   const type=data.type||'application/octet-stream';
+   if(typeof type!=='string')fail('invalid-argument','檔案類型資料不正確');
+   if(!Number.isInteger(data.size)||data.size<=0)fail('invalid-argument','無法上傳空白或大小不正確的檔案');
+   if(data.size>MAX)fail('invalid-argument','檔案超過 20 MiB 上限');
    const ref=requestRef(auth,requestId),attachmentId='upload-'+ref.id;
    const name=data.name.trim(),filename=name.replace(/[\x00-\x1f\x7f/\\]/g,'_');
-   const payload={boardId,cardId,name,type:data.type,size:data.size};
+   const payload={boardId,cardId,name,type,size:data.size};
    return db.runTransaction(async tx=>{
     const {memberId}=await context(tx,auth,payload),existing=await tx.get(ref);
     if(existing.exists){const s=existing.data();if(Object.keys(payload).some(key=>s.payload[key]!==payload[key]))fail('already-exists','重試內容已變更');if(s.status==='expired')fail('failed-precondition','上傳已過期，請重新選檔');return s;}
@@ -81,7 +68,7 @@ function createAttachments(db,bucket,{now=()=>Date.now()}={}) {
     fail('failed-precondition','暫存檔案尚未上傳完成，請重試');
    }
    if(Number(meta.size)!==s.size||meta.contentType!==s.type||meta.metadata?.uploadedBy!==s.memberId||meta.metadata?.boardId!==s.boardId||meta.metadata?.cardId!==s.cardId||meta.metadata?.attachmentId!==s.attachmentId)fail('invalid-argument','上傳檔案資料不符');
-   if(bytes.length!==s.size||!validContent(bytes,s.type))fail('invalid-argument','檔案內容與宣告格式不符，請重新選檔');
+   if(bytes.length!==s.size)fail('invalid-argument','檔案大小與上傳資料不符，請重新選檔');
    const target=bucket.file(s.storagePath);
    try{await target.save(bytes,{resumable:false,preconditionOpts:{ifGenerationMatch:0},metadata:{contentType:s.type,cacheControl:'private, no-store',metadata:{uploadedBy:s.memberId,boardId:s.boardId,cardId:s.cardId,attachmentId:s.attachmentId}}});}
    catch(error){if(error.code!==412)throw error;const [old]=await target.download();if(!old.equals(bytes))fail('already-exists','附件路徑已存在不同內容');}
@@ -135,4 +122,4 @@ function createAttachments(db,bucket,{now=()=>Date.now()}={}) {
   }
  };
 }
-module.exports={createAttachments,validContent,MAX,TYPES};
+module.exports={createAttachments,MAX};
