@@ -11,9 +11,13 @@ async function setup({archiveLoad=async()=>[],deferredArchives=false,workspaceLo
  const data=()=>({users:[],boards:[{id:'b',name:'Board',columns:[{id:'col',name:'Todo'}],cards:[{id:'c',title:'Assigned',columnId:'col',createdAt:'2026-10-01T00:00:00Z',description:'',assignees:['viewer'],labels:[],checklist:[],comments:[],attachments:[],attachmentArchiveLoaded:!deferredArchives}]}]});
  const deps={bindCommentComposer:()=>{},connectNotifications:()=>{},renderMentionText:()=>{},clearAttachmentUI:()=>{},hydrateAttachmentImages:()=>{},downloadAttachment:()=>{},bindAttachmentUpload:()=>{},listManagementMembers:managementLoad,createManagedBoard:managedCreate,setManagedAssignees:managedAssign,manageContentLifecycle:managedLifecycle,loadDeferredAttachmentArchives:archiveLoad,loadWorkspace:async(account,options)=>workspaceLoad?workspaceLoad(account,options,data):data(),subscribeWorkspace:(account,next,error)=>{const sub={account,next,error,stopped:false};subscriptions.push(sub);return ()=>sub.stopped=true;},persistWorkspace:(before,after,member)=>{const d=deferred();Object.assign(d,{before,after,member});writes.push(d);return d.promise;},restoreCard:()=>{const d=deferred();restores.push(d);return d.promise;},restoreAttachment:async()=>{},assignMovedOrderKey:()=>{}};
  const source=await fs.readFile(new URL('../src/app.js',import.meta.url),'utf8');
- const mod=new vm.SourceTextModule(source+'\nexport {applyGoogleAccount,save,restoreArchived,canEdit,openCard,refreshWorkspace,showArchive,canManage,openManagedBoard,openManagedAssignees,runManagedWrite,openLifecycle,canOwn,openNotification};',{context});
+ const mod=new vm.SourceTextModule(source+'\nexport {selectBoard,applyGoogleAccount,save,restoreArchived,canEdit,openCard,refreshWorkspace,showArchive,canManage,openManagedBoard,openManagedAssignees,runManagedWrite,openLifecycle,canOwn,openNotification};',{context});
  await mod.link(()=>new vm.SyntheticModule(Object.keys(deps),function(){for(const [k,v] of Object.entries(deps))this.setExport(k,v);},{context}));await mod.evaluate();
- return {api:mod.namespace,writes,restores,element,subscriptions,commentTargets,window:context.window};
+ // These race tests exercise board actions after the member selects a board.
+ const api={...mod.namespace,applyGoogleAccount:async account=>{
+  await mod.namespace.applyGoogleAccount(account);mod.namespace.selectBoard('b');
+ }};
+ return {api,writes,restores,element,subscriptions,commentTargets,window:context.window};
 }
 const account=id=>({memberId:id,workspaceRole:'editor',accessboard:['b']});
 test('old save completion cannot unlock a new account write',async()=>{
@@ -292,4 +296,27 @@ test('comment actions are shown only beside the signed-in author’s own comment
  const html=element('#comments').innerHTML;
  assert.match(html,/data-edit-comment="mine"/);assert.match(html,/data-delete-comment="mine"/);assert.match(html,/已編輯/);
  assert.doesNotMatch(html,/data-(?:edit|delete)-comment="other"/);
+});
+
+
+test('board header filters membership before taking the first five avatars and updates on board switches',async()=>{
+ const {api,element}=await setup({workspaceLoad:async(_,__,data)=>{
+  const result=data();
+  result.users=[
+   ...Array.from({length:5},(_,i)=>({id:'other'+i,name:'Other '+i,boardIds:['second']})),
+   {id:'eligible',name:'Eligible member',boardIds:['b']},
+   {id:'shared',name:'Shared member',boardIds:['b','second']},
+   {id:'disabled',name:'Disabled member',boardIds:[]},
+   {id:'historical',name:'Historical member'}
+  ];
+  result.boards.push({...structuredClone(result.boards[0]),id:'second',name:'Second board'});
+  return result;
+ }});
+ await api.applyGoogleAccount(account('reader'));
+ let html=element('#headerMembers').innerHTML;
+ assert.match(html,/Eligible member/);assert.match(html,/Shared member/);
+ assert.doesNotMatch(html,/Other|Disabled|Historical/);
+ api.selectBoard('second');html=element('#headerMembers').innerHTML;
+ assert.match(html,/Other 0/);assert.doesNotMatch(html,/Eligible member/);
+ element('#workspaceNav').onclick();assert.equal(element('#headerMembers').innerHTML,'');
 });

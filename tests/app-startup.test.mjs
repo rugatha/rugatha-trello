@@ -6,7 +6,7 @@ test('main page starts empty and loads Firebase only after membership is availab
  const elements=new Map(),listeners=new Map(),loadOptions=[];let loads=0,liveChange,stopped=0;
  const element=selector=>{if(!elements.has(selector))elements.set(selector,{value:selector==='#dueFilter'?'all':'',classList:{add(){},remove(){},toggle(){}},style:{},replaceChildren(){this.innerHTML='';},close(){this.open=false;},showModal(){this.open=true;}});return elements.get(selector);};
  const context=vm.createContext({console,structuredClone,setTimeout,clearTimeout,crypto:{},Intl,Date,
- document:{querySelector:element,querySelectorAll:selector=>/^#[a-zA-Z]+$/.test(selector)?[element(selector)]:[],addEventListener(){}},
+ document:{querySelector:element,querySelectorAll:selector=>selector==='[data-board]'?[Object.assign(element('[data-board]'),{dataset:{board:'b'}})]:/^#[a-zA-Z]+$/.test(selector)?[element(selector)]:[],addEventListener(){}},
  window:{addEventListener:(name,fn)=>listeners.set(name,fn)}});
  const source=await fs.readFile(new URL('../src/app.js',import.meta.url),'utf8');
  const app=new vm.SourceTextModule(source,{context});
@@ -32,19 +32,32 @@ test('main page starts empty and loads Firebase only after membership is availab
  assert.equal(element('#googleAccountSummary').textContent,'Member · member@example.com');
  element('#userDialog').close();
  await new Promise(resolve=>setTimeout(resolve,0));
- assert.equal(loads,1);assert.equal(element('#boardTitle').textContent,'Firebase board');assert.equal(element('#quickCreate').disabled,true);
+ assert.equal(loads,1);
+ assert.equal(element('#welcomeScreen').hidden,false);
+ assert.match(element('#boardNav').innerHTML,/Firebase board/);
+ assert.doesNotMatch(element('#boardNav').innerHTML,/nav-button active/);
+ liveChange('b');await new Promise(resolve=>setTimeout(resolve,300));
+ assert.equal(element('#welcomeScreen').hidden,false);
+ element('[data-board]').onclick();
+ assert.equal(element('#welcomeScreen').hidden,true);
+ assert.equal(element('#boardTitle').textContent,'Firebase board');
+ element('#workspaceNav').onclick();
+ assert.equal(element('#welcomeScreen').hidden,false);
+ assert.equal(element('#columns').innerHTML,'');
+ element('[data-board]').onclick();
+assert.equal(element('#quickCreate').disabled,true);
  element('#archiveBtn').onclick();
  assert.match(element('#archivedCards').innerHTML,/Archived card/);
  assert.match(element('#archivedAttachments').innerHTML,/Archived file/);
  assert.equal(element('#archiveDialog').open,true);
  element('#archiveDialog').close();
  liveChange('b');await new Promise(resolve=>setTimeout(resolve,300));
- assert.equal(loads,2);
+ assert.equal(loads,3);
  assert.deepEqual(Array.from(loadOptions[1].boardIds),['b']);
  element('#editor').open=true;liveChange('b');await new Promise(resolve=>setTimeout(resolve,300));
- assert.equal(loads,2);
- element('#editor').close();element('#editor').onclose();await new Promise(resolve=>setTimeout(resolve,300));
  assert.equal(loads,3);
+ element('#editor').close();element('#editor').onclose();await new Promise(resolve=>setTimeout(resolve,300));
+ assert.equal(loads,4);
  element('#currentUser').onclick();
  await listeners.get('boardly-auth-changed')({detail:null});await new Promise(resolve=>setTimeout(resolve,0));
  assert.equal(stopped,1);

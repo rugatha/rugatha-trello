@@ -107,10 +107,10 @@ async function change(memberId,patch={},who='owner') {
 for(const who of ['anonymous','unverified','unapproved','disabled','editor','viewer','member'])test(`${who} cannot read private directory or modify membership`,async()=>{
  for(const [name,data] of [['listMembershipDirectory',{}],['saveManagedMembership',invite()]])assert.ok(['UNAUTHENTICATED','PERMISSION_DENIED'].includes((await call(name,data,who)).error));
 });
-test('display directory exposes only ID/name to active members',async()=>{
+test('display directory exposes display fields and board eligibility to active members',async()=>{
  const result=await call('listDisplayMembers',{},'viewer');
  assert.ok(result.members.length>0);
- for(const member of result.members)assert.deepEqual(Object.keys(member).sort(),['id','name']);
+ for(const member of result.members)assert.deepEqual(Object.keys(member).sort(),['boardIds','id','name']);
  for(const who of ['anonymous','unapproved','unverified','disabled'])assert.ok((await call('listDisplayMembers',{},who)).error);
 });
 test('invite is pending, normalized, atomic, idempotent and uniquely reserves email',async()=>{
@@ -196,7 +196,9 @@ test('display directory includes the avatar without private member settings',asy
  await db.doc(`${root}/members/viewer`).update({avatar,boardOrder:['allowed']});
  const result=await call('listDisplayMembers',{},'viewer');
  const member=result.members.find(m=>m.id==='viewer');
- assert.deepEqual(member,{id:'viewer',name:'viewer',avatar});
+ assert.deepEqual(member,{id:'viewer',name:'viewer',avatar,boardIds:member.boardIds});
+ assert.ok(member.boardIds.includes('allowed'));
+ assert.ok(!('boardOrder' in member));
 });
 
 test('mention picker enforces card access and exposes only eligible display fields',async()=>{
@@ -272,4 +274,19 @@ test('comment management rechecks archival and board access',async()=>{
  await member.update({accessboard:[]});assert.equal((await call('manageComment',payload,'editor')).error,'PERMISSION_DENIED');await member.update({accessboard});
  assert.equal((await ref.get()).exists,true);
  assert.equal((await call('manageComment',payload,'editor')).action,'delete');
+});
+
+
+test('header eligibility matches assignment access and hides boards outside caller access',async()=>{
+ const privateBoard='header-private',otherBoard='header-other';
+ await db.doc(`${root}/members/viewer`).update({accessboard:['allowed',otherBoard]});
+ await db.doc(`${root}/members/editor`).update({accessboard:['allowed',privateBoard]});
+ const result=await call('listDisplayMembers',{},'viewer');
+ assert.deepEqual(result.members.find(m=>m.id==='editor').boardIds,['allowed']);
+ assert.deepEqual(result.members.find(m=>m.id==='disabled').boardIds,[]);
+ assert.deepEqual(result.members.find(m=>m.id==='outsider').boardIds,[]);
+ assert.deepEqual(result.members.find(m=>m.id==='viewer').boardIds,['allowed',otherBoard]);
+ const picker=await call('listManagementMembers',{boardId:'allowed',cardId:'card'});
+ assert.deepEqual(result.members.filter(m=>m.boardIds.includes('allowed')).map(m=>m.id).sort(),
+   picker.members.filter(m=>m.eligible).map(m=>m.id).sort());
 });

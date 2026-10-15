@@ -140,9 +140,16 @@ function createManagement(db) {
     async displayMembers(auth, data) {
       input(data, []);
       return db.runTransaction(async tx => {
-        await actor(tx, auth, false);
+        const member = await actor(tx, auth, false);
         const snapshot = await tx.get(db.collection(`${ROOT}/members`));
-        return {members: snapshot.docs.map(d => ({id:d.id, name:d.data().name || '未設定名稱', ...(d.data().avatar ? {avatar:d.data().avatar} : {})}))};
+        return {members: snapshot.docs.map(d => {
+          const profile = d.data();
+          // Expose assignment eligibility only for boards the caller can access.
+          const boardIds = profile.status === 'active'
+            ? member.accessboard.filter(boardId => profile.accessboard?.includes(boardId)) : [];
+          return {id:d.id, name:profile.name || '未設定名稱', boardIds,
+            ...(profile.avatar ? {avatar:profile.avatar} : {})};
+        })};
       });
     },
     async membershipDirectory(auth, data) {
