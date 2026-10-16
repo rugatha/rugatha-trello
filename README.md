@@ -182,7 +182,7 @@
 
 前端入口為根目錄的 `index.html`；程式集中於 `src/`，樣式與圖示位於 `assets/`。工作清單見 [docs/to-do.md](docs/to-do.md)，整理與保留檔案的理由見 [docs/project-structure.md](docs/project-structure.md)。Firebase 設定、規則、npm 設定及 PWA 的 manifest／service worker 保留於根目錄。
 
-網站提供 PWA manifest，可從支援的瀏覽器安裝或加入主畫面，使用 `assets/rugatha-trello-icon.png` 縮小後的圖示。部署後需透過 HTTPS 存取；本機驗證可使用 localhost。離線啟動會顯示重新連線提示，看板及附件不加入 service worker 快取。規格參考：[MDN manifest](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Manifest/Reference)、[service worker](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API/Using_Service_Workers)。
+網站提供 PWA manifest，可從支援的瀏覽器安裝或加入主畫面，使用 `assets/rugatha-trello-icon.png` 縮小後的圖示。部署後需透過 HTTPS 存取；本機驗證可使用 localhost。離線啟動使用瀏覽器預設錯誤頁，不提供離線內容；service worker 不攔截請求，更新時會清除舊版離線提示快取。規格參考：[MDN manifest](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Manifest/Reference)、[service worker](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API/Using_Service_Workers)。
 
 Owner 可在看板設定封存／復原看板；永久刪除須先封存並輸入名稱確認。封存牌卡的永久刪除位於「封存項目」。詳見 [Owner 管理設計與部署狀態](docs/content-lifecycle.md)。
 

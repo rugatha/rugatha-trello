@@ -4,48 +4,49 @@ import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
 
 const source = await readFile(new URL('../sw.js', import.meta.url), 'utf8');
-function worker(root = 'https://example.com/rugatha-trello/', online = true) {
-  const handlers = {}, added = [], deleted = [];
-  const fallback = new Response('offline notice');
-  const context = vm.createContext({URL, Response,
-    self: {location: {href: root + 'sw.js'}, addEventListener: (name, fn) => {handlers[name] = fn;}},
-    fetch: async () => {if (!online) throw Error('offline'); return new Response('network page');},
+function worker(root = 'https://example.com/rugatha-trello/') {
+  const handlers = {}, deleted = [];
+  let skipped = false, claimed = false;
+  const ownKeys = [`rugatha-offline-${new URL(root).pathname}-v0`, `rugatha-offline-${new URL(root).pathname}-v2`];
+  const context = vm.createContext({URL,
+    self: {
+      location: {href: root + 'sw.js'},
+      addEventListener: (name, fn) => {handlers[name] = fn;},
+      skipWaiting: async () => {skipped = true;},
+      clients: {claim: async () => {
+        assert.deepEqual(deleted, ownKeys);
+        claimed = true;
+      }},
+    },
     caches: {
-      open: async () => ({add: async url => added.push(url), match: async () => fallback}),
-      keys: async () => ['rugatha-offline-/rugatha-trello/-v0', 'rugatha-offline-/other/-v0', 'unrelated'],
-      delete: async key => deleted.push(key),
+      keys: async () => [...ownKeys, 'rugatha-offline-/other/-v2', 'unrelated'],
+      delete: async key => {deleted.push(key); return true;},
     },
   });
   vm.runInContext(source, context);
-  const navigate = (path, mode = 'navigate', method = 'GET') => {
-    let response;
-    handlers.fetch({request: {url: new URL(path, root).href, mode, method}, respondWith: value => {response = value;}});
-    return response;
+  const dispatch = async name => {
+    let pending;
+    handlers[name]({waitUntil: value => {pending = value;}});
+    await pending;
   };
-  return {handlers, added, deleted, fallback, navigate};
+  return {handlers, dispatch, deleted, ownKeys, get skipped() {return skipped;}, get claimed() {return claimed;}};
 }
 
-test('worker caches only the offline notice and cleans only its own scope', async () => {
-  const w = worker(); let pending;
-  w.handlers.install({waitUntil: value => {pending = value;}}); await pending;
-  assert.deepEqual(w.added, ['https://example.com/rugatha-trello/offline.html']);
-  w.handlers.activate({waitUntil: value => {pending = value;}}); await pending;
-  assert.deepEqual(w.deleted, ['rugatha-offline-/rugatha-trello/-v0']);
+test('replacement worker activates without downloading an offline page', async () => {
+  const w = worker();
+  await w.dispatch('install');
+  assert.equal(w.skipped, true);
 });
 
-test('home navigation uses live network and falls back only when offline at root or Pages subpath', async () => {
+test('activation removes every legacy cache in its own scope before taking control', async () => {
   for (const root of ['https://example.com/', 'https://example.com/rugatha-trello/']) {
-    assert.equal(await (await worker(root).navigate('./')).text(), 'network page');
-    const w = worker(root, false);
-    for (const path of ['./', './index.html?installed=1']) assert.equal(await w.navigate(path), w.fallback);
+    const w = worker(root);
+    await w.dispatch('activate');
+    assert.deepEqual(w.deleted, w.ownKeys);
+    assert.equal(w.claimed, true);
   }
 });
 
-test('worker leaves APIs, attachments, modules, tests and other apps untouched', () => {
-  const w = worker(undefined, false);
-  for (const [url, mode, method] of [
-    ['./src/auth.js', 'cors', 'GET'], ['./assets/private.png', 'no-cors', 'GET'],
-    ['./tests/browser/preferences.html', 'navigate', 'GET'], ['/other/', 'navigate', 'GET'],
-    ['https://firestore.googleapis.com/', 'cors', 'GET'], ['./', 'navigate', 'POST'],
-  ]) assert.equal(w.navigate(url, mode, method), undefined);
+test('worker leaves navigation, APIs and assets to the browser without a fetch handler', () => {
+  assert.equal(worker().handlers.fetch, undefined);
 });

@@ -24,7 +24,7 @@
 | `tests/` | npm／CI 回歸、Firebase 規則與瀏覽器測試 |
 | `import/` | 私人匯入資料，不提交 Git；Socials 工具已更新來源路徑 |
 | `attachments_export/` | 私人附件、還原快照、遷移與稽核證據，不提交 Git |
-| 根目錄設定 | README、npm manifest／lock、Firebase 設定與規則、PWA manifest／service worker／離線提示頁 |
+| 根目錄設定 | README、npm manifest／lock、Firebase 設定與規則、PWA manifest／service worker |
 
 ## 已移除
 
@@ -42,7 +42,7 @@
 
 ## PWA 行為
 
-Manifest、圖示和註冊程式都使用相對 URL，支援 GitHub Pages 的專案子路徑。Worker 放在根目錄以涵蓋入口；只攔截工作空間首頁導覽，網路失敗才顯示 `offline.html`。快取只含靜態離線提示，不含登入資訊、Firestore 回應、附件、前端程式或看板畫面；更新仍從網路載入。測試頁不註冊 worker。
+Manifest、圖示和註冊程式都使用相對 URL，支援 GitHub Pages 的專案子路徑。2026-10-16 依使用者要求移除 `offline.html`。保留根目錄 `sw.js` 與原註冊 URL，供既有安裝取得更新；新版會立即啟用，清除目前專案路徑下全部舊版離線快取，再接管既有分頁。不註冊 fetch handler、不建立新快取，所有請求由瀏覽器正常處理，離線啟動顯示瀏覽器預設錯誤頁。PWA manifest 與安裝圖示仍保留；測試頁不註冊 worker。
 
 2026-10-12：安裝圖示改為滿版 PNG。`scripts/build-icons.py` 保留原圖案尺寸與顏色，在圓形外補上森林綠背景，填滿全部像素，不添加留白或縮小圖案。Manifest 提供 192／512 px 的 `icon-*-full.png`，分別宣告一般 `any` 和自適應 `maskable` 用途，支援平台直接裁切至圓形或圓角形狀。Apple Touch 使用 `apple-touch-icon-full.png`（180 px）；favicon 仍使用 32 px 透明 PNG。
 
@@ -54,9 +54,9 @@ imagegen 內建模式曾嘗試去背，檢查發現色彩偏移與邊緣雜點�
 
 > Create a production-ready transparent PNG app icon using the attached existing circular green and gold logo. Preserve the logo design exactly. Put the COMPLETE circular emblem centered in the square canvas, scaled to occupy 88 percent of the canvas width, leaving a uniform six percent completely transparent margin on all four sides. The canvas must have actual transparent alpha, not a black, white or checkerboard background. The outer gold circular rim must be a perfectly clean smooth circle with NO stray pixels, NO yellow/red edge speckles, NO ragged fringes, NO shadows, NO pixels anywhere in the transparent margin. Keep the entire interior of the circular emblem fully opaque. High-quality crisp antialiased circular edge for PWA app icon, green gold interior unchanged.
 
-部署後仍需驗證正式 HTTPS 網站的安裝選項、圖示與首次載入後的離線啟動；本機測試不代表已部署。
+歷史待驗項目：正式 HTTPS 網站的安裝選項與圖示。2026-10-16 起已取消自訂離線啟動頁，本機測試涵蓋舊快取清理與網路請求不攔截。
 
-## 本機驗證
+## 2026-10-11 本機驗證紀錄
 
 - `npm test`：107 項通過（104 項既有回歸、3 項 worker 行為測試），0 失敗。
 - Firefox 記憶體 fixture：色彩對比 30 項、手機／無障礙 36 項通過，沒有寫入正式 Firebase。修正測試伺服器對 `storage.js?v=20261010-rest` 的映射，避免漏載記憶體資料。
