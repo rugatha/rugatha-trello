@@ -962,3 +962,23 @@ button:disabled { opacity:.65; cursor:not-allowed; }
   line-height: 1.9;
   letter-spacing: .08em;
 }
+
+/* Navigation links share the sidebar button appearance. */
+a.nav-button{color:inherit;text-decoration:none;border-radius:8px}
+a.nav-button:hover{background:var(--hover-surface)}
+a.nav-button:focus-visible{outline:2px solid var(--primary)}
+
+/* Card completion is visible independently of its deadline or stage. */
+.completion-toggle{display:inline-flex;align-items:center;justify-content:center;width:25px;height:25px;min-width:25px;padding:0;border:2px solid var(--muted);border-radius:50%;background:transparent;color:var(--ink);font-size:17px;font-weight:800;line-height:1;flex-shrink:0}
+.completion-toggle.completed{background:#89ba31;border-color:#89ba31;color:#1b2a0a}
+button.completion-toggle:hover{background:var(--hover-surface)}
+button.completion-toggle.completed:hover{background:#9acb42}
+.card-title{display:flex;align-items:flex-start;gap:9px}
+.card-completion{padding-top:1px;flex-shrink:0}
+.card-completion .completion-toggle{width:18px;height:18px;min-width:18px;font-size:12px}
+.selected-labels{display:flex;flex-wrap:wrap;gap:5px}
+.label-picker{margin-top:12px;border:1px solid var(--input-line);border-radius:8px;background:var(--surface)}
+.label-picker summary{padding:10px;cursor:pointer;font-size:13px}
+.label-options{max-height:240px;overflow:auto;padding:0 10px 10px}
+.label-options label{margin:8px 0;font-weight:400}
+#labelColor{height:44px;width:100%;padding:4px}

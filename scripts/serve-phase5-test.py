@@ -7,7 +7,13 @@ class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(root), **kwargs)
     def do_GET(self):
-        if self.path.split('?')[0] in ['/phase5-app', '/owner-app', '/preferences-app']:
+        if self.path.split('?')[0] == '/gantt-app':
+            source = (root / 'gantt.html').read_text()
+            fixture = '/tests/browser/gantt-fixture.js'
+            imports = {'/src/auth.js': fixture, '/src/storage.js?v=20261010-rest': fixture, '/src/storage.js?v=20261016-deadline': fixture, '/src/storage.js?v=20261016-card-controls-v2': fixture}
+            source = source.replace('<head>', '<head><script type="importmap">'+json.dumps({'imports': imports})+'</script>')
+            self.send_response(200); self.send_header('Content-Type', 'text/html; charset=utf-8'); self.end_headers(); self.wfile.write(source.encode())
+        elif self.path.split('?')[0] in ['/phase5-app', '/owner-app', '/preferences-app']:
             source = (root / 'index.html').read_text()
             fixture = '/tests/browser/owner-fixture.js' if self.path.split('?')[0] == '/owner-app' else '/tests/browser/phase5-fixture.js'
             if self.path.split('?')[0] == '/preferences-app':
@@ -15,6 +21,7 @@ class Handler(SimpleHTTPRequestHandler):
             imports = {f'https://www.gstatic.com/firebasejs/12.19.0/firebase-{name}.js': fixture for name in ['app','auth','firestore','functions']}
             imports.update({f'/src/{name}.js':fixture for name in ['storage','management','attachment-ui']})
             imports['/src/storage.js?v=20261010-rest'] = fixture
+            imports['/src/storage.js?v=20261016-card-controls-v2'] = fixture
             source=source.replace('<head>', '<head><base href="/phase5-app"><script type="importmap">'+json.dumps({'imports':imports})+'</script><script type="module" src="/src/auth.js"></script>')
             self.send_response(200); self.send_header('Content-Type','text/html; charset=utf-8'); self.end_headers();self.wfile.write(source.encode())
         else:

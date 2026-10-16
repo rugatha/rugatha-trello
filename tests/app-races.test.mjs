@@ -2,22 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import fs from 'node:fs/promises';
+import * as cardOptions from '../src/card-options.js';
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
-async function setup({archiveLoad=async()=>[],deferredArchives=false,workspaceLoad,managementLoad=async()=>({members:[],assigneeIds:[]}),managedCreate=async()=>({boardId:'new'}),managedAssign=async()=>({}),managedLifecycle=async()=>({})}={}){
- const elements=new Map(),writes=[],restores=[],subscriptions=[],commentTargets=[];
+async function setup({search='',archiveLoad=async()=>[],deferredArchives=false,workspaceLoad,managementLoad=async()=>({members:[],assigneeIds:[]}),managedCreate=async()=>({boardId:'new'}),managedAssign=async()=>({}),managedLifecycle=async()=>({})}={}){
+ const elements=new Map(),writes=[],restores=[],subscriptions=[],commentTargets=[],labelWrites=[];
  const element=s=>{if(!elements.has(s))elements.set(s,{value:s==='#dueFilter'?'all':'',classList:{add(){},remove(){},toggle(){}},style:{},replaceChildren(){this.innerHTML='';},close(){this.open=false;},showModal(){this.open=true;}});return elements.get(s);};
- const context=vm.createContext({console,structuredClone,setTimeout:()=>0,clearTimeout,Intl,Date,crypto:{randomUUID:()=>'copy-id'},
- document:{querySelector:element,querySelectorAll:s=>s==='[data-comment-id]'?commentTargets:/^#[a-zA-Z]+$/.test(s)?[element(s)]:[],addEventListener(){}},window:{addEventListener(){}}});
+ const context=vm.createContext({console,structuredClone,setTimeout:()=>0,clearTimeout,Intl,Date,URLSearchParams,crypto:{randomUUID:()=>'copy-id'},
+ document:{querySelector:element,querySelectorAll:s=>s==='[data-comment-id]'?commentTargets:/^#[a-zA-Z]+$/.test(s)?[element(s)]:[],addEventListener(){}},window:{location:{search},addEventListener(){}}});
  const data=()=>({users:[],boards:[{id:'b',name:'Board',columns:[{id:'col',name:'Todo'}],cards:[{id:'c',title:'Assigned',columnId:'col',createdAt:'2026-10-01T00:00:00Z',description:'',assignees:['viewer'],labels:[],checklist:[],comments:[],attachments:[],attachmentArchiveLoaded:!deferredArchives}]}]});
- const deps={bindCommentComposer:()=>{},connectNotifications:()=>{},renderMentionText:()=>{},clearAttachmentUI:()=>{},hydrateAttachmentImages:()=>{},downloadAttachment:()=>{},bindAttachmentUpload:()=>{},listManagementMembers:managementLoad,createManagedBoard:managedCreate,setManagedAssignees:managedAssign,manageContentLifecycle:managedLifecycle,loadDeferredAttachmentArchives:archiveLoad,loadWorkspace:async(account,options)=>workspaceLoad?workspaceLoad(account,options,data):data(),subscribeWorkspace:(account,next,error)=>{const sub={account,next,error,stopped:false};subscriptions.push(sub);return ()=>sub.stopped=true;},persistWorkspace:(before,after,member)=>{const d=deferred();Object.assign(d,{before,after,member});writes.push(d);return d.promise;},restoreCard:()=>{const d=deferred();restores.push(d);return d.promise;},restoreAttachment:async()=>{},assignMovedOrderKey:()=>{}};
+ const deps={...cardOptions,saveBoardLabel:(...args)=>{const d=deferred();Object.assign(d,{args});labelWrites.push(d);return d.promise;},bindCommentComposer:()=>{},connectNotifications:()=>{},renderMentionText:()=>{},clearAttachmentUI:()=>{},hydrateAttachmentImages:()=>{},downloadAttachment:()=>{},bindAttachmentUpload:()=>{},listManagementMembers:managementLoad,createManagedBoard:managedCreate,setManagedAssignees:managedAssign,manageContentLifecycle:managedLifecycle,loadDeferredAttachmentArchives:archiveLoad,loadWorkspace:async(account,options)=>workspaceLoad?workspaceLoad(account,options,data):data(),subscribeWorkspace:(account,next,error)=>{const sub={account,next,error,stopped:false};subscriptions.push(sub);return ()=>sub.stopped=true;},persistWorkspace:(before,after,member)=>{const d=deferred();Object.assign(d,{before,after,member});writes.push(d);return d.promise;},restoreCard:()=>{const d=deferred();restores.push(d);return d.promise;},restoreAttachment:async()=>{},assignMovedOrderKey:()=>{}};
  const source=await fs.readFile(new URL('../src/app.js',import.meta.url),'utf8');
- const mod=new vm.SourceTextModule(source+'\nexport {selectBoard,applyGoogleAccount,save,restoreArchived,canEdit,openCard,refreshWorkspace,showArchive,canManage,openManagedBoard,openManagedAssignees,runManagedWrite,openLifecycle,canOwn,openNotification};',{context});
+ const mod=new vm.SourceTextModule(source+'\nexport {selectBoard,applyGoogleAccount,save,restoreArchived,canEdit,openCard,refreshWorkspace,showArchive,canManage,openManagedBoard,openManagedAssignees,runManagedWrite,openLifecycle,canOwn,openNotification,openLinkedCard};',{context});
  await mod.link(()=>new vm.SyntheticModule(Object.keys(deps),function(){for(const [k,v] of Object.entries(deps))this.setExport(k,v);},{context}));await mod.evaluate();
  // These race tests exercise board actions after the member selects a board.
  const api={...mod.namespace,applyGoogleAccount:async account=>{
   await mod.namespace.applyGoogleAccount(account);mod.namespace.selectBoard('b');
  }};
- return {api,writes,restores,element,subscriptions,commentTargets,window:context.window};
+ return {api,writes,restores,element,subscriptions,commentTargets,window:context.window,labelWrites};
 }
 const account=id=>({memberId:id,workspaceRole:'editor',accessboard:['b']});
 test('old save completion cannot unlock a new account write',async()=>{
@@ -45,7 +46,7 @@ test('successful restoration reloads and unlocks editing',async()=>{
 
 test('copying an assigned card creates an unassigned copy without changing the source',async()=>{
  const {api,writes,element}=await setup();await api.applyGoogleAccount(account('editor'));
- api.openCard('c');element('#copyCard').onclick();
+ api.openCard('c');element('#copyCard').onclick();element('#simpleForm').onsubmit({preventDefault(){}});
  assert.equal(writes.length,1);
  const cards=writes[0].after.boards[0].cards;
  assert.deepEqual(Array.from(cards.find(c=>c.id==='c').assignees),['viewer']);
@@ -319,4 +320,88 @@ test('board header filters membership before taking the first five avatars and u
  api.selectBoard('second');html=element('#headerMembers').innerHTML;
  assert.match(html,/Other 0/);assert.doesNotMatch(html,/Eligible member/);
  element('#workspaceNav').onclick();assert.equal(element('#headerMembers').innerHTML,'');
+});
+
+test('completing a card persists its completion time and reopening clears it',async()=>{
+ const {api,writes,element}=await setup();await api.applyGoogleAccount(account('editor'));api.openCard('c');
+ const before=Date.now();element('#cardDone').onchange({target:{checked:true}});
+ const complete=writes[0].after.boards[0].cards[0];
+ assert.equal(complete.done,true);assert.ok(Date.parse(complete.completedAt)>=before);
+ writes[0].resolve([]);await new Promise(resolve=>setImmediate(resolve));
+ api.openCard('c');element('#cardDone').onchange({target:{checked:false}});
+ const reopened=writes[1].after.boards[0].cards[0];
+ assert.equal(reopened.done,false);assert.equal(reopened.completedAt,'');
+ writes[1].resolve([]);await new Promise(resolve=>setImmediate(resolve));
+});
+
+test('completed card copies record a completion belonging to the new card',async()=>{
+ const {api,writes,element}=await setup({workspaceLoad:async(_,__,data)=>{
+  const state=data();Object.assign(state.boards[0].cards[0],{done:true,completedAt:'2026-10-02T00:00:00Z'});return state;
+ }});
+ await api.applyGoogleAccount(account('editor'));api.openCard('c');element('#copyCard').onclick();element('#simpleForm').onsubmit({preventDefault(){}});
+ const copy=writes[0].after.boards[0].cards.find(c=>c.id==='copy-id');
+ assert.equal(copy.completedAt,copy.createdAt);assert.notEqual(copy.completedAt,'2026-10-02T00:00:00Z');
+ writes[0].resolve([]);await new Promise(resolve=>setImmediate(resolve));
+});
+
+test('gantt card links select and open the authorized card and reject inaccessible or archived cards',async()=>{
+ const {api,element}=await setup();await api.applyGoogleAccount(account('viewer'));
+ api.openLinkedCard('?board=b&card=c');assert.equal(element('#editor').open,true);
+ element('#editor').close();
+ api.openLinkedCard('?board=private&card=c');assert.equal(element('#editor').open,false);
+ assert.match(element('#toast').textContent,/無法存取/);
+ api.openLinkedCard('?board=b&card=archived');assert.equal(element('#editor').open,false);
+});
+
+test('gantt deep link waits for membership and the initial workspace load before opening its card',async()=>{
+ const load=deferred();
+ const {api,element}=await setup({search:'?board=b&card=c',workspaceLoad:async(_,__,data)=>{await load.promise;return data();}});
+ assert.equal(element('#editor').open,false);
+ const signingIn=api.applyGoogleAccount(account('reader'));
+ assert.equal(element('#editor').open,false);
+ load.resolve();await signingIn;
+ assert.equal(element('#editor').open,true);assert.match(element('#editor').innerHTML,/Assigned/);
+});
+
+test('card labels show selected tags and use a disclosure for editor selection',async()=>{
+ const {api,element}=await setup({workspaceLoad:async(_,__,data)=>{const state=data();state.boards[0].labelDefinitions={chosen:{name:'Selected',color:'#123456'},other:{name:'Other',color:'#ffeedd'},legacy:{name:'設計',color:'purple'}};state.boards[0].cards[0].labels=['chosen'];return state;}});
+ await api.applyGoogleAccount(account('editor'));api.openCard('c');
+ assert.match(element('#selectedLabels').innerHTML,/Selected/);assert.doesNotMatch(element('#selectedLabels').innerHTML,/Other|設計/);
+ assert.match(element('#labelOptions').innerHTML,/Other/);assert.match(element('#labelOptions').innerHTML,/data-label="chosen" checked/);
+ assert.match(element('#editor').innerHTML,/<details id="labelPicker"/);
+});
+test('completion circle and checkbox persist the same completion and reopening timestamp',async()=>{
+ const {api,element,writes}=await setup();await api.applyGoogleAccount(account('editor'));api.openCard('c');
+ assert.match(element('#editor').innerHTML,/id="cardCompletion".*aria-pressed="false"/);
+ element('#cardCompletion').onclick();assert.equal(writes[0].after.boards[0].cards[0].done,true);assert.equal(element('#cardCompletion').textContent,'✓');
+ writes[0].resolve([]);await new Promise(resolve=>setImmediate(resolve));
+ element('#cardCompletion').onclick();assert.equal(writes[1].after.boards[0].cards[0].done,false);assert.equal(writes[1].after.boards[0].cards[0].completedAt,'');
+ writes[1].resolve([]);await new Promise(resolve=>setImmediate(resolve));
+});
+test('stage picker waits for position confirmation and writes only the moving card',async()=>{
+ const {api,element,writes}=await setup({workspaceLoad:async(_,__,data)=>{const state=data(),b=state.boards[0];b.columns.push({id:'target',name:'Target'});b.cards[0].orderKey='1';b.cards.push({...structuredClone(b.cards[0]),id:'d',title:'Other',columnId:'target',orderKey:'2'});return state;}});
+ await api.applyGoogleAccount(account('editor'));api.openCard('c');
+ element('#cardStage').value='target';element('#cardStage').onchange();assert.equal(writes.length,0);
+ element('#cardPosition').value='1';element('#moveCard').onclick();
+ assert.deepEqual(Array.from(writes[0].after.boards[0].cards.filter(c=>c.columnId==='target'),c=>c.id),['c','d']);
+ assert.equal(writes[0].after.boards[0].cards.find(c=>c.id==='d').orderKey,'2');
+ writes[0].resolve([]);await new Promise(resolve=>setImmediate(resolve));
+});
+test('readers can manage label definitions but cannot select card labels or toggle completion',async()=>{
+ const {api,element,labelWrites,writes}=await setup();await api.applyGoogleAccount({...account('reader'),workspaceRole:'viewer'});api.openCard('c');
+ assert.equal(element('#manageLabels').disabled,false);assert.equal(element('#labelPicker').hidden,true);
+ element('#cardCompletion').onclick();assert.equal(writes.length,0);
+ element('#manageLabels').onclick();element('#labelName').value='Release';element('#labelColor').value='#123456';
+ const saving=element('#labelForm').onsubmit({preventDefault(){}});
+ assert.equal(labelWrites.length,1);labelWrites[0].resolve({'copy-id':{name:'Release',color:'#123456'}});await saving;
+ assert.match(element('#labelStatus').textContent,/已儲存/);assert.equal(api.canEdit(),false);
+});
+test('copy placement honors a selected target stage and first position',async()=>{
+ const {api,element,writes}=await setup({workspaceLoad:async(_,__,data)=>{const state=data(),b=state.boards[0];b.columns.push({id:'target',name:'Target'});b.cards[0].orderKey='1';b.cards.push({...structuredClone(b.cards[0]),id:'existing',columnId:'target',orderKey:'2'});return state;}});
+ await api.applyGoogleAccount(account('editor'));api.openCard('c');element('#copyCard').onclick();
+ assert.equal(writes.length,0);element('#copyStage').value='target';element('#copyStage').onchange();element('#copyPosition').value='1';
+ element('#simpleForm').onsubmit({preventDefault(){}});
+ const target=writes[0].after.boards[0].cards.filter(c=>c.columnId==='target');
+ assert.deepEqual(Array.from(target,c=>c.id),['copy-id','existing']);assert.deepEqual(Array.from(target[0].assignees),[]);
+ writes[0].resolve([]);await new Promise(resolve=>setImmediate(resolve));
 });

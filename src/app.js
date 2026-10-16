@@ -1,12 +1,13 @@
 import {bindCommentComposer,connectNotifications,renderMentionText} from './interactions.js';
 import {clearAttachmentUI,hydrateAttachmentImages,downloadAttachment,bindAttachmentUpload} from './attachment-ui.js';
 import { listManagementMembers, createManagedBoard, setManagedAssignees, manageContentLifecycle } from './management.js';
-import { loadWorkspace, subscribeWorkspace, persistWorkspace, restoreCard, restoreAttachment, loadDeferredAttachmentArchives } from './storage.js?v=20261010-rest';
+import { loadWorkspace, subscribeWorkspace, persistWorkspace, restoreCard, restoreAttachment, loadDeferredAttachmentArchives, saveBoardLabel } from './storage.js?v=20261016-card-controls-v2';
 import { assignMovedOrderKey } from './order-key.js';
+import {boardLabels,labelColor,labelInk,placeCard} from './card-options.js?v=20261016-card-controls-v2';
 // UI rendering, interaction handlers, and workspace state.
 'use strict';
 const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])), uid=()=>crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2);
-const colors={purple:'設計',blue:'開發',green:'內容',orange:'規劃',pink:'行銷'}, boardColors=['#455f56','#c8b58f','#8fa697','#bca582','#ad9790'];
+const boardColors=['#455f56','#c8b58f','#8fa697','#bca582','#ad9790'];
 let state={version:1,boards:[],users:[]},currentCard=null,mine=false,dragged=null,toastTimer,googleAccount=null;
 function toast(s){$('#toast').textContent=s;$('#toast').classList.remove('hidden');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.add('hidden'),4000)}
 
@@ -91,14 +92,14 @@ function selectBoard(id){
   state.activeBoard=id;if(baseline)baseline.activeBoard=id;mine=false;$('#search').value='';$('#dueFilter').value='all';render();
 }
 function render(){const b=board();$('.main').classList.toggle('welcome-view',!b);$('#welcomeScreen').hidden=Boolean(b);if(!b){renderEmpty();return;}applyBoardColor(b.color);$('#boardTitle').textContent=b.name;$('#crumb').textContent=b.name;$('#boardDescription').textContent=b.description||'為團隊整理任務，讓進度清楚可見。';$('#starBoard').textContent=b.starred?'★':'☆';$('#starBoard').style.color=b.starred?'var(--on-primary)':'';$('#currentUser').innerHTML=avatar(me())+`<span class="user-name">${esc(me()?.name||'Google 登入')}</span><span class="muted">⌄</span>`;$('#headerMembers').innerHTML=state.users.filter(u=>u.boardIds?.includes(b.id)).slice(0,5).map(avatar).join('');renderBoardNavigation(b);const q=$('#search').value.trim().toLowerCase(),filter=$('#dueFilter').value;const visible=b.cards.filter(c=>(!q||(c.title+' '+c.description).toLowerCase().includes(q))&&(!mine||c.assignees.includes(userId()))&&(filter==='all'||filter==='none'&&!c.due||filter==='overdue'&&overdue(c)||filter==='week'&&c.due&&!c.done&&new Date(c.due)>=new Date()&&new Date(c.due)<=new Date(Date.now()+7*86400000)));$('#mineFilter').classList.toggle('filter-active',mine);$('#clearFilters').classList.toggle('hidden',!mine&&!q&&filter==='all');$('#boardStats').textContent=`${b.columns.length} 個階段 · ${b.cards.length} 張卡片${visible.length!==b.cards.length?' · 顯示 '+visible.length+' 張':''}`;$('#columns').innerHTML=b.columns.map((col,i)=>`<section class="column" data-col="${col.id}"><div class="column-head"><span class="board-dot" style="background:${boardColors[i%boardColors.length]}"></span><span class="grow">${esc(col.name)}</span><span class="count">${visible.filter(c=>c.columnId===col.id).length}</span><button data-edit-col="${col.id}" aria-label="編輯階段 ${esc(col.name)}" style="padding:2px 5px">⋯</button></div><div class="cards">${visible.filter(c=>c.columnId===col.id).map(cardHTML).join('')||'<div class="empty">'+(q||mine||filter!=='all'?'沒有符合篩選的卡片':'把想法放在這裡<br><br>拖曳卡片至此，或新增卡片')+'</div>'}</div><button class="add-card" data-add-card="${col.id}">＋ &nbsp; 新增卡片</button></section>`).join('')+'<button class="add-column" id="addColumn">＋ &nbsp; 新增階段</button>';bindBoard();applyPermissions();hydrateAttachmentImages()}
-// Imported labels retain their names while using the existing readable palette.
-function labelOptions() {
-  return {...Object.fromEntries(Object.entries(colors).map(([id,name])=>[id,{name,color:id}])),
-    ...(board().labelDefinitions || {})};
-}
+function labelOptions() {return boardLabels(board());}
 function labelHTML(id) {
   const label=labelOptions()[id];
-  return label ? `<span class="tag ${Object.hasOwn(colors,label.color)?label.color:'purple'}">${esc(label.name)}</span>` : '';
+  return label ? `<span class="tag" style="background:${labelColor(label.color)};color:${labelInk(label.color)}">${esc(label.name)}</span>` : '';
+}
+function completionMark(done,button=false) {
+  const attrs=`class="completion-toggle ${done?'completed':''}" ${button?`id="cardCompletion" type="button" aria-pressed="${Boolean(done)}" aria-label="${done?'標記為未結案':'標記為結案'}"`:`role="img" aria-label="${done?'已結案':'未結案'}"`}`;
+  return button?`<button ${attrs}>${done?'✓':''}</button>`:`<span ${attrs}>${done?'✓':''}</span>`;
 }
 function safeExternalURL(value) {
   if (typeof value !== 'string') return false;
@@ -114,7 +115,7 @@ function localDue(value) {
   const d=new Date(value);
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}T${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
-function cardHTML(c){const cover=c.attachments.find(a=>a.id===c.coverId&&attachmentImage(a)),checked=c.checklist.filter(t=>t.done).length;return `<article class="card" draggable="true" tabindex="0" role="button" aria-label="開啟卡片：${esc(c.title)}" data-card="${c.id}">${cover?`<img class="cover" ${cover.storagePath?`data-storage-path="${esc(cover.storagePath)}"`:""} src="${esc(attachmentImage(cover))}" loading="lazy" referrerpolicy="no-referrer" alt="${esc(cover.name)}">`:c.demoCover?'<div class="design-cover"><div class="mini-window"><b>MAKE ROOM FOR IDEAS.</b><div class="mini-grid"><i></i><i></i><i></i></div></div></div>':''}<div>${c.labels.map(labelHTML).join('')}</div><div class="card-title">${esc(c.title)}</div>${c.description?`<p class="card-desc">${esc(c.description.slice(0,65))}${c.description.length>65?'…':''}</p>`:''}<div class="card-footer">${c.due?`<span class="due ${overdue(c)?'overdue':''} ${c.done?'done':''}">${c.done?'✓':'◷'} ${formatDate(c.due)}</span>`:''}${c.checklist.length?`<span title="待辦事項">☑ ${checked}/${c.checklist.length}</span>`:''}${c.comments.length?`<span title="留言">☏ ${c.comments.length}</span>`:''}${c.attachments.length?`<span title="附件">♧ ${c.attachments.length}</span>`:''}<span class="grow"></span>${c.assignees.map(id=>avatar(state.users.find(u=>u.id===id))).join('')}</div></article>`}
+function cardHTML(c){const cover=c.attachments.find(a=>a.id===c.coverId&&attachmentImage(a)),checked=c.checklist.filter(t=>t.done).length;return `<article class="card" draggable="true" tabindex="0" role="button" aria-label="開啟卡片：${esc(c.title)}" data-card="${c.id}">${cover?`<img class="cover" ${cover.storagePath?`data-storage-path="${esc(cover.storagePath)}"`:""} src="${esc(attachmentImage(cover))}" loading="lazy" referrerpolicy="no-referrer" alt="${esc(cover.name)}">`:c.demoCover?'<div class="design-cover"><div class="mini-window"><b>MAKE ROOM FOR IDEAS.</b><div class="mini-grid"><i></i><i></i><i></i></div></div></div>':''}<div>${c.labels.map(labelHTML).join('')}</div><div class="card-title"><span class="card-completion">${completionMark(c.done)}</span><span>${esc(c.title)}</span></div>${c.description?`<p class="card-desc">${esc(c.description.slice(0,65))}${c.description.length>65?'…':''}</p>`:''}<div class="card-footer">${c.due?`<span class="due ${overdue(c)?'overdue':''} ${c.done?'done':''}">${c.done?'✓':'◷'} ${formatDate(c.due)}</span>`:''}${c.checklist.length?`<span title="待辦事項">☑ ${checked}/${c.checklist.length}</span>`:''}${c.comments.length?`<span title="留言">☏ ${c.comments.length}</span>`:''}${c.attachments.length?`<span title="附件">♧ ${c.attachments.length}</span>`:''}<span class="grow"></span>${c.assignees.map(id=>avatar(state.users.find(u=>u.id===id))).join('')}</div></article>`}
 function bindBoard(){$$('[data-card]').forEach(el=>{el.onclick=()=>openCard(el.dataset.card);el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openCard(el.dataset.card)}};el.ondragstart=e=>{dragged=el.dataset.card;e.dataTransfer.setData('text/plain',dragged);e.dataTransfer.effectAllowed='move';el.classList.add('dragging')};el.ondragend=()=>{dragged=null;$$('.drag-over').forEach(e=>e.classList.remove('drag-over'));el.classList.remove('dragging')}});$$('[data-col]').forEach(el=>{el.ondragover=e=>{if(dragged){e.preventDefault();e.dataTransfer.dropEffect='move';el.classList.add('drag-over')}};el.ondragleave=e=>{if(!el.contains(e.relatedTarget))el.classList.remove('drag-over')};el.ondrop=e=>{e.preventDefault();if(!dragged||!canEdit())return;const b=board(),c=b.cards.find(c=>c.id===dragged);if(!c)return;const target=e.target.closest('[data-card]');if(target?.dataset.card===c.id){el.classList.remove('drag-over');return}b.cards=b.cards.filter(x=>x.id!==c.id);c.columnId=el.dataset.col;let index=target?b.cards.findIndex(x=>x.id===target.dataset.card):-1;if(index>=0){if(e.clientY>target.getBoundingClientRect().top+target.getBoundingClientRect().height/2)index++;b.cards.splice(index,0,c)}else b.cards.push(c);try{assignMovedOrderKey(b.cards,c)}catch(error){state=structuredClone(baseline);render();toast(error.message);return}save();render()}});$$('[data-add-card]').forEach(el=>el.onclick=()=>createCard(el.dataset.addCard));$$('[data-edit-col]').forEach(el=>el.onclick=()=>editColumn(el.dataset.editCol));$('#addColumn').onclick=()=>editColumn()}
 function $$(s,root=document){return [...root.querySelectorAll(s)]}
 
@@ -143,7 +144,17 @@ async function applyGoogleAccount(account){
   googleAccount=account;
   connectNotifications(account,{open:openNotification,toast});
   if($('#userDialog').open)openUsers();
-  await refreshWorkspace();
+  const loaded = await refreshWorkspace();
+  if (loaded && googleAccount === account) openLinkedCard();
+}
+function openLinkedCard(search = window.location?.search || '') {
+  if (!search || !googleAccount?.memberId) return;
+  const params = new URLSearchParams(search), boardId = params.get('board'), cardId = params.get('card');
+  if (!boardId || !cardId) return;
+  const target = state.boards.find(b => b.id === boardId && googleAccount.accessboard?.includes(b.id) && !b.deleting);
+  const card = target?.cards.find(c => c.id === cardId && !c.deleting);
+  if (!card) { toast('此牌卡已封存、刪除或無法存取'); return; }
+  selectBoard(target.id); openCard(card.id);
 }
 window.addEventListener('boardly-auth-changed',event=>applyGoogleAccount(event.detail));
 async function openNotification(item){
@@ -178,8 +189,73 @@ function editBoard(isNew=false){
   applyPermissions();
 }
 function editColumn(id){const b=board(),col=b.columns.find(x=>x.id===id);simple(col?'編輯階段':'新增階段',`<div class="field"><label for="columnName">階段名稱</label><input id="columnName" class="full" required maxlength="50" value="${esc(col?.name||'')}"></div>${col?`<div class="field"><label for="columnPosition">欄位順序</label><select id="columnPosition" class="full">${b.columns.map((x,i)=>`<option value="${i}" ${x.id===id?'selected':''}>第 ${i+1} 欄</option>`).join('')}</select></div><button type="button" id="deleteColumn" class="danger">刪除此階段</button>`:''}`,()=>{const name=$('#columnName').value.trim();if(!name)return false;if(col){col.name=name;const pos=Number($('#columnPosition').value);b.columns=b.columns.filter(x=>x.id!==id);b.columns.splice(pos,0,col)}else b.columns.push({id:uid(),name});b.columns.forEach((item,i)=>item.orderKey=String(i).padStart(12,'0'));save();render()});if(col)$('#deleteColumn').onclick=()=>{if(b.columns.length===1){toast('至少保留一個階段');return}if(b.cards.some(c=>c.columnId===id)){toast('請先移動或刪除這個階段內的卡片');return}b.columns=b.columns.filter(x=>x.id!==id);save();render();$('#simpleDialog').close()}}
+function positionOptions(cards,columnId,excludeId,selected) {
+  const siblings=cards.filter(c=>c.columnId===columnId && c.id!==excludeId);
+  return Array.from({length:siblings.length+1},(_,i)=>`<option value="${i+1}" ${i+1===selected?'selected':''}>第 ${i+1} 張${i===siblings.length?'（最後）':''}</option>`).join('');
+}
+function renderCardPosition(card) {
+  const column=$('#cardStage').value || card.columnId;
+  const current=board().cards.filter(c=>c.columnId===card.columnId).findIndex(c=>c.id===card.id)+1;
+  const position=column===card.columnId?current:board().cards.filter(c=>c.columnId===column).length+1;
+  $('#cardPosition').innerHTML=positionOptions(board().cards,column,card.id,position);
+  $('#cardPosition').value=String(position);
+}
+function syncCompletionButton(card) {
+  const button=$('#cardCompletion');
+  button.textContent=card.done?'✓':'';button.classList.toggle('completed',Boolean(card.done));
+  button.setAttribute?.('aria-pressed',String(Boolean(card.done)));
+  button.setAttribute?.('aria-label',card.done?'標記為未結案':'標記為結案');
+}
+function openCopyCard(card) {
+  if(!canEdit())return;
+  const sourceBoard=board(),version=generation;
+  simple('複製卡片',`<p class="help-note">副本不保留負責人、留言與附件。</p><div class="field"><label for="copyStage">目標階段</label><select id="copyStage" class="full">${sourceBoard.columns.map(col=>`<option value="${esc(col.id)}" ${col.id===card.columnId?'selected':''}>${esc(col.name)}</option>`).join('')}</select></div><div class="field"><label for="copyPosition">副本位置</label><select id="copyPosition" class="full"></select></div>`,()=>{
+    if(version!==generation||board()!==sourceBoard||!canEdit())return false;
+    const n=structuredClone(card);n.id=uid();n.title=(n.title.slice(0,146)+'（副本）');n.comments=[];n.assignees=[];n.attachments=[];n.archivedAttachments=[];n.coverId=null;n.createdAt=new Date().toISOString();n.completedAt=n.done?n.createdAt:'';
+    try{sourceBoard.cards=placeCard(sourceBoard.cards,n,$('#copyStage').value,Number($('#copyPosition').value));}
+    catch(error){toast(error.message);return false;}
+    save();render();openCard(n.id);toast('正在儲存卡片副本');
+  });
+  const positions=()=>{const column=$('#copyStage').value||card.columnId;const selected=column===card.columnId?sourceBoard.cards.filter(c=>c.columnId===column).findIndex(c=>c.id===card.id)+2:sourceBoard.cards.filter(c=>c.columnId===column).length+1;$('#copyPosition').innerHTML=positionOptions(sourceBoard.cards,column,null,selected);$('#copyPosition').value=String(selected);};
+  $('#copyStage').value=card.columnId;$('#copyStage').onchange=positions;positions();
+}
+function renderLabelControls(card) {
+  $('#selectedLabels').innerHTML=card.labels.map(labelHTML).join('')||'<span class="help-note">尚未選取標籤</span>';
+  $('#labelOptions').innerHTML=Object.entries(labelOptions()).map(([id])=>`<label class="row"><input type="checkbox" data-label="${esc(id)}" ${card.labels.includes(id)?'checked':''}>${labelHTML(id)}</label>`).join('')||'<p class="help-note">尚無標籤，請先新增。</p>';
+  $$('[data-label]').forEach(el=>el.onchange=()=>{if(!canEdit())return;card.labels=el.checked?[...new Set([...card.labels,el.dataset.label])]:card.labels.filter(id=>id!==el.dataset.label);$('#selectedLabels').innerHTML=card.labels.map(labelHTML).join('')||'<span class="help-note">尚未選取標籤</span>';save();render();});
+}
+let labelEditExpected=null;
+function canManageLabels(){return !loading&&!saving&&Boolean(baseline)&&Boolean(googleAccount?.memberId)&&googleAccount.accessboard?.includes(board()?.id)&&!board()?.archived&&!board()?.deleting;}
+function labelManagerOptions(selected='') {
+  $('#editLabelSelect').innerHTML='<option value="">＋ 新增標籤</option>'+Object.entries(labelOptions()).map(([id,label])=>`<option value="${esc(id)}">${esc(label.name)}</option>`).join('');
+  $('#editLabelSelect').value=selected;
+}
+function loadLabelDraft(){const label=labelOptions()[$('#editLabelSelect').value];labelEditExpected=label?structuredClone(label):null;$('#labelName').value=label?.name||'';$('#labelColor').value=labelColor(label?.color);$('#labelStatus').textContent='';}
+function openLabelManager(){if(!canManageLabels())return;labelManagerOptions();loadLabelDraft();$('#labelsDialog').showModal();}
+$('#editLabelSelect').onchange=loadLabelDraft;
+$('#closeLabels').onclick=()=>$('#labelsDialog').close();
+$('#labelsDialog').onclose=()=>{labelEditExpected=null;flushLiveSync();};
+$('#labelsDialog').oncancel=event=>{if(saving)event.preventDefault();};
+$('#labelForm').onsubmit=async event=>{
+  event.preventDefault();if(!canManageLabels())return;
+  const name=$('#labelName').value.trim(),color=$('#labelColor').value;
+  if(!name||name.length>40||!/^#[0-9a-f]{6}$/i.test(color)){ $('#labelStatus').textContent='請輸入 1–40 字的標籤名稱與有效顏色。';return; }
+  const id=$('#editLabelSelect').value||uid(),target=board(),actor=googleAccount,version=generation,expected=labelEditExpected;
+  if(Object.entries(labelOptions()).some(([key,label])=>key!==id&&label.name===name)){$('#labelStatus').textContent='此看板已有同名標籤';return;}
+  saving=true;applyPermissions();$('#labelStatus').textContent='正在儲存標籤…';
+  try{
+    const definitions=await saveBoardLabel(actor,target.id,id,{name,color},expected);
+    if(version!==generation||googleAccount!==actor||board()!==target)return;
+    target.labelDefinitions=definitions;
+    const original=baseline?.boards.find(b=>b.id===target.id);if(original)original.labelDefinitions=structuredClone(definitions);
+    labelManagerOptions(id);labelEditExpected=structuredClone(definitions[id]);
+    $('#labelStatus').textContent='標籤已儲存';render();
+    const card=target.cards.find(c=>c.id===currentCard);if(card)renderLabelControls(card);
+  }catch(error){if(version===generation)$('#labelStatus').textContent='標籤未儲存：'+error.message;}
+  finally{if(version===generation){saving=false;applyPermissions();flushLiveSync();}}
+};
 function createCard(col){requireUser(()=>{simple('新增卡片',`<div class="field"><label for="newCardTitle">卡片標題</label><input id="newCardTitle" class="full" required maxlength="150" placeholder="接下來想完成什麼？"></div>`,()=>{const title=$('#newCardTitle').value.trim();if(!title)return false;const c={id:uid(),title,columnId:col||board().columns[0].id,description:'',labels:[],assignees:[],due:'',done:false,checklist:[],attachments:[],comments:[],createdAt:new Date().toISOString(),orderKey:'z'+Date.now()};board().cards.push(c);save();render();setTimeout(()=>openCard(c.id),0)})})}
-function openCard(id,commentDraft){const c=board().cards.find(x=>x.id===id);if(!c)return;currentCard=id;const d=$('#editor');d.innerHTML=`<div class="modal-head"><span class="muted">▤</span><input id="cardTitleInput" class="title-input" aria-label="卡片標題" maxlength="150" value="${esc(c.title)}"><button id="closeCard" aria-label="關閉卡片">✕</button></div><div class="modal-body"><div class="detail-grid"><div><div class="field"><label for="cardDescription">≡ &nbsp; 說明</label><textarea id="cardDescription" placeholder="加入更詳細的說明…">${esc(c.description)}</textarea></div><div class="field"><h3>☑ &nbsp; 待辦事項 <span id="checkCount" class="muted"></span></h3><div id="checklist"></div><form id="checkForm" class="row"><input id="checkText" class="grow" aria-label="新增待辦事項" placeholder="新增待辦事項…" required maxlength="200"><button aria-label="新增待辦事項">＋</button></form></div><div class="field"><h3>♧ &nbsp; 附件</h3><div id="attachments"></div><label class="file-label" for="attachmentInput">＋ 上傳附件（不限類型，每檔最多 20 MiB）</label><input id="attachmentInput" type="file" multiple><p id="attachmentStatus" role="status" class="help-note"></p><button id="retryAttachment" type="button" hidden>重試未完成附件</button></div><div class="field"><h3>☏ &nbsp; 留言與討論</h3><form id="commentForm"><textarea id="commentText" aria-label="留言內容" placeholder="分享進度，輸入 @ 標註會員…" aria-autocomplete="list" aria-controls="mentionList" aria-expanded="false" required maxlength="5000" style="min-height:75px"></textarea><div id="mentionList" class="mention-list" role="listbox" aria-label="可標註的會員" hidden></div><p id="commentStatus" role="status" class="help-note"></p><div class="row between" style="margin-top:8px"><span class="small muted">以 ${esc(me()?.name||'尚未登入')} 的身分留言</span><div class="row"><button id="cancelCommentEdit" type="button" hidden>取消編輯</button><button id="submitComment" class="primary">送出留言</button></div></div></form><div id="comments"></div></div></div><div class="detail-side"><div class="field"><label for="cardStage">所在階段</label><select id="cardStage" class="full">${board().columns.map(col=>`<option value="${col.id}" ${c.columnId===col.id?'selected':''}>${esc(col.name)}</option>`).join('')}</select></div><div class="field"><h3>負責人</h3><button type="button" id="manageAssignees" class="pill">管理負責人</button>${c.assignees.length?c.assignees.map(id=>{const u=state.users.find(user=>user.id===id)||{name:'未知成員'};return `<div class="row" style="margin:8px 0">${avatar(u)}<span>${esc(u.name)}</span></div>`}).join(''):'<p class="help-note">尚未指派負責人</p>'}</div><div class="field"><label for="cardDue">截止日期</label><input id="cardDue" class="full" type="datetime-local" value="${esc(localDue(c.due))}"><label class="row" style="margin-top:10px;font-weight:400"><input id="cardDone" type="checkbox" ${c.done?'checked':''}>已完成任務</label></div><div class="field"><h3>標籤</h3>${Object.entries(labelOptions()).map(([key,label])=>`<label class="row" style="margin:7px 0;font-weight:400"><input type="checkbox" data-label="${key}" ${c.labels.includes(key)?'checked':''}><span class="tag ${Object.hasOwn(colors,label.color)?label.color:'purple'}">${esc(label.name)}</span></label>`).join('')}</div><div class="field"><h3>操作</h3><button id="copyCard" title="副本不會保留負責人與附件" class="full pill" style="margin-bottom:8px">▣ 複製卡片</button><button id="deleteCard" class="full danger pill">封存卡片</button></div><p class="help-note">變更會自動儲存至 Firebase，請確認上方儲存狀態。<br>建立於 ${formatDate(c.createdAt,true)}</p></div></div></div>`;const update=()=>{save();render()};$('#cardTitleInput').onchange=e=>{const title=e.target.value.trim();if(!title){e.target.value=c.title;toast('標題不可為空');return}c.title=title;update()};$('#cardDescription').onchange=e=>{c.description=e.target.value;update()};$('#cardStage').onchange=e=>{c.columnId=e.target.value;update()};$('#cardDue').onchange=e=>{c.due=e.target.value;update()};$('#cardDone').onchange=e=>{c.done=e.target.checked;update()};$('#manageAssignees').onclick=()=>openManagedAssignees(c.id);$$('[data-label]').forEach(el=>el.onchange=()=>{c.labels=el.checked?[...c.labels,el.dataset.label]:c.labels.filter(l=>l!==el.dataset.label);update()});$('#closeCard').onclick=()=>d.close();$('#checkForm').onsubmit=e=>{e.preventDefault();const text=$('#checkText').value.trim();if(!text)return;c.checklist.push({id:uid(),text,done:false});$('#checkText').value='';renderChecklist(c);update()};$('#deleteCard').onclick=()=>{if(confirm(`封存「${c.title}」？資料會保留於雲端，可由管理員復原。`)){board().archivedCards||=[];board().archivedCards.push({id:c.id,title:c.title,columnId:c.columnId});board().cards=board().cards.filter(x=>x.id!==c.id);update();d.close()}};$('#copyCard').onclick=()=>{const n=structuredClone(c);n.id=uid();n.title+='（副本）';n.comments=[];n.assignees=[];n.attachments=[];n.archivedAttachments=[];n.coverId=null;n.createdAt=new Date().toISOString();n.orderKey='z'+Date.now();board().cards.push(n);update();openCard(n.id);toast('正在儲存卡片副本')};renderChecklist(c);renderAttachments(c);renderComments(c);
+function openCard(id,commentDraft){const c=board().cards.find(x=>x.id===id);if(!c)return;currentCard=id;const d=$('#editor');d.innerHTML=`<div class="modal-head">${completionMark(c.done,true)}<input id="cardTitleInput" class="title-input" aria-label="卡片標題" maxlength="150" value="${esc(c.title)}"><button id="closeCard" aria-label="關閉卡片">✕</button></div><div class="modal-body"><div class="detail-grid"><div><div class="field"><label for="cardDescription">≡ &nbsp; 說明</label><textarea id="cardDescription" placeholder="加入更詳細的說明…">${esc(c.description)}</textarea></div><div class="field"><h3>☑ &nbsp; 待辦事項 <span id="checkCount" class="muted"></span></h3><div id="checklist"></div><form id="checkForm" class="row"><input id="checkText" class="grow" aria-label="新增待辦事項" placeholder="新增待辦事項…" required maxlength="200"><button aria-label="新增待辦事項">＋</button></form></div><div class="field"><h3>♧ &nbsp; 附件</h3><div id="attachments"></div><label class="file-label" for="attachmentInput">＋ 上傳附件（不限類型，每檔最多 20 MiB）</label><input id="attachmentInput" type="file" multiple><p id="attachmentStatus" role="status" class="help-note"></p><button id="retryAttachment" type="button" hidden>重試未完成附件</button></div><div class="field"><h3>☏ &nbsp; 留言與討論</h3><form id="commentForm"><textarea id="commentText" aria-label="留言內容" placeholder="分享進度，輸入 @ 標註會員…" aria-autocomplete="list" aria-controls="mentionList" aria-expanded="false" required maxlength="5000" style="min-height:75px"></textarea><div id="mentionList" class="mention-list" role="listbox" aria-label="可標註的會員" hidden></div><p id="commentStatus" role="status" class="help-note"></p><div class="row between" style="margin-top:8px"><span class="small muted">以 ${esc(me()?.name||'尚未登入')} 的身分留言</span><div class="row"><button id="cancelCommentEdit" type="button" hidden>取消編輯</button><button id="submitComment" class="primary">送出留言</button></div></div></form><div id="comments"></div></div></div><div class="detail-side"><div class="field"><label for="cardStage">所在階段</label><select id="cardStage" class="full">${board().columns.map(col=>`<option value="${col.id}" ${c.columnId===col.id?'selected':''}>${esc(col.name)}</option>`).join('')}</select><label for="cardPosition" style="margin-top:10px">牌卡位置</label><select id="cardPosition" class="full"></select><button id="moveCard" type="button" class="pill full" style="margin-top:8px">套用階段與位置</button></div><div class="field"><h3>負責人</h3><button type="button" id="manageAssignees" class="pill">管理負責人</button>${c.assignees.length?c.assignees.map(id=>{const u=state.users.find(user=>user.id===id)||{name:'未知成員'};return `<div class="row" style="margin:8px 0">${avatar(u)}<span>${esc(u.name)}</span></div>`}).join(''):'<p class="help-note">尚未指派負責人</p>'}</div><div class="field"><label for="cardDue">截止日期</label><input id="cardDue" class="full" type="datetime-local" value="${esc(localDue(c.due))}"><label class="row" style="margin-top:10px;font-weight:400"><input id="cardDone" type="checkbox" ${c.done?'checked':''}>已結案</label></div><div class="field"><h3>標籤</h3><div id="selectedLabels" class="selected-labels">${c.labels.map(labelHTML).join('')||'<span class="help-note">尚未選取標籤</span>'}</div><details id="labelPicker" class="label-picker"><summary>選擇標籤</summary><div id="labelOptions" class="label-options">${Object.entries(labelOptions()).map(([key,label])=>`<label class="row"><input type="checkbox" data-label="${esc(key)}" ${c.labels.includes(key)?'checked':''}>${labelHTML(key)}</label>`).join('')||'<p class="help-note">尚無標籤，請先新增。</p>'}</div></details><button id="manageLabels" type="button" class="pill full" style="margin-top:8px">新增／管理標籤</button></div><div class="field"><h3>操作</h3><button id="copyCard" title="副本不會保留負責人與附件" class="full pill" style="margin-bottom:8px">▣ 複製卡片</button><button id="deleteCard" class="full danger pill">封存卡片</button></div><p class="help-note">變更會自動儲存至 Firebase，請確認上方儲存狀態。<br>建立於 ${formatDate(c.createdAt,true)}</p></div></div></div>`;const update=()=>{save();render()};$('#cardTitleInput').onchange=e=>{const title=e.target.value.trim();if(!title){e.target.value=c.title;toast('標題不可為空');return}c.title=title;update()};$('#cardDescription').onchange=e=>{c.description=e.target.value;update()};$('#cardStage').onchange=()=>renderCardPosition(c);renderCardPosition(c);$('#moveCard').onclick=()=>{if(!canEdit())return;try{board().cards=placeCard(board().cards,c,$('#cardStage').value,Number($('#cardPosition').value));update();renderCardPosition(c);}catch(error){toast(error.message);}};$('#cardDue').onchange=e=>{c.due=e.target.value;update()};const complete=done=>{if(!canEdit())return;c.done=done;c.completedAt=done?new Date().toISOString():'';$('#cardDone').checked=done;syncCompletionButton(c);update();};$('#cardDone').onchange=e=>complete(e.target.checked);$('#cardCompletion').onclick=()=>complete(!c.done);$('#manageAssignees').onclick=()=>openManagedAssignees(c.id);renderLabelControls(c);$('#manageLabels').onclick=()=>openLabelManager();$('#closeCard').onclick=()=>d.close();$('#checkForm').onsubmit=e=>{e.preventDefault();const text=$('#checkText').value.trim();if(!text)return;c.checklist.push({id:uid(),text,done:false});$('#checkText').value='';renderChecklist(c);update()};$('#deleteCard').onclick=()=>{if(confirm(`封存「${c.title}」？資料會保留於雲端，可由管理員復原。`)){board().archivedCards||=[];board().archivedCards.push({id:c.id,title:c.title,columnId:c.columnId});board().cards=board().cards.filter(x=>x.id!==c.id);update();d.close()}};$('#copyCard').onclick=()=>openCopyCard(c);renderChecklist(c);renderAttachments(c);renderComments(c);
 const uploadVersion=generation,uploadBoard=board().id;
 const commentComposer=bindCommentComposer({draft:commentDraft,boardId:uploadBoard,cardId:c.id,canEdit:()=>canEdit() && !board()?.archived && !board()?.deleting,isCurrent:()=>uploadVersion===generation,
  busy:value=>{if(uploadVersion===generation){saving=value;applyPermissions();}},
@@ -287,10 +363,10 @@ function stopLiveSync(){
   clearTimeout(liveTimer);liveTimer=null;livePending=false;liveBoards.clear();
 }
 function flushLiveSync(){
-  if(!livePending||liveTimer||saving||loading||$('#editor').open||$('#simpleDialog').open||$('#archiveDialog').open||$('#boardOrderDialog').open||boardOrderSaving)return;
+  if(!livePending||liveTimer||saving||loading||$('#editor').open||$('#simpleDialog').open||$('#archiveDialog').open||$('#boardOrderDialog').open||$('#labelsDialog').open||boardOrderSaving)return;
   liveTimer=setTimeout(()=>{
     liveTimer=null;
-    if(saving||loading||$('#editor').open||$('#simpleDialog').open||$('#archiveDialog').open||$('#boardOrderDialog').open||boardOrderSaving)return;
+    if(saving||loading||$('#editor').open||$('#simpleDialog').open||$('#archiveDialog').open||$('#boardOrderDialog').open||$('#labelsDialog').open||boardOrderSaving)return;
     const boardIds=[...liveBoards];
     livePending=false;liveBoards.clear();
     refreshWorkspace(boardIds.length?boardIds:null);
@@ -439,6 +515,10 @@ function applyPermissions(){
   $$('#editor input, #editor textarea, #editor select, #editor button').forEach(el=>{
     if(el.id!=='closeCard'&&!el.hasAttribute('data-download'))el.disabled=!edit;
   });
+  if($('#labelPicker'))$('#labelPicker').hidden=!edit;
+  if($('#manageLabels'))$('#manageLabels').disabled=!canManageLabels();
+  $$('#labelsDialog input, #labelsDialog select, #saveLabel').forEach(el=>el.disabled=!canManageLabels());
+  $('#closeLabels').disabled=saving;
   if($('#attachmentInput'))$('#attachmentInput').disabled=!edit;
   if($('#manageAssignees'))$('#manageAssignees').disabled=!canManage() || Boolean(board()?.archived);
   if($('#managementSubmit'))$('#managementSubmit').disabled=managementLoading||(lifecycleDialog?!canOwn():!canManage());
@@ -455,7 +535,7 @@ function clearWorkspaceDialogs(){
   clearAttachmentUI();
   managementRequest++;managementLoading=false;
   currentCard=null;dragged=null;
-  $('#editor').close();$('#simpleDialog').close();$('#archiveDialog').close();$('#boardOrderDialog').close();
+  $('#editor').close();$('#simpleDialog').close();$('#archiveDialog').close();$('#boardOrderDialog').close();$('#labelsDialog').close();
   boardOrderSaving=false;$('#saveBoardOrder').disabled=false;
   for(const id of ['editor','simpleDialog','archiveBoardName','archivedCards','archivedAttachments'])$('#'+id).replaceChildren();
 }
@@ -519,7 +599,7 @@ async function save(){
 }
 // Block mutations while a write is in flight; navigation/account controls stay usable.
 document.addEventListener('click',event=>{
-  const target=event.target.closest('#quickCreate,#editBoard,#starBoard,#addBoard,#addColumn,[data-add-card],[data-edit-col],[data-remove-check],[data-remove-file],[data-cover],#copyCard,#deleteCard,#deleteColumn,#deleteBoard');
+  const target=event.target.closest('#quickCreate,#editBoard,#starBoard,#addBoard,#addColumn,[data-add-card],[data-edit-col],[data-remove-check],[data-remove-file],[data-cover],#copyCard,#moveCard,#cardCompletion,#deleteCard,#deleteColumn,#deleteBoard');
   if(target&&!canEdit()){event.preventDefault();event.stopImmediatePropagation();}
 },true);
 window.addEventListener('beforeunload',event=>{if(saving){event.preventDefault();event.returnValue='';}});

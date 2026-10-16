@@ -73,6 +73,21 @@ service cloud.firestore {
           return request.resource.data.get('color', '#455f56') in
             ['#455f56', '#c8b58f', '#8fa697', '#bca582', '#ad9790'];
         }
+        function validMemberLabelEdit() {
+          let before = resource.data.get('labelDefinitions', {});
+          let after = request.resource.data.labelDefinitions;
+          let changed = after.diff(before).affectedKeys();
+          let key = request.resource.data.labelEditId;
+          let label = after[key];
+          return boardAccess(w, b) && !resource.data.get('archived', false) && !resource.data.get('deleting', false)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['labelDefinitions','labelEditId'])
+            && after is map && after.size() <= 200 && changed.size() == 1 && changed.hasOnly([key])
+            && key is string && key.matches('[A-Za-z0-9_-]{1,128}') && label is map
+            && label.diff(before.get(key, {})).affectedKeys().hasOnly(['name','color'])
+            && label.name is string && label.name.size() > 0 && label.name.size() <= 40
+            && label.color is string && label.color.matches('#[0-9a-fA-F]{6}');
+        }
+        allow update: if validMemberLabelEdit();
         allow create: if false;
         allow update: if canEdit(w, b) && validBoard()
           && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['deleting'])
@@ -93,6 +108,19 @@ service cloud.firestore {
             return getAfter(/databases/$(database)/documents/workspaces/$(w)/boards/$(b)/cards/$(cardId)).data != null
               && !getAfter(/databases/$(database)/documents/workspaces/$(w)/boards/$(b)/cards/$(cardId)).data.get('deleting', false);
           }
+          function assignedDeadlineEdit() {
+            return boardAccess(w, b)
+              && memberId(w) in resource.data.get('assigneeIds', [])
+              && !resource.data.get('archived', false) && !resource.data.get('deleting', false)
+              && !get(/databases/$(database)/documents/workspaces/$(w)/boards/$(b)).data.get('archived', false)
+              && !get(/databases/$(database)/documents/workspaces/$(w)/boards/$(b)).data.get('deleting', false)
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['due', 'updatedAt', 'updatedBy'])
+              && request.resource.data.due is string
+              && (request.resource.data.due == '' || request.resource.data.due.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:00[+]08:00'))
+              && request.resource.data.updatedAt is string && request.resource.data.updatedAt.size() <= 64
+              && request.resource.data.updatedBy == memberId(w);
+          }
+          allow update: if assignedDeadlineEdit();
           allow read: if boardAccess(w, b);
           allow create: if canEdit(w, b)
             && !request.resource.data.keys().hasAny(['deleting'])

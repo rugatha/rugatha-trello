@@ -12,7 +12,7 @@ async function rows(path) {
   const snapshot = await getDocs(readCollection(readFirestore, path));
   return ordered(snapshot.docs.map(item => ({...item.data(), id:item.id})));
 }
-export async function loadWorkspace(account, {previous,boardIds}={}) {
+export async function loadWorkspace(account, {previous,boardIds,content}={}) {
   const saved = new Map(previous?.boards?.map(board => [board.id,board]) || []);
   const reload = boardIds ? new Set(boardIds) : null;
   const boards = await Promise.all([...new Set(account.accessboard || [])].map(async id => {
@@ -28,7 +28,7 @@ export async function loadWorkspace(account, {previous,boardIds}={}) {
       await Promise.all(visible.slice(start,start+10).map(async card => {
         [card.checklist, card.comments, card.attachments] = await Promise.all(
           ['checklist','comments','attachments'].map(type =>
-            type==='checklist' && card.checklistCount===0 || type==='comments' && card.commentCount===0 || type==='attachments' && card.attachmentCount===0
+            content==='gantt' && type!=='checklist' || type==='checklist' && card.checklistCount===0 || type==='comments' && card.commentCount===0 || type==='attachments' && card.attachmentCount===0
               ? [] : rows(`${path}/cards/${card.id}/${type}`)));
         card.attachmentArchiveLoaded = card.attachmentCount!==0;
         card.archivedAttachments = card.attachments.filter(item => item.archived).map(({id,name}) => ({id,name}));
@@ -144,4 +144,37 @@ export async function persistWorkspace(before, after, memberId) {
     });
   });
   return committedCards;
+}
+
+// Only the deadline and write metadata change; unrelated concurrent card edits are preserved.
+export async function updateCardDeadline(account, boardId, cardId, due, expectedDue) {
+  if (!account?.memberId || !account.workspaceRole || !account.accessboard?.includes(boardId)) throw Error('尚未取得牌卡存取權限');
+  if (typeof due !== 'string' || due && (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00\+08:00$/.test(due) || !Number.isFinite(Date.parse(due)))) throw Error('截止日期格式無效');
+  const boardRef = doc(firestore, `${root}/${boardId}`), cardRef = doc(firestore, `${root}/${boardId}/cards/${cardId}`);
+  return runTransaction(firestore, async transaction => {
+    const [board, card] = await Promise.all([transaction.get(boardRef), transaction.get(cardRef)]);
+    const data = card.data();
+    if (!board.exists() || board.data().archived || board.data().deleting || !card.exists() || data.archived || data.deleting) throw Error('看板或牌卡已封存、刪除或無法存取');
+    if (!data.assigneeIds?.includes(account.memberId)) throw Error('只有此牌卡的負責人可以修改截止日期');
+    if ((data.due || '') !== (expectedDue || '')) throw Error('截止日期已被其他人修改，請關閉視窗並重新整理');
+    const updatedAt = new Date().toISOString();
+    transaction.update(cardRef, {due, updatedAt, updatedBy:account.memberId});
+    return {due, updatedAt};
+  });
+}
+
+export async function saveBoardLabel(account, boardId, labelId, definition, expected) {
+  if(!account?.memberId||!account.workspaceRole||!account.accessboard?.includes(boardId))throw Error('尚未取得看板權限');
+  if(!/^[A-Za-z0-9_-]{1,128}$/.test(labelId)||typeof definition?.name!=='string'||!definition.name.trim()||definition.name.length>40||!/^#[0-9a-f]{6}$/i.test(definition.color))throw Error('標籤格式無效');
+  const ref=doc(firestore,`${root}/${boardId}`);
+  return runTransaction(firestore,async transaction=>{
+    const snapshot=await transaction.get(ref),board=snapshot.data();
+    if(!snapshot.exists()||board.archived||board.deleting)throw Error('看板已封存、刪除或無法存取');
+    const definitions=board.labelDefinitions||{};
+    if(JSON.stringify(definitions[labelId]||null)!==JSON.stringify(expected||null))throw Error('標籤已被其他人修改，請重新開啟標籤管理');
+    if(Object.entries(definitions).some(([id,label])=>id!==labelId&&label.name===definition.name))throw Error('看板已有同名標籤');
+    const next={...definitions,[labelId]:{...(definitions[labelId]||{}),name:definition.name.trim(),color:definition.color.toLowerCase()}};
+    if(Object.keys(next).length>200)throw Error('每個看板最多 200 個標籤');
+    transaction.update(ref,{labelDefinitions:next,labelEditId:labelId});return next;
+  });
 }

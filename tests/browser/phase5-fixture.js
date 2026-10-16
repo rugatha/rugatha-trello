@@ -2,7 +2,7 @@
 export const fixture={member:{id:'m',name:'測試會員',status:'active',role:'owner',accessboard:['b'],theme:'light'},writes:[],fail:false,hold:null,listener:null,loads:0};
 const users=[{id:'m',name:'測試會員'},{id:'viewer',name:'唯讀會員'}];
 const auth={currentUser:null,app:{}};let authChanged;
-export const initializeApp=()=>({});export const getAuth=()=>auth;export const getFirestore=()=>({});export const getFunctions=()=>({});export class GoogleAuthProvider {}
+export const initializeApp=()=>({});export const getAuth=()=>auth;export const getFirestore=()=>({});export const getFunctions=()=>({});export class GoogleAuthProvider {setCustomParameters(){}}
 export const httpsCallable=()=>async()=>({data:{members:users}});
 export const onAuthStateChanged=(_,fn)=>{authChanged=fn;queueMicrotask(()=>fn(null));};
 export const signInWithPopup=async()=>fixture.login('owner');export const signOut=async()=>{auth.currentUser=null;await authChanged(null);};
@@ -13,9 +13,21 @@ export async function updateDoc(path,patch){const hold=fixture.hold;if(hold)awai
 fixture.login=async(role='owner',theme='light',uid=role)=>{fixture.member=role==='pending'?null:{id:'m',name:'測試會員',status:'active',role,accessboard:['b'],theme};auth.currentUser={uid,email:uid+'@example.com',emailVerified:true,displayName:'Google 名稱'};await authChanged(auth.currentUser);};
 fixture.snapshot=patch=>{Object.assign(fixture.member,patch);fixture.listener.next({id:'m',exists:()=>true,data:()=>({...fixture.member}),metadata:{}});};
 window.phase5Fixture=fixture;
-export async function loadWorkspace(account){fixture.loads++;return {users,boards:account?.memberId?[{id:'b',name:'測試看板與長標題可讀性',color:fixture.boardColor||'#455f56',description:'本機記憶體資料，不連接正式 Firebase。',columns:[{id:'col',name:'待辦'},{id:'done',name:'完成'}],cards:[{id:'c',title:'鍵盤開啟測試牌卡',columnId:'col',createdAt:'2026-10-10T00:00:00Z',description:'測試說明',assignees:['viewer'],labels:['purple','blue','green','orange','pink'],checklist:[],comments:[],attachments:[],archivedAttachments:[]}],archivedCards:[]}]:[]};}
+export async function loadWorkspace(account){fixture.loads++;return {users,boards:account?.memberId?[{id:'b',labelDefinitions:fixture.labelDefinitions||{release:{name:'發布準備',color:'#376b57'},review:{name:'審閱',color:'#e1b35c'}},name:'測試看板與長標題可讀性',color:fixture.boardColor||'#455f56',description:'本機記憶體資料，不連接正式 Firebase。',columns:[{id:'col',name:'待辦'},{id:'done',name:'完成'}],cards:[{id:'c',title:'鍵盤開啟測試牌卡',columnId:'col',createdAt:'2026-10-10T00:00:00Z',description:'測試說明',assignees:['viewer'],labels:['release'],checklist:[],comments:[],attachments:[],archivedAttachments:[]}],archivedCards:[]}]:[]};}
 export const subscribeWorkspace=()=>()=>{};export const persistWorkspace=async()=>[];export const restoreCard=async()=>{};export const restoreAttachment=async()=>{};export const loadDeferredAttachmentArchives=async()=>[];
 export const listManagementMembers=async()=>({members:users.map(u=>({...u,eligible:true})),assigneeIds:['viewer']});export const createManagedBoard=async()=>({boardId:'b'});export const setManagedAssignees=async()=>({});export const listMembershipDirectory=async()=>({members:[],boards:[]});export const saveManagedMembership=async()=>({});
 export const clearAttachmentUI=()=>{};export const hydrateAttachmentImages=()=>{};export const downloadAttachment=async()=>{};export const bindAttachmentUpload=()=>{};
 
 export const manageContentLifecycle=async()=>({});
+
+// Notification reads remain in memory alongside the rest of the browser fixture.
+export const collection=(_, ...parts)=>parts.join('/');
+export const query=ref=>ref;
+export const orderBy=()=>({});
+export const limit=()=>({});
+export const writeBatch=()=>({update(){},commit:async()=>{}});
+
+export async function saveBoardLabel(account,boardId,labelId,definition) {
+ fixture.labelDefinitions={...(fixture.labelDefinitions||{release:{name:'發布準備',color:'#376b57'},review:{name:'審閱',color:'#e1b35c'}}),[labelId]:definition};
+ return fixture.labelDefinitions;
+}

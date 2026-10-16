@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import fs from 'node:fs/promises';
+import * as cardOptions from '../src/card-options.js';
 test('main page starts empty and loads Firebase only after membership is available',async()=>{
  const elements=new Map(),listeners=new Map(),loadOptions=[];let loads=0,liveChange,stopped=0;
  const element=selector=>{if(!elements.has(selector))elements.set(selector,{value:selector==='#dueFilter'?'all':'',classList:{add(){},remove(){},toggle(){}},style:{},replaceChildren(){this.innerHTML='';},close(){this.open=false;},showModal(){this.open=true;}});return elements.get(selector);};
@@ -10,7 +11,8 @@ test('main page starts empty and loads Firebase only after membership is availab
  window:{addEventListener:(name,fn)=>listeners.set(name,fn)}});
  const source=await fs.readFile(new URL('../src/app.js',import.meta.url),'utf8');
  const app=new vm.SourceTextModule(source,{context});
- const dep=new vm.SyntheticModule(['bindCommentComposer','connectNotifications','renderMentionText','clearAttachmentUI','hydrateAttachmentImages','downloadAttachment','bindAttachmentUpload','listManagementMembers','createManagedBoard','setManagedAssignees','manageContentLifecycle','loadWorkspace','subscribeWorkspace','persistWorkspace','restoreCard','restoreAttachment','loadDeferredAttachmentArchives','assignMovedOrderKey'],function(){
+ const dep=new vm.SyntheticModule([...Object.keys(cardOptions),'saveBoardLabel','bindCommentComposer','connectNotifications','renderMentionText','clearAttachmentUI','hydrateAttachmentImages','downloadAttachment','bindAttachmentUpload','listManagementMembers','createManagedBoard','setManagedAssignees','manageContentLifecycle','loadWorkspace','subscribeWorkspace','persistWorkspace','restoreCard','restoreAttachment','loadDeferredAttachmentArchives','assignMovedOrderKey'],function(){
+ for(const [key,value]of Object.entries(cardOptions))this.setExport(key,value);this.setExport('saveBoardLabel',async()=>({}));
  for(const name of ['bindCommentComposer','connectNotifications','renderMentionText','clearAttachmentUI','hydrateAttachmentImages','downloadAttachment','bindAttachmentUpload'])this.setExport(name,()=>{});
  this.setExport('listManagementMembers',async()=>({members:[],assigneeIds:[]}));this.setExport('createManagedBoard',async()=>({boardId:'new'}));this.setExport('setManagedAssignees',async()=>({}));this.setExport('manageContentLifecycle',async()=>({}));
  this.setExport('loadWorkspace',async(_,options)=>{loads++;loadOptions.push(options);return {users:[],boards:[{id:'b',name:'Firebase board',columns:[{id:'col',name:'Todo'}],archivedCards:[{id:'old',title:'Archived card'}],cards:[{id:'c',title:'Current card',columnId:'col',description:'',assignees:[],labels:[],checklist:[],comments:[],attachments:[],archivedAttachments:[{id:'file',name:'Archived file'}]}]}]};});this.setExport('persistWorkspace',async()=>{});

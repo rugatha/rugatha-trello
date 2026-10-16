@@ -288,3 +288,56 @@ test('clients cannot forge mention identities or modify text behind stored menti
  await assertFails(updateDoc(doc(dbFor('editor'),path),{text:'changed'}));
  await assertFails(updateDoc(doc(dbFor('editor'),path),{mentions:[]}));
 });
+
+for (const role of ['viewer','member']) test(role+': assignees can change only their active card deadline',async()=>{
+ const path=board+'/cards/deadline-'+role,db=dbFor(role);
+ await env.withSecurityRulesDisabled(async context=>setDoc(doc(context.firestore(),path),{title:'Deadline task',createdBy:'owner',assigneeIds:[role],due:'',archived:false}));
+ const update={due:'2026-11-06T17:30:00+08:00',updatedAt:'2026-10-16T00:00:00Z',updatedBy:role};
+ await assertSucceeds(updateDoc(doc(db,path),update));
+ for (const extra of [{title:'Changed'},{done:true},{assigneeIds:[role,'outsider']},{archived:true},{updatedBy:'owner'}]) {
+  await assertFails(updateDoc(doc(db,path),{...update,...extra}));
+ }
+ await assertFails(updateDoc(doc(db,path),{...update,due:42}));
+ await assertFails(updateDoc(doc(db,path),{...update,due:'tomorrow'}));
+ await assertFails(updateDoc(doc(db,path),{...update,updatedAt:42}));
+ await assertFails(setDoc(doc(db,path+'/checklist/new'),{text:'Cannot change children'}));
+ await assertSucceeds(updateDoc(doc(db,path),{...update,due:''}));
+ const other=role==='viewer'?'member':'viewer';
+ await assertFails(updateDoc(doc(dbFor(other),path),{...update,updatedBy:other}));
+ if(role==='viewer')await assertSucceeds(updateDoc(doc(dbFor('alternate'),path),update));
+});
+test('deadline permission rejects removed assignments, revoked boards, disabled users and archived or deleting content',async()=>{
+ const path=board+'/cards/deadline-guard';
+ const seed=patch=>env.withSecurityRulesDisabled(async context=>setDoc(doc(context.firestore(),path),{title:'Task',createdBy:'owner',assigneeIds:['viewer','outsider','disabled'],due:'',...patch}));
+ const patch={due:'2026-11-06T17:30:00+08:00',updatedAt:'2026-10-16T00:00:00Z',updatedBy:'viewer'};
+ for(const state of [{archived:true},{deleting:true},{assigneeIds:[]}]) {await seed(state);await assertFails(updateDoc(doc(dbFor('viewer'),path),patch));}
+ await seed({});
+ for(const id of ['outsider','disabled'])await assertFails(updateDoc(doc(dbFor(id),path),{...patch,updatedBy:id}));
+ await env.withSecurityRulesDisabled(async context=>updateDoc(doc(context.firestore(),board),{archived:true}));
+ try{await assertFails(updateDoc(doc(dbFor('viewer'),path),patch));}
+ finally{await env.withSecurityRulesDisabled(async context=>updateDoc(doc(context.firestore(),board),{archived:false}));}
+ await env.withSecurityRulesDisabled(async context=>updateDoc(doc(context.firestore(),board),{deleting:true}));
+ try{await assertFails(updateDoc(doc(dbFor('viewer'),path),patch));}
+ finally{await env.withSecurityRulesDisabled(async context=>updateDoc(doc(context.firestore(),board),{deleting:false}));}
+});
+
+for(const role of ['viewer','member'])test(role+': board members can create or recolor one label without other write access',async()=>{
+ const db=dbFor(role),ref=doc(db,board),key='custom-'+role;
+ const boardData=(await getDoc(ref)).data();let definitions={...(boardData.labelDefinitions||{}),[key]:{name:'Label '+role,color:'#aabbcc'}};
+ await assertSucceeds(updateDoc(ref,{labelDefinitions:definitions,labelEditId:key}));
+ definitions={...definitions,[key]:{name:'Label '+role,color:'#112233'}};
+ await assertSucceeds(updateDoc(ref,{labelDefinitions:definitions,labelEditId:key}));
+ await assertFails(updateDoc(ref,{name:'Hijack',labelDefinitions:definitions,labelEditId:key}));
+ await assertFails(updateDoc(ref,{labelEditId:key,labelDefinitions:{...definitions,[key]:{name:'Bad',color:'url(unsafe)'}}}));
+ await assertFails(updateDoc(ref,{labelEditId:key,labelDefinitions:{...definitions,[key]:{name:'',color:'#112233'}}}));
+ await assertFails(updateDoc(ref,{labelEditId:key,labelDefinitions:{...definitions,[key]:{name:'Bad',color:'#112233',extra:true}}}));
+ await assertFails(updateDoc(ref,{labelEditId:key,labelDefinitions:{...definitions,[key]:{name:'Changed',color:'#ffffff'},second:{name:'Second',color:'#ffffff'}}}));
+ await assertFails(updateDoc(doc(dbFor('outsider'),board),{labelDefinitions:definitions,labelEditId:key}));
+});
+test('label editing is blocked after board archival or deletion starts',async()=>{
+ for(const state of [{archived:true},{deleting:true}]){
+  await env.withSecurityRulesDisabled(async context=>updateDoc(doc(context.firestore(),board),state));
+  try{const db=dbFor('viewer'),current=(await getDoc(doc(db,board))).data();await assertFails(updateDoc(doc(db,board),{labelEditId:'blocked',labelDefinitions:{...(current.labelDefinitions||{}),blocked:{name:'Blocked',color:'#ffffff'}}}));}
+  finally{await env.withSecurityRulesDisabled(async context=>updateDoc(doc(context.firestore(),board),{archived:false,deleting:false}));}
+ }
+});

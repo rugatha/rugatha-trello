@@ -11,7 +11,7 @@ async function setup(remote,fail=false){
  getDoc:async path=>{reads.push(path);return {exists:()=>remote.has(path),data:()=>remote.get(path)}},
  getDocs:async path=>{reads.push(path);return {docs:[...remote].filter(([key])=>key.startsWith(path+'/')&&key.split('/').length===path.split('/').length+1).map(([key,value])=>({id:key.split('/').at(-1),data:()=>value}))}},
  onSnapshot:(path,next,error)=>{const listener={path,next,error,active:true};listeners.push(listener);return()=>{listener.active=false}},
- runTransaction:async(_,fn)=>{const pending=[];await fn({get:async path=>({exists:()=>remote.has(path),data:()=>remote.get(path)}),update:(...v)=>pending.push(['update',...v]),set:(...v)=>pending.push(['set',...v]),delete:(...v)=>pending.push(['delete',...v])});if(fail)throw Error('offline');writes.push(...pending);}};
+ runTransaction:async(_,fn)=>{const pending=[];const result=await fn({get:async path=>({exists:()=>remote.has(path),data:()=>remote.get(path)}),update:(...v)=>pending.push(['update',...v]),set:(...v)=>pending.push(['set',...v]),delete:(...v)=>pending.push(['delete',...v])});if(fail)throw Error('offline');writes.push(...pending);return result;}};
  deps.getDocFromServer=deps.getDoc;deps.getDocsFromServer=async path=>({docs:[...oldView].filter(([key])=>key.startsWith(path+'/')&&key.split('/').length===path.split('/').length+1).map(([key,value])=>({id:key.split('/').at(-1),data:()=>value}))});
  const mod=new vm.SourceTextModule(await fs.readFile(new URL('../src/storage.js',import.meta.url),'utf8'),{context});
  await mod.link(async()=>new vm.SyntheticModule(Object.keys(deps),function(){for(const [k,v]of Object.entries(deps))this.setExport(k,v);},{context}));await mod.evaluate();
@@ -183,4 +183,36 @@ test('first child reload uses current server counts even when the live query vie
  const loaded=await api.loadWorkspace(account),card=loaded.boards[0].cards[0];
  assert.equal(card.commentCount,1);assert.equal(card.checklistCount,1);
  assert.equal(card.comments[0].text,'First');assert.equal(card.checklist[0].text,'First');
+});
+test('gantt reads only authorized board cards and checklist, without comments or attachments',async()=>{
+ const root='workspaces/main/boards/b';
+ const remote=new Map([[root,{name:'Allowed'}],[root+'/cards/c',{title:'Task',checklistCount:1,commentCount:2,attachmentCount:1}],
+ [root+'/cards/c/checklist/t',{text:'10/31 完成'}],[root+'/cards/c/comments/private',{text:'not needed'}],
+ ['workspaces/main/boards/private',{name:'Private'}]]);
+ const {api,reads}=await setup(remote);
+ const data=await api.loadWorkspace({accessboard:['b']},{content:'gantt'});
+ assert.equal(data.boards[0].cards[0].checklist[0].text,'10/31 完成');
+ assert.ok(reads.every(path=>path.startsWith(root)&&!path.endsWith('/comments')&&!path.endsWith('/attachments')));
+});
+test('deadline transaction updates only due and metadata, preserving unrelated fields',async()=>{
+ const root='workspaces/main/boards/b',path=root+'/cards/c',remote=new Map([[root,{name:'Board'}],[path,{title:'Concurrent title',assigneeIds:['m'],due:'2026-10-31'}]]);
+ const {api,writes}=await setup(remote);const actor={memberId:'m',workspaceRole:'viewer',accessboard:['b']};
+ const saved=await api.updateCardDeadline(actor,'b','c','2026-11-06T17:30:00+08:00','2026-10-31');
+ assert.equal(saved.due,'2026-11-06T17:30:00+08:00');assert.deepEqual(Object.keys(writes[0][2]).sort(),['due','updatedAt','updatedBy']);
+ assert.equal(writes[0][2].updatedBy,'m');
+});
+test('deadline transaction rejects changed deadlines, removed assignees and archived content',async()=>{
+ const root='workspaces/main/boards/b',path=root+'/cards/c',actor={memberId:'m',workspaceRole:'viewer',accessboard:['b']};
+ for(const [board,card,expected] of [[{},{assigneeIds:['m'],due:'changed'},'conflict'],[{}, {assigneeIds:[]},'assignment'],[{archived:true},{assigneeIds:['m']},'archive'],[{}, {assigneeIds:['m'],archived:true},'archive']]) {
+  const {api,writes}=await setup(new Map([[root,board],[path,card]]));
+  await assert.rejects(api.updateCardDeadline(actor,'b','c','',''));assert.equal(writes.length,0,expected);
+ }
+});
+test('label changes merge concurrent unrelated labels and reject conflicting color edits',async()=>{
+ const root='workspaces/main/boards/b',actor={memberId:'m',workspaceRole:'viewer',accessboard:['b']};
+ const remote=new Map([[root,{name:'Board',labelDefinitions:{a:{name:'A',color:'#ffffff'},b:{name:'B',color:'#000000'}}}]]);
+ const {api,writes}=await setup(remote);
+ const definitions=await api.saveBoardLabel(actor,'b','a',{name:'A',color:'#123456'},{name:'A',color:'#ffffff'});
+ assert.equal(definitions.b.name,'B');assert.equal(writes.length,1);assert.deepEqual(Object.keys(writes[0][2]),['labelDefinitions','labelEditId']);
+ await assert.rejects(api.saveBoardLabel(actor,'b','a',{name:'A',color:'#123456'},{name:'A',color:'#999999'}),/其他人/);
 });
