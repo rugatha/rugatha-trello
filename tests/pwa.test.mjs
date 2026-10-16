@@ -45,7 +45,7 @@ test('worker leaves APIs, attachments, modules, tests and other apps untouched',
   const w = worker(undefined, false);
   for (const [url, mode, method] of [
     ['./src/auth.js', 'cors', 'GET'], ['./assets/private.png', 'no-cors', 'GET'],
-    ['./tests/browser/phase6-live.html', 'navigate', 'GET'], ['/other/', 'navigate', 'GET'],
+    ['./tests/browser/preferences.html', 'navigate', 'GET'], ['/other/', 'navigate', 'GET'],
     ['https://firestore.googleapis.com/', 'cors', 'GET'], ['./', 'navigate', 'POST'],
   ]) assert.equal(w.navigate(url, mode, method), undefined);
 });

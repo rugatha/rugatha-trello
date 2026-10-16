@@ -1,5 +1,7 @@
 # Socials 看板補入
 
+> 2026-10-16 清理更新：依使用者授權，本文提及的本機 `attachments_export/` 備份與稽核檔已移除，階段六專用測試工具亦已移除。以下保留歷史執行紀錄，不代表相關本機檔案仍存在。
+
 來源為私人 `import/socials-trello.json` 與 `attachments_export/trello-backup/manifest.json` 的 Socials 附件。來源 JSON 已加入忽略追蹤，完整計畫、缺檔清單及驗證結果存於忽略追蹤的 `attachments_export/socials-import/`。
 
 ## 匯入方式

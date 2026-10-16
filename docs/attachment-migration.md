@@ -1,5 +1,7 @@
 # Trello 附件遷移
 
+> 2026-10-16 清理更新：依使用者授權，本文提及的本機 `attachments_export/` 備份與稽核檔已移除，階段六專用測試工具亦已移除。以下保留歷史執行紀錄，不代表相關本機檔案仍存在。
+
 來源：`attachments_export/trello-backup/manifest.json`。以 Trello 看板、牌卡、附件 ID 對應 Firestore，不使用名稱猜測。使用者指定略過 Socials，176 筆附件仍保留於本機備份。
 
 |看板|上傳檔案|保留外部連結|

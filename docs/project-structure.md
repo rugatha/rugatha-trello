@@ -1,5 +1,16 @@
 # 專案結構與清理紀錄
 
+## 2026-10-16 根目錄盤點與清理
+
+依使用者「以上皆移除，並幫我部署」授權完成以下清理：
+
+- 移除 `firebase-debug.log`、`firestore-debug.log`、`scripts/__pycache__/` 及 10 個 `.DS_Store`，共 6.28 MiB。
+- 移除整個 `attachments_export/`（約 841 MB），包含原始附件、正式資料備份、遷移與稽核紀錄，以及其中約 17 MB 的 `.venv/`。歷史文件提到的本機備份路徑已不再存在，不代表仍有可還原的副本。
+- 移除根目錄 `node_modules/`（約 417 MB）與 `functions/node_modules/`（約 71 MB）。需要開發或部署 Functions 時，分別執行 `npm ci` 與 `npm ci --prefix functions` 重裝。
+- 移除已結束的階段六工具：`scripts/phase6-alias-test.cjs`、`scripts/phase6-test-role.cjs`、`scripts/remove-phase6-boards.cjs`、`scripts/set-test-account-unlisted.cjs`、`tests/browser/phase6-live.html`、`tests/browser/phase6-live.js`。保留歷史驗證紀錄，供追溯當時結果。
+- 保留 npm／CI 使用的回歸測試及其餘瀏覽器測試；PWA 測試改以仍存在的 `preferences.html` 驗證測試頁不被 worker 攔截。
+- 下方為過往整理紀錄；若與本節不同，以本節清理後狀態為準。維護工具日後可重新產生 `attachments_export/`，該路徑仍由 Git 忽略。
+
 2026-10-11：以程式引用、npm 指令、CI 設定及維護文件確認用途後整理。既有未提交的檔案修改保留。
 
 | 位置 | 用途 |
