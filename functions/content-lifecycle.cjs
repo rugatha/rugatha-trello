@@ -7,13 +7,13 @@ const fail = (code,message) => {throw new ManagementError(code,message);};
 const hash = value => createHash('sha256').update(value).digest('hex');
 const validId = value => typeof value==='string' && /^[A-Za-z0-9_-]{1,128}$/.test(value);
 function createContentLifecycle(db,bucket) {
-  async function owner(tx,auth) {
+  async function administrator(tx,auth) {
     const email=auth?.token?.email;
     if (!auth?.uid || auth.token.email_verified!==true || typeof email!=='string' || email.includes('/')) fail('unauthenticated','請使用已驗證的 Google 帳號登入');
     const lookup=await tx.get(db.doc(`${ROOT}/memberLookup/${email.toLowerCase()}`));
-    if (!lookup.exists || !validId(lookup.data().memberId)) fail('permission-denied','沒有 Owner 權限');
+    if (!lookup.exists || !validId(lookup.data().memberId)) fail('permission-denied','沒有 Admin 權限');
     const member=await tx.get(db.doc(`${ROOT}/members/${lookup.data().memberId}`));
-    if (!member.exists || member.data().status!=='active' || member.data().role!=='owner') fail('permission-denied','只有有效 Owner 可執行此操作');
+    if (!member.exists || member.data().status!=='active' || member.data().role!=='admin') fail('permission-denied','只有有效 Admin 可執行此操作');
     return {...member.data(),id:member.id};
   }
   async function manage(auth,data) {
@@ -29,9 +29,9 @@ function createContentLifecycle(db,bucket) {
     const jobRef=db.doc(`${ROOT}/managementRequests/deletion-${hash(ref.path)}`);
     const result={boardId:data.boardId,...(data.cardId?{cardId:data.cardId}:{}),action:data.action};
     const start=await db.runTransaction(async tx => {
-      const member=await owner(tx,auth);
+      const member=await administrator(tx,auth);
       const [board,target,receipt,job]=await Promise.all([tx.get(boardRef),tx.get(ref),tx.get(receiptRef),tx.get(jobRef)]);
-      // Replays still require an active Owner; a completed deletion no longer has grants.
+      // Replays still require an active Admin; a completed deletion no longer has grants.
       if (receipt.exists) {
         if (receipt.data().fingerprint!==hash(payload)) fail('already-exists','請求識別碼已用於不同內容');
         if (receipt.data().status==='done') return 'done';
@@ -83,7 +83,7 @@ function createContentLifecycle(db,bucket) {
       await writer.close();
     }
     await db.runTransaction(async tx=>{
-      await owner(tx,auth);
+      await administrator(tx,auth);
       const target=await tx.get(ref);
       if (target.exists && !target.data().deleting) fail('aborted','刪除鎖定已變更');
       if (target.exists) tx.delete(ref);

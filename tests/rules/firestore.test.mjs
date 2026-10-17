@@ -8,7 +8,7 @@ const projectId='demo-rugatha-trello';
 const root='workspaces/main';
 const board=root+'/boards/allowed';
 const card=board+'/cards/card';
-const roles=['owner','admin','editor','viewer','member'];
+const roles=['admin','owner','editor','viewer','member'];
 let env;
 const dbFor=(id,verified=true)=>env.authenticatedContext(id,{email:id+'@example.com',email_verified:verified}).firestore();
 
@@ -24,7 +24,7 @@ before(async()=>{
       [board]:{name:'Allowed'},
       [root+'/boards/forbidden']:{name:'Forbidden'},
       [board+'/columns/column']:{name:'Todo'},
-      [card]:{title:'Card',createdBy:'owner',updatedBy:'owner'},
+      [card]:{title:'Card',createdBy:'admin',updatedBy:'admin'},
       [card+'/checklist/item']:{text:'Task',done:false},
       [card+'/attachments/file']:{name:'File',archived:false},
     };
@@ -40,9 +40,9 @@ after(async()=>{await env?.cleanup();});
 
 for(const role of roles){
   test(role+': authorized reads and role-based writes',async()=>{
-    const db=dbFor(role), editable=['owner','admin','editor'].includes(role);
+    const db=dbFor(role), editable=['admin','owner','editor'].includes(role);
     const write=editable?assertSucceeds:assertFails;
-    for(const path of [board,card,card+'/comments/owner',card+'/checklist/item',card+'/attachments/file']){
+    for(const path of [board,card,card+'/comments/admin',card+'/checklist/item',card+'/attachments/file']){
       await assertSucceeds(getDoc(doc(db,path)));
     }
     await assertSucceeds(getDocs(collection(db,board+'/cards')));
@@ -52,7 +52,7 @@ for(const role of roles){
     await write(updateDoc(doc(db,card),{title:'Edited '+role,updatedBy:role}));
     await write(setDoc(doc(db,card+'/comments/new-'+role),{memberId:role,text:'New'}));
     await write(setDoc(doc(db,card+'/checklist/'+role),{text:'New',done:false}));
-    await write(updateDoc(doc(db,card+'/attachments/file'),{archived:role==='owner'}));
+    await write(updateDoc(doc(db,card+'/attachments/file'),{archived:role==='admin'}));
     await assertFails(getDoc(doc(db,root+'/boards/forbidden')));
     await assertFails(setDoc(doc(db,root+'/boards/new-'+role),{name:'Unauthorized new board'}));
     await assertFails(getDocs(collection(db,root+'/boards')));
@@ -63,7 +63,7 @@ for(const role of roles){
 for(const id of ['anonymous','unapproved','pending','disabled','outsider','unverified']){
   test(id+': cannot read or modify restricted board data',async()=>{
     const db=id==='anonymous'?env.unauthenticatedContext().firestore():dbFor(id==='unverified'?'editor':id,id!=='unverified');
-    for(const path of [board,board+'/columns/column',card,card+'/comments/owner',card+'/checklist/item',card+'/attachments/file']){
+    for(const path of [board,board+'/columns/column',card,card+'/comments/admin',card+'/checklist/item',card+'/attachments/file']){
       await assertFails(getDoc(doc(db,path)));
       await assertFails(updateDoc(doc(db,path),{name:'Blocked'}));
     }
@@ -74,38 +74,38 @@ for(const id of ['anonymous','unapproved','pending','disabled','outsider','unver
 test('member can change only their own valid name, not membership privileges or lookup',async()=>{
   const db=dbFor('viewer'),ref=doc(db,root+'/members/viewer');
   await assertSucceeds(updateDoc(ref,{name:'New name'}));
-  for(const patch of [{role:'owner'},{accessboard:['allowed','forbidden']},{status:'active',emails:['other@example.com']},{name:''},{name:'x'.repeat(41)}]){
+  for(const patch of [{role:'admin'},{accessboard:['allowed','forbidden']},{status:'active',emails:['other@example.com']},{name:''},{name:'x'.repeat(41)}]){
     await assertFails(updateDoc(ref,patch));
   }
   await assertFails(updateDoc(doc(db,root+'/members/editor'),{name:'Impersonate'}));
   await assertSucceeds(getDoc(doc(db,root+'/memberLookup/viewer@example.com')));
   await assertFails(getDoc(doc(db,root+'/memberLookup/editor@example.com')));
   await assertFails(getDocs(collection(db,root+'/memberLookup')));
-  await assertFails(setDoc(doc(db,root+'/memberLookup/viewer@example.com'),{memberId:'owner'}));
+  await assertFails(setDoc(doc(db,root+'/memberLookup/viewer@example.com'),{memberId:'admin'}));
 });
-test('only owner/admin can delete columns',async()=>{
+test('only admin/owner can delete columns',async()=>{
   for(const role of roles){
     const ref=doc(dbFor(role),board+'/columns/delete-'+role);
     await env.withSecurityRulesDisabled(c=>setDoc(doc(c.firestore(),ref.path),{name:'Empty'}));
-    await (['owner','admin'].includes(role)?assertSucceeds:assertFails)(deleteDoc(ref));
+    await (['admin','owner'].includes(role)?assertSucceeds:assertFails)(deleteDoc(ref));
   }
 });
 test('comment updates require valid text and preserve author',async()=>{
   const db=dbFor('editor'),ref=doc(db,card+'/comments/editor');
   await assertSucceeds(updateDoc(ref,{text:'Edited'}));
-  for(const patch of [{text:''},{text:'x'.repeat(5001)},{memberId:'owner'}])await assertFails(updateDoc(ref,patch));
-  await assertFails(setDoc(doc(db,card+'/comments/forged'),{memberId:'owner',text:'Forged'}));
+  for(const patch of [{text:''},{text:'x'.repeat(5001)},{memberId:'admin'}])await assertFails(updateDoc(ref,patch));
+  await assertFails(setDoc(doc(db,card+'/comments/forged'),{memberId:'admin',text:'Forged'}));
 });
 test('only an editor comment author can delete their comment',async()=>{
   const ref=doc(dbFor('editor'),card+'/comments/editor');
-  for(const role of ['owner','admin','viewer'])await assertFails(deleteDoc(doc(dbFor(role),ref.path)));
+  for(const role of ['admin','owner','viewer'])await assertFails(deleteDoc(doc(dbFor(role),ref.path)));
   await assertSucceeds(deleteDoc(ref));
 });
 test('card writes cannot impersonate authors or replace original creator',async()=>{
   const db=dbFor('editor');
-  await assertFails(setDoc(doc(db,board+'/cards/forged'),{title:'Forged',createdBy:'owner'}));
+  await assertFails(setDoc(doc(db,board+'/cards/forged'),{title:'Forged',createdBy:'admin'}));
   await assertFails(updateDoc(doc(db,card),{createdBy:'editor',updatedBy:'editor'}));
-  await assertFails(updateDoc(doc(db,card),{title:'Forged',updatedBy:'owner'}));
+  await assertFails(updateDoc(doc(db,card),{title:'Forged',updatedBy:'admin'}));
 });
 
 test('multiple verified emails mapped to one member share name-edit permissions',async()=>{
@@ -117,9 +117,9 @@ test('multiple verified emails mapped to one member share name-edit permissions'
   await assertFails(updateDoc(doc(db,card),{title:'Viewer cannot edit',updatedBy:'viewer'}));
 });
 
-for(const role of ['owner','admin','editor'])test(role+': client cannot assign members, including on new cards',async()=>{
+for(const role of ['admin','owner','editor'])test(role+': client cannot assign members, including on new cards',async()=>{
   const db=dbFor(role),path=board+'/cards/assignment-'+role,ref=doc(db,path);
-  await env.withSecurityRulesDisabled(c=>setDoc(doc(c.firestore(),path),{title:'Assigned',createdBy:'owner',assigneeIds:['viewer']}));
+  await env.withSecurityRulesDisabled(c=>setDoc(doc(c.firestore(),path),{title:'Assigned',createdBy:'admin',assigneeIds:['viewer']}));
   await assertSucceeds(updateDoc(ref,{title:'Safe edit',updatedBy:role}));
   for(const assigneeIds of [[],['editor'],['viewer','editor'],null,'viewer']){
     await assertFails(updateDoc(ref,{assigneeIds,updatedBy:role}));
@@ -130,10 +130,10 @@ for(const role of ['owner','admin','editor'])test(role+': client cannot assign m
 for(const role of roles)test(role+': archive and restore permissions',async()=>{
   const db=dbFor(role),path=board+'/cards/archive-'+role,ref=doc(db,path),file=doc(db,path+'/attachments/file');
   await env.withSecurityRulesDisabled(async c=>{
-    await setDoc(doc(c.firestore(),path),{title:'Archive fixture',createdBy:'owner',assigneeIds:['viewer'],archived:false});
+    await setDoc(doc(c.firestore(),path),{title:'Archive fixture',createdBy:'admin',assigneeIds:['viewer'],archived:false});
     await setDoc(doc(c.firestore(),file.path),{name:'Attachment',archived:false});
   });
-  const allowed=['owner','admin','editor'].includes(role)?assertSucceeds:assertFails;
+  const allowed=['admin','owner','editor'].includes(role)?assertSucceeds:assertFails;
   for(const archived of [true,false]){
     await allowed(updateDoc(ref,{archived,updatedBy:role}));
     await allowed(updateDoc(file,{archived}));
@@ -154,7 +154,7 @@ test('revoking board access blocks an already authenticated client',async()=>{
 
 for(const role of roles)test(role+': shared board colors require edit permission',async()=>{
  const db=dbFor(role),ref=doc(db,board);
- const allowed=['owner','admin','editor'].includes(role)?assertSucceeds:assertFails;
+ const allowed=['admin','owner','editor'].includes(role)?assertSucceeds:assertFails;
  for(const color of ['#455f56','#c8b58f','#8fa697','#bca582','#ad9790'])await allowed(updateDoc(ref,{color}));
  await assertFails(updateDoc(ref,{color:'url(https://example.com/image)'}));
  await assertFails(updateDoc(ref,{color:null}));
@@ -191,7 +191,7 @@ test('private membership documents are self-only, including for managers',async(
  for(const role of roles){
   const db=dbFor(role);
   await assertSucceeds(getDoc(doc(db,root+'/members/'+role)));
-  await assertFails(getDoc(doc(db,root+'/members/'+(role==='owner'?'viewer':'owner'))));
+  await assertFails(getDoc(doc(db,root+'/members/'+(role==='admin'?'viewer':'admin'))));
   await assertFails(getDocs(collection(db,root+'/members')));
   await assertFails(getDocs(collection(db,root+'/managementRequests')));
  }
@@ -202,23 +202,23 @@ test('personal themes are self-only preset preferences without identity or privi
   const ref=doc(dbFor(role),root+'/members/'+role);
   for(const theme of ['dark','light'])await assertSucceeds(updateDoc(ref,{theme}));
   for(const theme of ['system','#fff',null,1,{},['dark']])await assertFails(updateDoc(ref,{theme}));
-  await assertFails(updateDoc(ref,{theme:'dark',role:'owner',emails:['forged@example.com']}));
+  await assertFails(updateDoc(ref,{theme:'dark',role:'admin',emails:['forged@example.com']}));
  }
  await assertSucceeds(updateDoc(doc(dbFor('alternate'),root+'/members/viewer'),{theme:'dark'}));
- await assertFails(updateDoc(doc(dbFor('owner'),root+'/members/viewer'),{theme:'light'}));
+ await assertFails(updateDoc(doc(dbFor('admin'),root+'/members/viewer'),{theme:'light'}));
  for(const id of ['disabled','pending','unapproved'])await assertFails(updateDoc(doc(dbFor(id),root+'/members/'+id),{theme:'dark'}));
  await assertFails(updateDoc(doc(env.unauthenticatedContext().firestore(),root+'/members/viewer'),{theme:'dark'}));
 });
 
 test('client cannot forge deletion locks; locked cards and boards reject all writes',async()=>{
- const owner=dbFor('owner');
+ const admin=dbFor('admin');
  for(const patch of [{deleting:true},{deleting:false}]){
-  await assertFails(updateDoc(doc(owner,board),patch));
-  await assertFails(updateDoc(doc(owner,card),{...patch,updatedBy:'owner'}));
+  await assertFails(updateDoc(doc(admin,board),patch));
+  await assertFails(updateDoc(doc(admin,card),{...patch,updatedBy:'admin'}));
  }
- await assertFails(setDoc(doc(owner,board+'/cards/forged-lock'),{title:'Locked',createdBy:'owner',deleting:false}));
+ await assertFails(setDoc(doc(admin,board+'/cards/forged-lock'),{title:'Locked',createdBy:'admin',deleting:false}));
  await env.withSecurityRulesDisabled(c=>updateDoc(doc(c.firestore(),card),{deleting:true}));
- for(const role of ['owner','admin','editor']){
+ for(const role of ['admin','owner','editor']){
   const db=dbFor(role);
   await assertFails(updateDoc(doc(db,card),{title:'Changed',updatedBy:role}));
   await assertFails(setDoc(doc(db,card+'/checklist/late'),{text:'Late'}));
@@ -227,18 +227,18 @@ test('client cannot forge deletion locks; locked cards and boards reject all wri
  }
  await env.withSecurityRulesDisabled(c=>updateDoc(doc(c.firestore(),card),{deleting:false}));
  await env.withSecurityRulesDisabled(c=>updateDoc(doc(c.firestore(),board),{deleting:true}));
- await assertFails(updateDoc(doc(owner,board),{name:'Changed'}));
- await assertFails(setDoc(doc(owner,board+'/cards/late'),{title:'Late',createdBy:'owner'}));
- await assertFails(updateDoc(doc(owner,card),{title:'Changed',updatedBy:'owner'}));
- await assertFails(setDoc(doc(owner,board+'/columns/late'),{name:'Late'}));
+ await assertFails(updateDoc(doc(admin,board),{name:'Changed'}));
+ await assertFails(setDoc(doc(admin,board+'/cards/late'),{title:'Late',createdBy:'admin'}));
+ await assertFails(updateDoc(doc(admin,card),{title:'Changed',updatedBy:'admin'}));
+ await assertFails(setDoc(doc(admin,board+'/columns/late'),{name:'Late'}));
  await env.withSecurityRulesDisabled(c=>updateDoc(doc(c.firestore(),board),{deleting:false}));
 });
 
-test('only Owner can archive and restore a board through direct client writes',async()=>{
- for(const role of ['admin','editor','viewer','member'])await assertFails(updateDoc(doc(dbFor(role),board),{archived:true}));
- await assertSucceeds(updateDoc(doc(dbFor('owner'),board),{archived:true}));
- for(const role of ['admin','editor'])await assertFails(updateDoc(doc(dbFor(role),board),{archived:false}));
- await assertSucceeds(updateDoc(doc(dbFor('owner'),board),{archived:false}));
+test('only Admin can archive and restore a board through direct client writes',async()=>{
+ for(const role of ['owner','editor','viewer','member'])await assertFails(updateDoc(doc(dbFor(role),board),{archived:true}));
+ await assertSucceeds(updateDoc(doc(dbFor('admin'),board),{archived:true}));
+ for(const role of ['owner','editor'])await assertFails(updateDoc(doc(dbFor(role),board),{archived:false}));
+ await assertSucceeds(updateDoc(doc(dbFor('admin'),board),{archived:false}));
 });
 
 
@@ -257,7 +257,7 @@ test('personal board order and raster avatar are self-service without changing g
   for(const patch of [{boardOrder:['forbidden']},{boardOrder:['allowed','allowed']},{boardOrder:'allowed'},
     {avatar:'https://example.com/avatar.jpg'},{avatar:'data:image/svg+xml;base64,PHN2Zz4='},
     {avatar:'data:image/jpeg;base64,'+'A'.repeat(50000)},{avatar:42},
-    {boardOrder:['allowed'],role:'owner'}])await assertFails(updateDoc(ref,patch));
+    {boardOrder:['allowed'],role:'admin'}])await assertFails(updateDoc(ref,patch));
   await assertFails(updateDoc(doc(dbFor('editor'),root+'/members/viewer'),{avatar:''}));
   await assertSucceeds(updateDoc(ref,{avatar:'',boardOrder:[]}));
 });
@@ -276,7 +276,7 @@ test('notifications are private, server-created and only read state is editable'
  await assertSucceeds(updateDoc(doc(viewer,path),{read:true}));
  await assertFails(updateDoc(doc(viewer,path),{type:'assignment'}));
  await assertFails(setDoc(doc(viewer,root+'/members/viewer/notifications/forged'),{read:false}));
- await assertFails(getDoc(doc(dbFor('owner'),path)));
+ await assertFails(getDoc(doc(dbFor('admin'),path)));
  await assertFails(getDoc(doc(dbFor('disabled'),path)));
  await assertFails(deleteDoc(doc(viewer,path)));
 });
@@ -291,10 +291,10 @@ test('clients cannot forge mention identities or modify text behind stored menti
 
 for (const role of ['viewer','member']) test(role+': assignees can change only their active card deadline',async()=>{
  const path=board+'/cards/deadline-'+role,db=dbFor(role);
- await env.withSecurityRulesDisabled(async context=>setDoc(doc(context.firestore(),path),{title:'Deadline task',createdBy:'owner',assigneeIds:[role],due:'',archived:false}));
+ await env.withSecurityRulesDisabled(async context=>setDoc(doc(context.firestore(),path),{title:'Deadline task',createdBy:'admin',assigneeIds:[role],due:'',archived:false}));
  const update={due:'2026-11-06T17:30:00+08:00',updatedAt:'2026-10-16T00:00:00Z',updatedBy:role};
  await assertSucceeds(updateDoc(doc(db,path),update));
- for (const extra of [{title:'Changed'},{done:true},{assigneeIds:[role,'outsider']},{archived:true},{updatedBy:'owner'}]) {
+ for (const extra of [{title:'Changed'},{done:true},{assigneeIds:[role,'outsider']},{archived:true},{updatedBy:'admin'}]) {
   await assertFails(updateDoc(doc(db,path),{...update,...extra}));
  }
  await assertFails(updateDoc(doc(db,path),{...update,due:42}));
@@ -308,7 +308,7 @@ for (const role of ['viewer','member']) test(role+': assignees can change only t
 });
 test('deadline permission rejects removed assignments, revoked boards, disabled users and archived or deleting content',async()=>{
  const path=board+'/cards/deadline-guard';
- const seed=patch=>env.withSecurityRulesDisabled(async context=>setDoc(doc(context.firestore(),path),{title:'Task',createdBy:'owner',assigneeIds:['viewer','outsider','disabled'],due:'',...patch}));
+ const seed=patch=>env.withSecurityRulesDisabled(async context=>setDoc(doc(context.firestore(),path),{title:'Task',createdBy:'admin',assigneeIds:['viewer','outsider','disabled'],due:'',...patch}));
  const patch={due:'2026-11-06T17:30:00+08:00',updatedAt:'2026-10-16T00:00:00Z',updatedBy:'viewer'};
  for(const state of [{archived:true},{deleting:true},{assigneeIds:[]}]) {await seed(state);await assertFails(updateDoc(doc(dbFor('viewer'),path),patch));}
  await seed({});

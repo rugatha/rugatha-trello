@@ -1,4 +1,4 @@
-export const fixture={members:[{id:'owner',name:'測試 Owner',emails:['owner@example.com'],role:'owner',status:'active',accessboard:['board']},{id:'viewer',name:'測試 Viewer',emails:['viewer@example.com'],role:'viewer',status:'active',accessboard:[]}],requests:[],fail:false,delay:false};
+export const fixture={members:[{id:'admin',name:'測試 Admin',emails:['admin@example.com'],role:'admin',status:'active',accessboard:['board']},{id:'viewer',name:'測試 Viewer',emails:['viewer@example.com'],role:'viewer',status:'active',accessboard:[]}],requests:[],fail:false,delay:false};
 export async function listMembershipDirectory(){
  if(fixture.delay){fixture.delay=false;await new Promise(resolve=>fixture.resolve=resolve);}
  return structuredClone({members:fixture.members,boards:[{id:'board',name:'測試看板'}]});

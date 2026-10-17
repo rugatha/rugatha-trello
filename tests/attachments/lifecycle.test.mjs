@@ -19,7 +19,7 @@ async function stage(requestId,who='editor',body=bytes){
 before(async()=>{
  if(!process.env.FIRESTORE_EMULATOR_HOST||!process.env.STORAGE_EMULATOR_HOST||process.env.GCLOUD_PROJECT!=='demo-rugatha-trello')throw Error('demo emulators required');
  app=initializeApp({projectId:'demo-rugatha-trello',storageBucket:'demo-rugatha-trello.firebasestorage.app'});db=getFirestore(app);bucket=getStorage(app).bucket();service=createAttachments(db,bucket,{now:()=>clock});
- for(const role of ['owner','admin','editor','viewer','member']){
+ for(const role of ['admin','owner','editor','viewer','member']){
   await db.doc(root+'/memberLookup/'+role+'@example.com').set({memberId:role});
   await db.doc(root+'/members/'+role).set({status:'active',role,accessboard:['allowed']});
  }
@@ -80,7 +80,7 @@ test('cleanup removes expired unlinked bytes, preserves committed/archived objec
  await db.doc(cardPath).update({archived:true});clock+=86400001;
  const result=await service.cleanup();assert.ok(result.removed>=5);
  assert.equal((await bucket.file(s.stagingPath).exists())[0],false);
- const good=await service.begin(auth('owner'),{...payload('blocked'),cardId:'missing'}).catch(e=>e);assert.equal(good.code,'failed-precondition');
+ const good=await service.begin(auth('admin'),{...payload('blocked'),cardId:'missing'}).catch(e=>e);assert.equal(good.code,'failed-precondition');
  const records=await db.doc(cardPath).collection('attachments').get();for(const d of records.docs)assert.equal((await bucket.file(d.data().storagePath).exists())[0],true);
  await db.doc(cardPath).update({archived:false});await assert.rejects(service.finish(auth('editor'),{requestId:'expired'}),{code:'failed-precondition'});
 });

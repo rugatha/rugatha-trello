@@ -23,7 +23,7 @@ async function main(){
    if(matches.length!==1)throw Error('Board name must resolve uniquely: '+target.name);
    const board=matches[0],boardId=board.name.split('/').at(-1);
    if(!(field(actor,'accessboard')||[]).includes(boardId)||field(board,'deleting'))throw Error('Board inaccessible or deleting: '+target.name);
-   if(field(board,'archived')&&field(actor,'role')!=='owner')throw Error('Archived board maintenance requires Owner');
+   if(field(board,'archived')&&field(actor,'role')!=='admin')throw Error('Archived board maintenance requires Admin');
    const cards=await list(request,`workspaces/main/boards/${boardId}/cards`);
    const changes=cards.filter(card=>[null,''].includes(field(card,'due'))&&!field(card,'deleting'));
    groups.push({...target,board,changes,preserved:cards.filter(card=>![null,''].includes(field(card,'due'))),deleting:cards.filter(card=>field(card,'deleting')).length});

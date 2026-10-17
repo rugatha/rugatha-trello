@@ -16,7 +16,7 @@ service firebase.storage {
     function uploadAccess(u, b) {
       let m = membership('main');
       return verified() && m.id == u && m.data.status == 'active'
-        && b in m.data.accessboard && m.data.role in ['owner', 'admin', 'editor'];
+        && b in m.data.accessboard && m.data.role in ['admin', 'owner', 'editor'];
     }
     match /workspaces/{w}/boards/{b}/cards/{c}/attachments/{a}/{filename} {
       // Archive is reversible: authorized members retain access to archived files.

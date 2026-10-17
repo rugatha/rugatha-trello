@@ -1,6 +1,6 @@
 import './auth.js';
-import { loadWorkspace, subscribeWorkspace, updateCardDeadline } from './storage.js?v=20261017-owner-deadline';
-import { DAY, dateDay, dayLabel, cardDates, checklistEnd, ganttBoards, weekSunday, canSetDeadline, deadlineInput, ganttDateExtent, ganttDateRange } from './gantt-data.js?v=20261017-owner-deadline';
+import { loadWorkspace, subscribeWorkspace, updateCardDeadline } from './storage.js?v=20261017-role-swap';
+import { DAY, dateDay, dayLabel, cardDates, checklistEnd, ganttBoards, weekSunday, canSetDeadline, deadlineInput, ganttDateExtent, ganttDateRange } from './gantt-data.js?v=20261017-role-swap';
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let account = null, workspace = {boards:[]}, generation = 0, stop = null, timer = null;

@@ -1,10 +1,10 @@
 # 看板建立與負責人管理
 
-2026-10-10 Cloud Functions 與新版前端已部署，Chrome Owner／Firefox Admin 建立、授權範圍、指派／取消及雙帳號衝突通過；詳細結果見 [階段六驗證](phase6-live-verification.md)。權限依使用者決定：只有有效的 Owner／Admin 能建立看板或修改負責人，Editor 保持既有牌卡編輯能力，Viewer／一般會員唯讀。
+2026-10-10 Cloud Functions 與新版前端已部署，Chrome Admin／Firefox Owner 建立、授權範圍、指派／取消及雙帳號衝突通過；詳細結果見 [階段六驗證](phase6-live-verification.md)。權限依使用者決定：只有有效的 Admin／Owner 能建立看板或修改負責人，Editor 保持既有牌卡編輯能力，Viewer／一般會員唯讀。
 
 ## 操作方式
 
-Owner／Admin 點側欄「新增看板」，填寫名稱、說明與配色，選擇其他可存取的會員。建立者自動取得權限，可另選最多 40 位有效會員；每人的原角色不變。一次建立看板、待辦／進行中／已完成三個欄位及會員 `accessboard`，不會留下只有看板或只有授權的半成品。沒有任何既有看板的 Owner／Admin 也能建立第一個看板。
+Admin／Owner 點側欄「新增看板」，填寫名稱、說明與配色，選擇其他可存取的會員。建立者自動取得權限，可另選最多 40 位有效會員；每人的原角色不變。一次建立看板、待辦／進行中／已完成三個欄位及會員 `accessboard`，不會留下只有看板或只有授權的半成品。沒有任何既有看板的 Admin／Owner 也能建立第一個看板。
 
 牌卡詳情的「管理負責人」會重新載入當下可指派的會員與最新指派。只接受有效且已有該看板權限的會員，最多 40 位；無效的歷史指派會保留顯示並提示取消，不會在開啟視窗時自動改寫。看板或牌卡封存後不接受新的指派修改。複製牌卡仍清空副本負責人。
 
@@ -12,7 +12,7 @@ Owner／Admin 點側欄「新增看板」，填寫名稱、說明與配色，選
 
 ## 可信任寫入邊界
 
-前端 `management.js` 使用 Firebase Callable SDK；管理程式位於 `functions/`，部署區域 `asia-east1`，執行環境 Node.js 22。Callable 自動驗證並附帶 Firebase 身分，服務再於 transaction 內重新讀取 `memberLookup` 與會員資料，要求已驗證信箱、active 狀態與 Owner／Admin 角色，不相信前端傳入的角色或會員 ID。機制依據 [Callable 官方文件](https://firebase.google.com/docs/functions/callable)。
+前端 `management.js` 使用 Firebase Callable SDK；管理程式位於 `functions/`，部署區域 `asia-east1`，執行環境 Node.js 22。Callable 自動驗證並附帶 Firebase 身分，服務再於 transaction 內重新讀取 `memberLookup` 與會員資料，要求已驗證信箱、active 狀態與 Admin／Owner 角色，不相信前端傳入的角色或會員 ID。機制依據 [Callable 官方文件](https://firebase.google.com/docs/functions/callable)。
 
 | 端點 | 用途 | 伺服器檢查 |
 | --- | --- | --- |
@@ -40,7 +40,7 @@ npm run test:management
 
 管理端點整合測試亦已使用與部署相同的 Node.js 22 複跑通過。
 
-本輪結果：86 項應用測試、32 項 Firestore 規則測試、16 項管理端點整合測試通過。涵蓋：未登入／未驗證／未核准／停用／Editor／Viewer／一般會員拒絕；Owner／Admin 建立；無看板管理員建立；並行授權不遺失；有效／無效／歷史指派；重試、防止偽造欄位、衝突與同時寫入。
+本輪結果：86 項應用測試、32 項 Firestore 規則測試、16 項管理端點整合測試通過。涵蓋：未登入／未驗證／未核准／停用／Editor／Viewer／一般會員拒絕；Admin／Owner 建立；無看板管理員建立；並行授權不遺失；有效／無效／歷史指派；重試、防止偽造欄位、衝突與同時寫入。
 
 Firefox 另使用獨立本機虛構資料預覽，確認新增表單、授權勾選、建立後三個欄位、管理負責人表單，以及指派後牌卡頭像更新。這個預覽未連接正式 Firebase，不視為正式站驗證。
 
@@ -55,4 +55,7 @@ npx firebase deploy --only functions:management --project rugatha-trello
 
 本輪無 Firestore 規則修改需要部署。端點尚未部署或無法連線時，前端顯示管理服務未就緒，不能完成操作。
 
-部署後需用正式 Owner／Admin 建立專用測試看板，確認指定 Viewer 可見而未指定會員不可見，並驗證指派／取消、即時同步、衝突及撤權後的拒絕。新看板授權會透過會員訂閱重新載入，可能在 callable 回應之前關閉建立視窗；已修正同一會員授權更新的競態，正式建立後會自動選取新看板。測試資料的清理需限定新建的測試範圍，不能還原整份會員文件而覆蓋後續授權變更。
+部署後需用正式 Admin／Owner 建立專用測試看板，確認指定 Viewer 可見而未指定會員不可見，並驗證指派／取消、即時同步、衝突及撤權後的拒絕。新看板授權會透過會員訂閱重新載入，可能在 callable 回應之前關閉建立視窗；已修正同一會員授權更新的競態，正式建立後會自動選取新看板。測試資料的清理需限定新建的測試範圍，不能還原整份會員文件而覆蓋後續授權變更。
+
+
+2026-10-17 角色定義已交換：`admin` 為全站管理員，`owner` 為授權看板範圍的管理者；必須保留至少一位有效 admin。會員 ID 不隨角色更名而變更。

@@ -13,7 +13,7 @@ const staging=(id,author='editor')=>`uploads/${author}/allowed/card/${id}/file.p
 const metadata=(id,author='editor',extra={})=>({contentType:'image/png',customMetadata:{uploadedBy:author,boardId:'allowed',cardId:'card',attachmentId:'upload-'+id},...extra});
 const context=(id,verified=true)=>env.authenticatedContext(id,{email:id+'@example.com',email_verified:verified});
 const storage=(id,verified=true)=>context(id,verified).storage();
-const roles=['owner','admin','editor','viewer','member'];
+const roles=['admin','owner','editor','viewer','member'];
 before(async()=>{
   if(!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_STORAGE_EMULATOR_HOST) throw Error('Run npm run test:storage-rules.');
   env=await initializeTestEnvironment({projectId,
@@ -36,7 +36,7 @@ after(async()=>{await env?.cleanup();});
 for(const role of roles)test(role+': board reads and immutable role-based uploads',async()=>{
   const client=storage(role);
   assert.equal((await assertSucceeds(getBytes(ref(client,path())))).byteLength,3);
-  const write=['owner','admin','editor'].includes(role)?assertSucceeds:assertFails;
+  const write=['admin','owner','editor'].includes(role)?assertSucceeds:assertFails;
   await write(uploadBytes(ref(client,staging(role,role)),new Uint8Array([1]),metadata(role,role)));
   await assertFails(getMetadata(ref(client,path('existing','forbidden'))));
   const forbidden=metadata(role,role);forbidden.customMetadata.boardId='forbidden';
@@ -59,7 +59,7 @@ test('multi-email membership and email case resolve to the same member',async()=
 test('empty file, forged linkage and extra metadata are rejected',async()=>{
   const client=storage('editor');
   await assertFails(uploadBytes(ref(client,staging('empty')),new Uint8Array(),metadata('empty')));
-  for(const patch of [{uploadedBy:'owner'},{boardId:'forbidden'},{cardId:'other'},{attachmentId:'other'},{unexpected:'x'}]){
+  for(const patch of [{uploadedBy:'admin'},{boardId:'forbidden'},{cardId:'other'},{attachmentId:'other'},{unexpected:'x'}]){
     const meta=metadata('forged');Object.assign(meta.customMetadata,patch);
     await assertFails(uploadBytes(ref(client,staging('forged')),new Uint8Array([1]),meta));
   }
@@ -90,7 +90,7 @@ test('archiving preserves authorized file reads and never allows client deletion
     await setDoc(doc(ctx.firestore(),root+'/boards/allowed/cards/card/attachments/existing'),{archived:true});
   });
   const client=storage('viewer');await assertSucceeds(getBytes(ref(client,path())));
-  await assertFails(deleteObject(ref(storage('owner'),path())));
+  await assertFails(deleteObject(ref(storage('admin'),path())));
 });
 
 test('staging files are private and final paths cannot be client-created',async()=>{

@@ -11,7 +11,7 @@ function createAttachments(db,bucket,{now=()=>Date.now()}={}) {
   const lookup=await tx.get(db.doc(`${ROOT}/memberLookup/${email.toLowerCase()}`));
   if(!lookup.exists)fail('permission-denied','沒有會員權限');
   const member=await tx.get(db.doc(`${ROOT}/members/${id(lookup.data().memberId)}`)),m=member.data();
-  if(!m||m.status!=='active'||!['owner','admin','editor'].includes(m.role)||!m.accessboard?.includes(boardId))fail('permission-denied','沒有附件上傳權限');
+  if(!m||m.status!=='active'||!['admin','owner','editor'].includes(m.role)||!m.accessboard?.includes(boardId))fail('permission-denied','沒有附件上傳權限');
   return member.id;
  }
  const requestRef=(auth,requestId)=>db.doc(`${ROOT}/attachmentUploads/${createHash('sha256').update(auth.uid+':'+requestId).digest('hex')}`);

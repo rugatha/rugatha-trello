@@ -54,7 +54,7 @@ const emails=d=>(d.fields.emails?.arrayValue?.values||[]).map(v=>v.stringValue).
     desired.set(live.name,{role,status,accessboard});
     if(role!==live.fields.role.stringValue || status!==live.fields.status.stringValue || JSON.stringify(accessboard)!==JSON.stringify(ids(live)))changes.push({id,live,role,status,accessboard});
   }
-  assert([...desired.values()].some(d=>d.role==='owner'&&d.status==='active'),'Must retain active Owner');
+  assert([...desired.values()].some(d=>d.role==='admin'&&d.status==='active'),'Must retain active Admin');
   const summary={members:members.length,boards:boardIds.length,changedMembers:changes.length,roleChanges:changes.filter(c=>c.role!==c.live.fields.role.stringValue).map(c=>c.id),grants:[...desired.values()].reduce((n,d)=>n+d.accessboard.length,0),changes:changes.map(c=>({id:c.id,role:c.role,status:c.status,added:c.accessboard.filter(b=>!ids(c.live).includes(b)),removed:ids(c.live).filter(b=>!c.accessboard.includes(b))}))};
   if(mode==='--check'){console.log(JSON.stringify(summary,null,2));return;}
   const folder=path.join('attachments_export/maintenance','member-permissions-'+new Date().toISOString().replaceAll(':','-'));

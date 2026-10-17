@@ -154,8 +154,8 @@ export async function updateCardDeadline(account, boardId, cardId, due, expected
   return runTransaction(firestore, async transaction => {
     const [board, card] = await Promise.all([transaction.get(boardRef), transaction.get(cardRef)]);
     const data = card.data();
-    if (!board.exists() || (board.data().archived && account.workspaceRole !== 'owner') || board.data().deleting || !card.exists() || data.archived || data.deleting) throw Error('看板或牌卡已封存、刪除或無法存取');
-    if (account.workspaceRole !== 'owner' && !data.assigneeIds?.includes(account.memberId)) throw Error('只有工作區擁有者或此牌卡的負責人可以修改截止日期');
+    if (!board.exists() || (board.data().archived && account.workspaceRole !== 'admin') || board.data().deleting || !card.exists() || data.archived || data.deleting) throw Error('看板或牌卡已封存、刪除或無法存取');
+    if (account.workspaceRole !== 'admin' && !data.assigneeIds?.includes(account.memberId)) throw Error('只有全站管理員或此牌卡的負責人可以修改截止日期');
     if ((data.due || '') !== (expectedDue || '')) throw Error('截止日期已被其他人修改，請關閉視窗並重新整理');
     const updatedAt = new Date().toISOString();
     transaction.update(cardRef, {due, updatedAt, updatedBy:account.memberId});

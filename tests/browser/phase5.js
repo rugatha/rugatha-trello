@@ -3,7 +3,7 @@ const tick=()=>new Promise(r=>setTimeout(r,80));
 const w=()=>frame.contentWindow,d=()=>frame.contentDocument,$=s=>d().querySelector(s),fixture=()=>w().phase5Fixture;
 const key=(el,k)=>el.dispatchEvent(new (w().KeyboardEvent)('keydown',{key:k,bubbles:true,cancelable:true}));
 const change=async(value)=>{$('#personalTheme').value=value;$('#personalTheme').dispatchEvent(new (w().Event)('change'));await tick();};
-const login=async(role='owner',theme='light',uid=role)=>{await fixture().login(role,theme,uid);await tick();};
+const login=async(role='admin',theme='light',uid=role)=>{await fixture().login(role,theme,uid);await tick();};
 const close=async()=>{d().querySelectorAll('dialog[open]').forEach(el=>el.close());await tick();};
 let count=0;
 function check(value,name){if(!value)throw Error(name);count++;out.textContent+='PASS '+name+'\n';}
@@ -11,7 +11,7 @@ async function run(name,task){out.textContent=name+'\n';count=0;try{await close(
 document.querySelector('#theme').onclick=()=>run('個人主題',async()=>{
  await login();$('#currentUser').click();await tick();check($('#personalTheme').value==='light','預設明亮主題');const loads=fixture().loads;
  await change('dark');check(d().body.dataset.theme==='dark','深色主題套用');check(fixture().writes.at(-1).path==='workspaces/main/members/m'&&Object.keys(fixture().writes.at(-1).patch).join()==='theme','只儲存既有會員的 theme');check(fixture().loads===loads,'切換主題不重讀看板');
- await login('owner','dark','alternate');check(d().body.dataset.theme==='dark','同一會員不同信箱沿用偏好');
+ await login('admin','dark','alternate');check(d().body.dataset.theme==='dark','同一會員不同信箱沿用偏好');
  fixture().fail=true;await change('light');check(d().body.dataset.theme==='dark'&&$('#personalTheme').value==='dark','儲存失敗恢復已存主題');check($('#themeStatus').textContent.includes('測試離線')&&!$('#personalTheme').disabled,'失敗原因顯示並解除鎖定');await change('light');check(d().body.dataset.theme==='light','失敗後可重試');
  fixture().snapshot({theme:'dark'});await tick();check(d().body.dataset.theme==='dark','偏好訂閱即時同步');
  let release;fixture().hold=new Promise(r=>release=r);$('#personalTheme').value='light';$('#personalTheme').dispatchEvent(new (w().Event)('change'));await tick();await login('viewer','dark','new');release();fixture().hold=null;await tick();check(d().body.dataset.theme==='dark','舊帳號延遲完成不污染新帳號');
@@ -24,7 +24,7 @@ function ratio(a,b){const x=luminance(a),y=luminance(b);return (Math.max(x,y)+.0
 function contrast(el){const style=w().getComputedStyle(el);let parent=el,bg;while(parent){bg=w().getComputedStyle(parent).backgroundColor;if(bg!=='rgba(0, 0, 0, 0)'&&bg!=='transparent')break;parent=parent.parentElement;}return ratio(style.color,bg);}
 document.querySelector('#palette').onclick=()=>run('色彩對比',async()=>{
  for(const theme of ['light','dark']){
-  await login('owner',theme);check(contrast($('.card-title'))>=4.5,theme+' 牌卡文字至少 4.5:1');check(contrast($('.card-desc'))>=4.5,theme+' 說明文字至少 4.5:1');check(contrast($('.count'))>=4.5,theme+' 計數文字至少 4.5:1');
+  await login('admin',theme);check(contrast($('.card-title'))>=4.5,theme+' 牌卡文字至少 4.5:1');check(contrast($('.card-desc'))>=4.5,theme+' 說明文字至少 4.5:1');check(contrast($('.count'))>=4.5,theme+' 計數文字至少 4.5:1');
   for(const tag of d().querySelectorAll('.tag'))check(contrast(tag)>=4.5,theme+' '+tag.className+' 對比至少 4.5:1');
   check(contrast($('#quickCreate'))>=4.5,theme+' 主要按鈕對比至少 4.5:1');$('#currentUser').click();check(contrast($('#themeHelp'))>=4.5,theme+' 表單說明對比至少 4.5:1');await close();
   for(const color of ['#455f56','#c8b58f','#8fa697','#bca582','#ad9790']){fixture().boardColor=color;$('#refreshWorkspace').click();await tick();check(contrast($('#boardDescription'))>=4.5&&contrast($('#boardTitle'))>=4.5,theme+' 共用看板 '+color+' 對比至少 4.5:1');}
@@ -32,8 +32,8 @@ document.querySelector('#palette').onclick=()=>run('色彩對比',async()=>{
  fixture().boardColor='#455f56';await login();
 });
 document.querySelector('#permissions').onclick=()=>run('會員與權限',async()=>{
- for(const role of ['owner','admin','editor','viewer','member']){
-  await login(role);const edit=['owner','admin','editor'].includes(role),manage=['owner','admin'].includes(role);
+ for(const role of ['admin','owner','editor','viewer','member']){
+  await login(role);const edit=['admin','owner','editor'].includes(role),manage=['admin','owner'].includes(role);
   check($('#quickCreate').disabled===!edit&&$('.card').draggable===edit,role+' 編輯與拖曳限制一致');check($('#addBoard').disabled===!manage,role+' 建立看板限制');
   $('.card').click();check($('#manageAssignees').disabled===!manage,role+' 負責人管理限制');check([...d().querySelectorAll('[data-assignee]')].every(el=>el.disabled),'指派勾選僅供閱讀');await close();
   if(!edit)check($('#permissionNotice').textContent.includes('唯讀'),role+' 明確顯示唯讀提示');

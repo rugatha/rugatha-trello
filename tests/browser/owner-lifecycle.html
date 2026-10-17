@@ -1,28 +1,28 @@
-<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Owner 看板與牌卡管理測試</title>
+<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Admin 看板與牌卡管理測試</title>
 <style>body{font:16px system-ui;padding:12px}button{padding:12px}pre{white-space:pre-wrap}iframe{display:block;width:1100px;max-width:100%;height:700px;border:1px solid #888}</style>
-<h1>Owner 看板與牌卡管理測試</h1><p>真實介面，僅使用記憶體資料，不連接正式 Firebase。</p>
-<button id="run">執行 Owner 管理測試</button><pre id="results">等待測試</pre><iframe id="preview" title="實際應用介面" src="/owner-app"></iframe>
+<h1>Admin 看板與牌卡管理測試</h1><p>真實介面，僅使用記憶體資料，不連接正式 Firebase。</p>
+<button id="run">執行 Admin 管理測試</button><pre id="results">等待測試</pre><iframe id="preview" title="實際應用介面" src="/owner-app"></iframe>
 <script type="module">
 const frame=document.querySelector('#preview'),out=document.querySelector('#results'),tick=()=>new Promise(r=>setTimeout(r,150));
 const $=s=>frame.contentDocument.querySelector(s),fixture=()=>frame.contentWindow.phase5Fixture;
 let count=0;const check=(ok,name)=>{if(!ok)throw Error(name);count++;out.textContent+='PASS '+name+'\n';};
 const submit=async()=>{$('#simpleForm').requestSubmit();await tick();};
 document.querySelector('#run').onclick=async()=>{
- count=0;out.textContent='Owner 管理\n';
+ count=0;out.textContent='Admin 管理\n';
  try{
-  await fixture().login('owner');await tick();
-  $('#archiveBtn').click();await tick();check(Boolean($('[data-delete-card="old"]')),'Owner 可刪除封存牌卡');
+  await fixture().login('admin');await tick();
+  $('#archiveBtn').click();await tick();check(Boolean($('[data-delete-card="old"]')),'Admin 可刪除封存牌卡');
   $('[data-delete-card="old"]').click();check($('#simpleDialog').open,'開啟永久刪除確認');
   $('#lifecycleConfirm').value='Wrong';await submit();check(fixture().lifecycleCalls.length===0&&$('#managementError').textContent.includes('名稱不一致'),'名稱不符不送出刪除');
   $('#lifecycleConfirm').value='封存測試牌卡';await submit();check(fixture().lifecycleCalls[0].cardId==='old'&&fixture().archivedCards.length===0,'確認後送出指定牌卡刪除');
   $('#editBoard').click();check($('#deleteBoard').disabled,'未封存看板不能永久刪除');
-  $('#archiveBoard').click();await submit();check(fixture().boardArchived,'Owner 封存看板');check($('#quickCreate').disabled&&!$('#editBoard').disabled,'封存看板唯讀且 Owner 保留管理入口');
-  $('#editBoard').click();$('#archiveBoard').click();await submit();check(!fixture().boardArchived,'Owner 復原看板');
+  $('#archiveBoard').click();await submit();check(fixture().boardArchived,'Admin 封存看板');check($('#quickCreate').disabled&&!$('#editBoard').disabled,'封存看板唯讀且 Admin 保留管理入口');
+  $('#editBoard').click();$('#archiveBoard').click();await submit();check(!fixture().boardArchived,'Admin 復原看板');
   await fixture().login('editor');await tick();$('#editBoard').click();check(!$('#deleteBoard')&&$('#archiveBoard').disabled,'Editor 沒有看板永久刪除或封存權限');$('#simpleDialog').close();
-  await fixture().login('admin');await tick();$('#editBoard').click();check(!$('#deleteBoard')&&$('#archiveBoard').disabled,'Admin 沒有 Owner 刪除或封存入口');$('#simpleDialog').close();
-  await fixture().login('owner');await tick();$('#editBoard').click();$('#archiveBoard').click();await submit();
+  await fixture().login('owner');await tick();$('#editBoard').click();check(!$('#deleteBoard')&&$('#archiveBoard').disabled,'Owner 沒有 Admin 刪除或封存入口');$('#simpleDialog').close();
+  await fixture().login('admin');await tick();$('#editBoard').click();$('#archiveBoard').click();await submit();
   $('#editBoard').click();$('#deleteBoard').click();$('#lifecycleConfirm').value='測試看板與長標題可讀性';await submit();
-  check(fixture().boardDeleted&&$('#boardTitle').textContent.includes('沒有可存取'),'Owner 刪除看板後清除畫面');
+  check(fixture().boardDeleted&&$('#boardTitle').textContent.includes('沒有可存取'),'Admin 刪除看板後清除畫面');
   out.textContent='完成：'+count+' 項通過\n'+out.textContent;
  }catch(e){out.textContent='FAIL '+e.message+'\n'+out.textContent;}
 };

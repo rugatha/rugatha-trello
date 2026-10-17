@@ -217,13 +217,13 @@ test('label changes merge concurrent unrelated labels and reject conflicting col
  await assert.rejects(api.saveBoardLabel(actor,'b','a',{name:'A',color:'#123456'},{name:'A',color:'#999999'}),/其他人/);
 });
 
-test('owner deadline edits do not require assignment and retain access and conflict guards',async()=>{
- const root='workspaces/main/boards/b',path=root+'/cards/c',actor={memberId:'owner',workspaceRole:'owner',accessboard:['b']};
+test('admin deadline edits do not require assignment and retain access and conflict guards',async()=>{
+ const root='workspaces/main/boards/b',path=root+'/cards/c',actor={memberId:'admin',workspaceRole:'admin',accessboard:['b']};
  for(const archived of [false,true]) {
   const {api,writes}=await setup(new Map([[root,{archived}],[path,{title:'Card',assigneeIds:['other'],due:'old'}]]));
   await api.updateCardDeadline(actor,'b','c','','old');
   assert.deepEqual(Object.keys(writes[0][2]).sort(),['due','updatedAt','updatedBy']);
-  assert.equal(writes[0][2].updatedBy,'owner');
+  assert.equal(writes[0][2].updatedBy,'admin');
   await assert.rejects(api.updateCardDeadline({...actor,accessboard:[]},'b','c','','old'),/存取權限/);
   await assert.rejects(api.updateCardDeadline(actor,'b','c','','stale'),/其他人修改/);
  }

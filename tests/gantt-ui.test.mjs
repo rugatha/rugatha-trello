@@ -67,8 +67,8 @@ test('changing assignee shows other members, completion toggle includes closed w
 test('gantt entry versions its filter dependency and has no scale selector',async()=>{
  const page=await fs.readFile(new URL('../gantt.html',import.meta.url),'utf8');
  const source=await fs.readFile(new URL('../src/gantt.js',import.meta.url),'utf8');
- assert.match(page,/src\/gantt\.js\?v=20261017-owner-deadline/);
- assert.match(source,/gantt-data\.js\?v=20261017-owner-deadline/);
+ assert.match(page,/src\/gantt\.js\?v=20261017-role-swap/);
+ assert.match(source,/gantt-data\.js\?v=20261017-role-swap/);
  assert.doesNotMatch(page,/scaleFilter|時間刻度/);
  assert.doesNotMatch(source,/scaleFilter/);
 });

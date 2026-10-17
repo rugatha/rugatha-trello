@@ -1,17 +1,17 @@
-# Owner 封存與永久刪除
+# Admin 封存與永久刪除
 
 2026-10-11 實作與驗證紀錄。部署採 Firebase 發布規則及 Functions，再推送 GitHub Pages 的 `main` 分支。正式會員資料已完成一次性更新：芸樺改為昀樺；雨嶸與 Jim 沿用歷史會員 ID 連結使用者指定的 Google 信箱，啟用為 Editor，取得目前五個未封存看板的權限。私人修改前資料及逐欄驗證在被 Git 忽略的 `attachments_export/maintenance/member-updates-2026-10-11T12-09-25-133Z/`。
 
 ## 操作入口
 
-- 看板：Owner 開啟看板右上角「⋯」設定，選擇封存或復原。已封存看板仍可從側欄「封存看板」選取，再開啟設定永久刪除。
-- 牌卡：詳情右側「封存卡片」保留資料。開啟「封存項目」，Owner 可對封存牌卡選擇永久刪除；原有有效編輯角色的牌卡封存／復原功能保留。
+- 看板：Admin 開啟看板右上角「⋯」設定，選擇封存或復原。已封存看板仍可從側欄「封存看板」選取，再開啟設定永久刪除。
+- 牌卡：詳情右側「封存卡片」保留資料。開啟「封存項目」，Admin 可對封存牌卡選擇永久刪除；原有有效編輯角色的牌卡封存／復原功能保留。
 - 永久刪除要求先封存並輸入完整名稱。名稱不符不會送出請求；後端再次核對最新名稱及封存狀態。未完成時顯示錯誤並可重試。
 - 刪除看板會移除全部階段、牌卡及子集合、正式附件與既有暫存附件，以及所有會員中的該看板授權。刪除牌卡只移除該牌卡及其子資料與附件，保留其他牌卡、看板與授權。外部 URL 不會被呼叫或刪除。
 
 ## 後端與併發處理
 
-`manageContentLifecycle` 驗證 Firebase 已驗證信箱、工作空間 lookup、有效 Owner 角色與目標看板權限；沒有硬編碼特定信箱或信任前端傳入角色。Admin／Editor／Viewer／一般會員及未登入、未核准、停用帳號均不能使用此端點。
+`manageContentLifecycle` 驗證 Firebase 已驗證信箱、工作空間 lookup、有效 Admin 角色與目標看板權限；沒有硬編碼特定信箱或信任前端傳入角色。Owner／Editor／Viewer／一般會員及未登入、未核准、停用帳號均不能使用此端點。
 
 封存與復原在 Firestore 交易完成；相同 requestId 的同一操作可以重試，不同內容不能重用識別碼。刪除先將目標標記為 `deleting`，交易保留目標名稱及可信任的工作收據。規則禁止用戶建立、改寫或清除刪除鎖，也禁止在鎖定的看板／牌卡下寫入。上傳與管理後端同樣檢查刪除鎖；客戶端仍不可直接永久刪除看板或牌卡。
 
@@ -23,12 +23,15 @@
 
 ## 部署與驗證
 
-部署順序：先發布新版 Firestore 規則，更新既有 `setManagedAssignees`、`saveManagedMembership`、`beginAttachmentUpload`、`finishAttachmentUpload` 的刪除鎖驗證，再部署新增的 `manageContentLifecycle`，最後切換前端。Callable 的 HTTP invocation 開放供瀏覽器 CORS 使用，實際權限仍由 Firebase Auth 與 Owner 檢查控制；逾時 540 秒，前端使用相同等待時間。
+部署順序：先發布新版 Firestore 規則，更新既有 `setManagedAssignees`、`saveManagedMembership`、`beginAttachmentUpload`、`finishAttachmentUpload` 的刪除鎖驗證，再部署新增的 `manageContentLifecycle`，最後切換前端。Callable 的 HTTP invocation 開放供瀏覽器 CORS 使用，實際權限仍由 Firebase Auth 與 Admin 檢查控制；逾時 540 秒，前端使用相同等待時間。
 
 本機檢查：
 
-- `npm test`：112 項通過，含 Owner 表單與權限控制。
+- `npm test`：112 項通過，含 Admin 表單與權限控制。
 - `npm run test:content`：7 項 Firestore＋Storage 整合通過，涵蓋權限、封存／復原、永久刪除、孤兒子集合、隔離其他資料、失敗重試、撤權及附件上傳競態。
 - Chrome `tests/browser/owner-lifecycle.html`：11 項記憶體介面流程通過；不連接正式 Firebase。以 `python3 scripts/serve-phase5-test.py` 啟動測試伺服器後開啟該頁。
-- Firestore／Storage 規則、管理 callable、附件及刪除整合回歸：99 項通過；最後補驗 7 項 Owner callable／規則／清理測試通過。
-- 最終 `npm run test:rules`：38 項通過，包括不能偽造／解除刪除鎖、Owner 專屬看板封存及原子複製牌卡與待辦。上述測試不代表新端點或前端已上線。
+- Firestore／Storage 規則、管理 callable、附件及刪除整合回歸：99 項通過；最後補驗 7 項 Admin callable／規則／清理測試通過。
+- 最終 `npm run test:rules`：38 項通過，包括不能偽造／解除刪除鎖、Admin 專屬看板封存及原子複製牌卡與待辦。上述測試不代表新端點或前端已上線。
+
+
+2026-10-17 角色定義已交換：`admin` 為全站管理員，`owner` 為授權看板範圍的管理者；必須保留至少一位有效 admin。會員 ID 不隨角色更名而變更。

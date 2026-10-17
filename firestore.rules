@@ -20,12 +20,12 @@ service cloud.firestore {
       return active(w) && b in member(w).accessboard;
     }
     function canEdit(w, b) {
-      return boardAccess(w, b) && member(w).role in ['owner', 'admin', 'editor']
+      return boardAccess(w, b) && member(w).role in ['admin', 'owner', 'editor']
         && exists(/databases/$(database)/documents/workspaces/$(w)/boards/$(b))
         && !get(/databases/$(database)/documents/workspaces/$(w)/boards/$(b)).data.get('deleting', false);
     }
     function isAdmin(w, b) {
-      return boardAccess(w, b) && member(w).role in ['owner', 'admin'];
+      return boardAccess(w, b) && member(w).role in ['admin', 'owner'];
     }
     match /workspaces/{w} {
       allow get: if active(w);
@@ -91,7 +91,7 @@ service cloud.firestore {
         allow create: if false;
         allow update: if canEdit(w, b) && validBoard()
           && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['deleting'])
-          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['archived']) || member(w).role == 'owner')
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['archived']) || member(w).role == 'admin')
           && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['color']) || validColor());
         allow delete: if false;
         match /columns/{columnId} {

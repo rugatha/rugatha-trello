@@ -46,7 +46,7 @@ function createManagement(db) {
     if (!lookup.exists) fail('permission-denied','尚未取得工作空間權限');
     const memberRef=db.doc(`${ROOT}/members/${id(lookup.data().memberId)}`);
     const member=await tx.get(memberRef), data=member.data();
-    if (!member.exists || data.status!=='active' || (management && !['owner','admin'].includes(data.role)) || !Array.isArray(data.accessboard)) fail('permission-denied','此操作僅限有效的 Owner／Admin');
+    if (!member.exists || data.status!=='active' || (management && !['admin','owner'].includes(data.role)) || !Array.isArray(data.accessboard)) fail('permission-denied','此操作僅限有效的 Admin／Owner');
     return {...data,id:member.id,ref:memberRef};
   }
   async function cardContext(tx, member, boardId, cardId) {
@@ -84,7 +84,7 @@ function createManagement(db) {
       const payload={boardId,cardId,text:data.text,mentions};
       return db.runTransaction(async tx=>{
         const member=await actor(tx,auth,false);
-        if(!['owner','admin','editor'].includes(member.role))fail('permission-denied','沒有留言權限');
+        if(!['admin','owner','editor'].includes(member.role))fail('permission-denied','沒有留言權限');
         const card=await cardContext(tx,member,boardId,cardId);
         const op=operation(auth,operationId,'postComment',payload),previous=await tx.get(op.ref),result=replay(previous,op.fingerprint);
         if(result)return result;
@@ -112,7 +112,7 @@ function createManagement(db) {
       const payload={boardId,cardId,commentId,action:data.action,expected:data.expected,...(data.action==='edit'?{text:data.text,mentions}:{})};
       return db.runTransaction(async tx=>{
         const member=await actor(tx,auth,false);
-        if(!['owner','admin','editor'].includes(member.role))fail('permission-denied','沒有留言權限');
+        if(!['admin','owner','editor'].includes(member.role))fail('permission-denied','沒有留言權限');
         const card=await cardContext(tx,member,boardId,cardId);
         const op=operation(auth,operationId,'manageComment',payload),previous=await tx.get(op.ref),result=replay(previous,op.fingerprint);
         if(result)return result;
@@ -163,7 +163,7 @@ function createManagement(db) {
           members:members.docs.map(d => ({id:d.id, name:d.data().name || '未設定名稱',
             emails:d.data().emails || [], role:d.data().role, status:d.data().status,
             accessboard:d.data().accessboard || []})),
-          boards:boards.docs.filter(d => manager.role === 'owner' || manager.accessboard.includes(d.id))
+          boards:boards.docs.filter(d => manager.role === 'admin' || manager.accessboard.includes(d.id))
             .map(d => ({id:d.id, name:d.data().name || d.id, archived:!!d.data().archived}))
         };
       });
@@ -172,7 +172,7 @@ function createManagement(db) {
       input(data, ['requestId','memberId','email','name','role','status','accessboard','expected']);
       const operationId=requestId(data.requestId), creating=data.memberId === undefined;
       const memberId=creating ? `invited-${operationId}` : id(data.memberId);
-      if (!['owner','admin','editor','viewer','member'].includes(data.role) ||
+      if (!['admin','owner','editor','viewer','member'].includes(data.role) ||
           !['pending','active','disabled'].includes(data.status)) fail('invalid-argument','角色或狀態不正確');
       const accessboard=ids(data.accessboard,200);
       let email, name;
@@ -195,17 +195,17 @@ function createManagement(db) {
         if (creating ? snapshot.exists : !snapshot.exists) fail('failed-precondition','會員不存在或邀請已存在');
         if (!creating && (old.role!==data.expected.role || old.status!==data.expected.status || !equalIds(old.accessboard,data.expected.accessboard)))
           fail('aborted','其他管理員已修改此會員；請重新載入名單');
-        if (manager.role!=='owner' && (['owner','admin'].includes(data.role) || (!creating && ['owner','admin'].includes(old.role))))
-          fail('permission-denied','只有 Owner 可管理 Owner／Admin');
+        if (manager.role!=='admin' && (['admin','owner'].includes(data.role) || (!creating && ['admin','owner'].includes(old.role))))
+          fail('permission-denied','只有 Admin 可管理 Admin／Owner');
         const changedBoards=[...new Set([...(old?.accessboard || []),...accessboard])]
           .filter(b => (old?.accessboard || []).includes(b)!==accessboard.includes(b));
-        if (manager.role!=='owner' && changedBoards.some(b=>!manager.accessboard.includes(b)))
+        if (manager.role!=='admin' && changedBoards.some(b=>!manager.accessboard.includes(b)))
           fail('permission-denied','不可調整自己無權存取的看板');
         const boards=await Promise.all(accessboard.map(b=>tx.get(db.doc(`${ROOT}/boards/${b}`))));
         if(boards.some(b=>!b.exists || b.data().deleting))fail('failed-precondition','授權看板不存在或正在刪除');
-        if (!creating && old.role==='owner' && old.status==='active' && (data.role!=='owner' || data.status!=='active')) {
-          const owners=await tx.get(db.collection(`${ROOT}/members`).where('role','==','owner'));
-          if(!owners.docs.some(d=>d.id!==memberId && d.data().status==='active'))fail('failed-precondition','必須保留至少一位有效 Owner');
+        if (!creating && old.role==='admin' && old.status==='active' && (data.role!=='admin' || data.status!=='active')) {
+          const admins=await tx.get(db.collection(`${ROOT}/members`).where('role','==','admin'));
+          if(!admins.docs.some(d=>d.id!==memberId && d.data().status==='active'))fail('failed-precondition','必須保留至少一位有效 Admin');
         }
         let lookup;
         if(creating){
@@ -230,11 +230,11 @@ function createManagement(db) {
         const card=forCard?await cardContext(tx,member,data.boardId,data.cardId):null;
         const snapshot=await tx.get(db.collection(`${ROOT}/members`));
         const assigned=card?.data.assigneeIds || [];
-        const members=snapshot.docs.filter(d=>d.data().status==='active' && (!forCard || d.data().accessboard?.includes(data.boardId)))
+        const members=snapshot.docs.filter(d=>d.data().status==='active' && (!forCard || (d.data().assignable!==false && d.data().accessboard?.includes(data.boardId))))
           .map(d=>({id:d.id,name:d.data().name || d.id,eligible:true}));
         for (const memberId of assigned) if (!members.some(m=>m.id===memberId)) {
           const historical=snapshot.docs.find(d=>d.id===memberId);
-          members.push({id:memberId,name:historical?.data().name || '未知會員',eligible:false});
+          if(historical?.data().assignable!==false)members.push({id:memberId,name:historical?.data().name || '未知會員',eligible:false});
         }
         return {members,assigneeIds:assigned};
       });
@@ -280,7 +280,7 @@ function createManagement(db) {
         if(result)return result;
         if(!equalIds(card.data.assigneeIds||[],expectedAssigneeIds))fail('aborted','其他管理員已修改負責人，請重新開啟指派視窗');
         const targets=await Promise.all(assigneeIds.map(m=>tx.get(db.doc(`${ROOT}/members/${m}`))));
-        if(targets.some(s=>!s.exists || s.data().status!=='active' || !Array.isArray(s.data().accessboard) || !s.data().accessboard.includes(boardId))) fail('failed-precondition','負責人必須是仍可存取此看板的有效會員；請取消無效的歷史指派');
+        if(targets.some(s=>!s.exists || s.data().status!=='active' || s.data().assignable===false || !Array.isArray(s.data().accessboard) || !s.data().accessboard.includes(boardId))) fail('failed-precondition','負責人必須是允許指派且仍可存取此看板的有效會員；請取消無效的歷史指派');
         const now=new Date().toISOString(),updated={boardId,cardId,assigneeIds};
         tx.update(card.ref,{assigneeIds,updatedBy:member.id,updatedAt:now});
         for(const recipient of assigneeIds.filter(m=>!(card.data.assigneeIds||[]).includes(m))) {

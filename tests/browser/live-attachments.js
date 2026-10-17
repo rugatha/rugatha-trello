@@ -43,7 +43,7 @@ button('probeDeniedUpload',async()=>{
  catch(e){if(e.code==='functions/permission-denied')log('PASS Viewer 上傳遭拒');else throw e;}
 });
 button('probeOwner',async()=>{
- const member=window.boardlyGoogleUser;if(member?.workspaceRole!=='owner')throw Error('需 Owner');
+ const member=window.boardlyGoogleUser;if(member?.workspaceRole!=='admin')throw Error('需 Admin');
  const source=await locate(),boardId=source.boardId;
  const columns=await getDocs(query(collection(firestore,`${root}/boards/${boardId}/columns`),limit(1)));
  const cardId='phase4-test-'+crypto.randomUUID(),cardRef=doc(firestore,`${root}/boards/${boardId}/cards/${cardId}`),at=new Date().toISOString();
@@ -52,7 +52,7 @@ button('probeOwner',async()=>{
  const file=new File([bytes],'phase4-test.png',{type:'image/png'}),requestId=crypto.randomUUID();
  try{
   const result=await uploadAttachment(file,boardId,cardId,requestId);await uploadAttachment(file,boardId,cardId,requestId);
-  if((await getDoc(cardRef)).data().attachmentCount!==1)throw Error('FAIL 重試計數');log('PASS 正式 Owner 上傳與重試計數 1');
+  if((await getDoc(cardRef)).data().attachmentCount!==1)throw Error('FAIL 重試計數');log('PASS 正式 Admin 上傳與重試計數 1');
   const attachment=(await getDoc(doc(cardRef,'attachments',result.attachmentId))).data();
   if(attachment.url)throw Error('FAIL 附件不應保存 token URL');
   const url=await attachmentBlobURL(attachment);

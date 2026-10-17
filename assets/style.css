@@ -465,10 +465,33 @@ aside{
   border-top:1px solid var(--footer-line);
   padding-top:11px;
   display:flex;
+  flex-wrap:wrap;
   align-items:center;
   gap:9px;
   font-size:11px;
   color:var(--muted)}
+/* Keep date/status badges intact; avatars share the remaining width equally. */
+.card-footer > :not(.card-assignees){
+  flex-shrink:0;
+  white-space:nowrap}
+.card-assignees{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:flex-start;
+  justify-content:flex-end;
+  gap:2px;
+  margin-left:auto;
+  flex:1 1 0;
+  min-width:min(100%,18px);
+  max-width:calc(var(--assignee-count) * 32px - 2px)}
+.card-assignees .avatar{
+  flex:1 1 18px;
+  min-width:0;
+  max-width:30px;
+  width:auto;
+  height:auto;
+  aspect-ratio:1;
+  font-size:10px}
 .due{
   background:var(--due-bg);
   border-radius:4px;

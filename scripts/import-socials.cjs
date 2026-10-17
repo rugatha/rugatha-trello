@@ -80,7 +80,7 @@ async function main(){
   if(process.argv.includes('--complete-missing')&&e&&d.name.includes('/attachments/')&&d.fields.migrationStatus?.stringValue==='missing_local_file'&&e.fields.migrationStatus?.stringValue==='firebase_storage'&&canonical(decodeFields(omit(d.fields)))===canonical(decodeFields(omit(e.fields)))){upgrades.set(d.name,{update:e,currentDocument:{updateTime:d.updateTime}});continue;}
   throw Error('Existing document differs; refusing overwrite: '+d.name.split('/').at(-1));}}
  check(existing);
- const members=await list('workspaces/main/members');for(const d of p.docs.filter(d=>d.name.includes('/comments/')))if(!d.fields.memberId?.stringValue||!members.some(m=>m.name.split('/').at(-1)===d.fields.memberId.stringValue))throw Error('Unresolved comment author');const owners=members.filter(m=>m.fields.role?.stringValue==='owner'&&m.fields.status?.stringValue==='active');if(!owners.length)throw Error('Active owner missing');
+ const members=await list('workspaces/main/members');for(const d of p.docs.filter(d=>d.name.includes('/comments/')))if(!d.fields.memberId?.stringValue||!members.some(m=>m.name.split('/').at(-1)===d.fields.memberId.stringValue))throw Error('Unresolved comment author');const owners=members.filter(m=>m.fields.role?.stringValue==='admin'&&m.fields.status?.stringValue==='active');if(!owners.length)throw Error('Active admin missing');
  fs.writeFileSync(directory+'/before.json',JSON.stringify({existing,members:owners},null,2),{mode:0o600});
  if(!process.argv.includes('--apply')&&!process.argv.includes('--verify'))return;
  const objects=await request(`https://storage.googleapis.com/storage/v1/b/${BUCKET}/o?prefix=${encodeURIComponent(p.board.name.slice(root.length+1)+'/')}&maxResults=1000`);
@@ -109,7 +109,7 @@ async function main(){
   if(writes.length)await request(api+root+':commit',{method:'POST',body:{writes}});
  }
  existing=await current();check(existing);if(existing.some(d=>d.fields.migrationStatus?.stringValue==='missing_local_file'&&expected.get(d.name)?.fields.migrationStatus?.stringValue==='firebase_storage'))throw Error('Missing-file upgrade incomplete');if(existing.length!==expected.size)throw Error('Document count mismatch');
- const verifiedOwners=await list('workspaces/main/members');for(const m of owners)if(!decode(verifiedOwners.find(o=>o.name===m.name).fields.accessboard).includes(p.board.name.split('/').at(-1)))throw Error('Owner access missing');
+ const verifiedOwners=await list('workspaces/main/members');for(const m of owners)if(!decode(verifiedOwners.find(o=>o.name===m.name).fields.accessboard).includes(p.board.name.split('/').at(-1)))throw Error('Admin access missing');
  const result={...p.summary,verifiedFiles:completed,verifiedDocuments:existing.length,missing:p.missing,commentGaps:p.commentGaps,completedAt:new Date().toISOString(),sourceSha256:p.sourceSha256};fs.writeFileSync(directory+'/result.json',JSON.stringify(result,null,2),{mode:0o600});console.log(JSON.stringify({verifiedDocuments:existing.length,ownerAccess:true,missing:p.missing.length}));
 }
 if(require.main===module)main().catch(e=>{console.error(e.message);process.exitCode=1;});

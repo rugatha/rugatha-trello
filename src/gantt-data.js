@@ -67,8 +67,8 @@ export function ganttBoards(workspace, account, filters = {}) {
 
 export function canSetDeadline(account, board, card) {
   return Boolean(account?.memberId && account?.workspaceRole && account.accessboard?.includes(board?.id)
-    && (!board?.archived || account.workspaceRole === 'owner') && !board?.deleting && card && !card.archived && !card.deleting
-    && (account.workspaceRole === 'owner' || (card.assignees || card.assigneeIds || []).includes(account.memberId)));
+    && (!board?.archived || account.workspaceRole === 'admin') && !board?.deleting && card && !card.archived && !card.deleting
+    && (account.workspaceRole === 'admin' || (card.assignees || card.assigneeIds || []).includes(account.memberId)));
 }
 export function deadlineInput(value) {
   if (typeof value !== 'string' || !value || dateDay(value) == null) return '';

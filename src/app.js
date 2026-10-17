@@ -1,7 +1,7 @@
 import {bindCommentComposer,connectNotifications,renderMentionText} from './interactions.js';
 import {clearAttachmentUI,hydrateAttachmentImages,downloadAttachment,bindAttachmentUpload} from './attachment-ui.js';
 import { listManagementMembers, createManagedBoard, setManagedAssignees, manageContentLifecycle } from './management.js';
-import { loadWorkspace, subscribeWorkspace, persistWorkspace, restoreCard, restoreAttachment, loadDeferredAttachmentArchives, saveBoardLabel } from './storage.js?v=20261016-card-controls-v2';
+import { loadWorkspace, subscribeWorkspace, persistWorkspace, restoreCard, restoreAttachment, loadDeferredAttachmentArchives, saveBoardLabel } from './storage.js?v=20261017-role-swap';
 import { assignMovedOrderKey } from './order-key.js';
 import {boardLabels,labelColor,labelInk,placeCard} from './card-options.js?v=20261016-card-controls-v2';
 // UI rendering, interaction handlers, and workspace state.
@@ -115,7 +115,7 @@ function localDue(value) {
   const d=new Date(value);
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}T${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
-function cardHTML(c){const cover=c.attachments.find(a=>a.id===c.coverId&&attachmentImage(a)),checked=c.checklist.filter(t=>t.done).length;return `<article class="card" draggable="true" tabindex="0" role="button" aria-label="開啟卡片：${esc(c.title)}" data-card="${c.id}">${cover?`<img class="cover" ${cover.storagePath?`data-storage-path="${esc(cover.storagePath)}"`:""} src="${esc(attachmentImage(cover))}" loading="lazy" referrerpolicy="no-referrer" alt="${esc(cover.name)}">`:c.demoCover?'<div class="design-cover"><div class="mini-window"><b>MAKE ROOM FOR IDEAS.</b><div class="mini-grid"><i></i><i></i><i></i></div></div></div>':''}<div>${c.labels.map(labelHTML).join('')}</div><div class="card-title"><span class="card-completion">${completionMark(c.done)}</span><span>${esc(c.title)}</span></div>${c.description?`<p class="card-desc">${esc(c.description.slice(0,65))}${c.description.length>65?'…':''}</p>`:''}<div class="card-footer">${c.due?`<span class="due ${overdue(c)?'overdue':''} ${c.done?'done':''}">${c.done?'✓':'◷'} ${formatDate(c.due)}</span>`:''}${c.checklist.length?`<span title="待辦事項">☑ ${checked}/${c.checklist.length}</span>`:''}${c.comments.length?`<span title="留言">☏ ${c.comments.length}</span>`:''}${c.attachments.length?`<span title="附件">♧ ${c.attachments.length}</span>`:''}<span class="grow"></span>${c.assignees.map(id=>avatar(state.users.find(u=>u.id===id))).join('')}</div></article>`}
+function cardHTML(c){const cover=c.attachments.find(a=>a.id===c.coverId&&attachmentImage(a)),checked=c.checklist.filter(t=>t.done).length;return `<article class="card" draggable="true" tabindex="0" role="button" aria-label="開啟卡片：${esc(c.title)}" data-card="${c.id}">${cover?`<img class="cover" ${cover.storagePath?`data-storage-path="${esc(cover.storagePath)}"`:""} src="${esc(attachmentImage(cover))}" loading="lazy" referrerpolicy="no-referrer" alt="${esc(cover.name)}">`:c.demoCover?'<div class="design-cover"><div class="mini-window"><b>MAKE ROOM FOR IDEAS.</b><div class="mini-grid"><i></i><i></i><i></i></div></div></div>':''}<div>${c.labels.map(labelHTML).join('')}</div><div class="card-title"><span class="card-completion">${completionMark(c.done)}</span><span>${esc(c.title)}</span></div>${c.description?`<p class="card-desc">${esc(c.description.slice(0,65))}${c.description.length>65?'…':''}</p>`:''}<div class="card-footer">${c.due?`<span class="due ${overdue(c)?'overdue':''} ${c.done?'done':''}">${c.done?'✓':'◷'} ${formatDate(c.due)}</span>`:''}${c.checklist.length?`<span title="待辦事項">☑ ${checked}/${c.checklist.length}</span>`:''}${c.comments.length?`<span title="留言">☏ ${c.comments.length}</span>`:''}${c.attachments.length?`<span title="附件">♧ ${c.attachments.length}</span>`:''}${c.assignees.length?`<span class="card-assignees" style="--assignee-count:${c.assignees.length}" aria-label="負責人">${c.assignees.map(id=>avatar(state.users.find(u=>u.id===id))).join('')}</span>`:''}</div></article>`}
 function bindBoard(){$$('[data-card]').forEach(el=>{el.onclick=()=>openCard(el.dataset.card);el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openCard(el.dataset.card)}};el.ondragstart=e=>{dragged=el.dataset.card;e.dataTransfer.setData('text/plain',dragged);e.dataTransfer.effectAllowed='move';el.classList.add('dragging')};el.ondragend=()=>{dragged=null;$$('.drag-over').forEach(e=>e.classList.remove('drag-over'));el.classList.remove('dragging')}});$$('[data-col]').forEach(el=>{el.ondragover=e=>{if(dragged){e.preventDefault();e.dataTransfer.dropEffect='move';el.classList.add('drag-over')}};el.ondragleave=e=>{if(!el.contains(e.relatedTarget))el.classList.remove('drag-over')};el.ondrop=e=>{e.preventDefault();if(!dragged||!canEdit())return;const b=board(),c=b.cards.find(c=>c.id===dragged);if(!c)return;const target=e.target.closest('[data-card]');if(target?.dataset.card===c.id){el.classList.remove('drag-over');return}b.cards=b.cards.filter(x=>x.id!==c.id);c.columnId=el.dataset.col;let index=target?b.cards.findIndex(x=>x.id===target.dataset.card):-1;if(index>=0){if(e.clientY>target.getBoundingClientRect().top+target.getBoundingClientRect().height/2)index++;b.cards.splice(index,0,c)}else b.cards.push(c);try{assignMovedOrderKey(b.cards,c)}catch(error){state=structuredClone(baseline);render();toast(error.message);return}save();render()}});$$('[data-add-card]').forEach(el=>el.onclick=()=>createCard(el.dataset.addCard));$$('[data-edit-col]').forEach(el=>el.onclick=()=>editColumn(el.dataset.editCol));$('#addColumn').onclick=()=>editColumn()}
 function $$(s,root=document){return [...root.querySelectorAll(s)]}
 
@@ -127,14 +127,14 @@ function openUsers(){
   $('#userDialogTitle').textContent=googleAccount?'Google 帳號':'Google 登入';
   if(googleAccount){
     $('#googleAccountSummary').textContent=`${googleAccount.displayName} · ${googleAccount.email}`;
-    const roleNames={owner:'Owner',admin:'Admin',editor:'Editor',viewer:'Viewer'};
+    const roleNames={admin:'Admin（全站管理員）',owner:'Owner（看板管理者）',editor:'Editor',viewer:'Viewer'};
     $('#workspaceAccess').textContent=googleAccount.workspaceRole
       ?`工作空間權限：${roleNames[googleAccount.workspaceRole]||googleAccount.workspaceRole}`
       :'Google 登入成功；此帳號尚未取得工作空間成員權限。';
   }
   $('#editGoogleName').disabled=!googleAccount?.memberId;
   $('#displayMembers').hidden=!googleAccount?.memberId;
-  $('#displayMembers').innerHTML=googleAccount?.memberId ? '<h3>工作空間成員</h3><p class="help-note">此名冊僅供查閱；負責人請在牌卡內由 Owner／Admin 管理。</p>'+(googleAccount.roster||state.users).map(u=>`<div class="member-display">${avatar(u)}<span>${esc(u.name)}</span></div>`).join('') : '';
+  $('#displayMembers').innerHTML=googleAccount?.memberId ? '<h3>工作空間成員</h3><p class="help-note">此名冊僅供查閱；負責人請在牌卡內由 Admin／Owner 管理。</p>'+(googleAccount.roster||state.users).map(u=>`<div class="member-display">${avatar(u)}<span>${esc(u.name)}</span></div>`).join('') : '';
   if(!$('#userDialog').open)$('#userDialog').showModal();
 }
 async function applyGoogleAccount(account){
@@ -178,14 +178,14 @@ function editBoard(isNew=false){
   if(isNew){openManagedBoard();return;}
   if(!canEdit())return;
   const b=board();
-  simple('看板設定',`<div class="field"><label for="boardNameInput">看板名稱</label><input id="boardNameInput" class="full" required maxlength="80" value="${esc(b.name)}" placeholder="例如：新產品開發"></div><div class="field"><label for="boardDescInput">專案說明</label><textarea id="boardDescInput">${esc(b.description)}</textarea></div><div class="field"><label for="boardColorInput">共用看板配色</label><select id="boardColorInput" class="full">${boardColors.map((color,i)=>`<option value="${color}" ${color===(boardColors.includes(b.color)?b.color:boardColors[0])?'selected':''}>${boardColorNames[i]}</option>`).join('')}</select><p class="help-note">儲存後，所有可存取此看板的成員都會看到相同配色。</p></div><button type="button" id="archiveBoard" ${b.deleting?'disabled':''}>${b.archived?'復原看板':'封存看板'}</button>${googleAccount?.workspaceRole==='owner'?`<button type="button" id="deleteBoard" class="danger" ${!b.archived?'disabled':''}>${b.deleting?'重試永久刪除':'永久刪除看板'}</button><p class="help-note">永久刪除僅限 Owner；需先封存，會一併移除牌卡與附件。</p>`:''}`,()=>{
+  simple('看板設定',`<div class="field"><label for="boardNameInput">看板名稱</label><input id="boardNameInput" class="full" required maxlength="80" value="${esc(b.name)}" placeholder="例如：新產品開發"></div><div class="field"><label for="boardDescInput">專案說明</label><textarea id="boardDescInput">${esc(b.description)}</textarea></div><div class="field"><label for="boardColorInput">共用看板配色</label><select id="boardColorInput" class="full">${boardColors.map((color,i)=>`<option value="${color}" ${color===(boardColors.includes(b.color)?b.color:boardColors[0])?'selected':''}>${boardColorNames[i]}</option>`).join('')}</select><p class="help-note">儲存後，所有可存取此看板的成員都會看到相同配色。</p></div><button type="button" id="archiveBoard" ${b.deleting?'disabled':''}>${b.archived?'復原看板':'封存看板'}</button>${googleAccount?.workspaceRole==='admin'?`<button type="button" id="deleteBoard" class="danger" ${!b.archived?'disabled':''}>${b.deleting?'重試永久刪除':'永久刪除看板'}</button><p class="help-note">永久刪除僅限 Admin；需先封存，會一併移除牌卡與附件。</p>`:''}`,()=>{
     const name=$('#boardNameInput').value.trim();if(!name)return false;
     b.name=name;b.description=$('#boardDescInput').value;
     const color=$('#boardColorInput').value;if(boardColors.includes(color))b.color=color;
     save();render();
   });
   $('#archiveBoard').onclick=()=>openLifecycle(b.archived?'restore':'archive');
-  if(googleAccount?.workspaceRole==='owner')$('#deleteBoard').onclick=()=>openLifecycle('delete');
+  if(googleAccount?.workspaceRole==='admin')$('#deleteBoard').onclick=()=>openLifecycle('delete');
   applyPermissions();
 }
 function editColumn(id){const b=board(),col=b.columns.find(x=>x.id===id);simple(col?'編輯階段':'新增階段',`<div class="field"><label for="columnName">階段名稱</label><input id="columnName" class="full" required maxlength="50" value="${esc(col?.name||'')}"></div>${col?`<div class="field"><label for="columnPosition">欄位順序</label><select id="columnPosition" class="full">${b.columns.map((x,i)=>`<option value="${i}" ${x.id===id?'selected':''}>第 ${i+1} 欄</option>`).join('')}</select></div><button type="button" id="deleteColumn" class="danger">刪除此階段</button>`:''}`,()=>{const name=$('#columnName').value.trim();if(!name)return false;if(col){col.name=name;const pos=Number($('#columnPosition').value);b.columns=b.columns.filter(x=>x.id!==id);b.columns.splice(pos,0,col)}else b.columns.push({id:uid(),name});b.columns.forEach((item,i)=>item.orderKey=String(i).padStart(12,'0'));save();render()});if(col)$('#deleteColumn').onclick=()=>{if(b.columns.length===1){toast('至少保留一個階段');return}if(b.cards.some(c=>c.columnId===id)){toast('請先移動或刪除這個階段內的卡片');return}b.columns=b.columns.filter(x=>x.id!==id);save();render();$('#simpleDialog').close()}}
@@ -294,7 +294,7 @@ function renderComments(c){$('#comments').innerHTML=[...c.comments].reverse().ma
 function renderArchive(b){
   $('#archiveBoardName').textContent=b.name;
   const cards=b.archivedCards||[];
-  $('#archivedCards').innerHTML=cards.length?cards.map(c=>`<div class="archive-row"><span>${esc(c.title||'未命名牌卡')}</span><button type="button" data-restore-card="${esc(c.id)}" ${c.deleting?'disabled':''}>復原牌卡</button>${googleAccount?.workspaceRole==='owner'?`<button type="button" class="danger" data-delete-card="${esc(c.id)}">${c.deleting?'重試永久刪除':'永久刪除牌卡'}</button>`:''}</div>`).join(''):'<p class="muted">沒有已封存的牌卡。</p>';
+  $('#archivedCards').innerHTML=cards.length?cards.map(c=>`<div class="archive-row"><span>${esc(c.title||'未命名牌卡')}</span><button type="button" data-restore-card="${esc(c.id)}" ${c.deleting?'disabled':''}>復原牌卡</button>${googleAccount?.workspaceRole==='admin'?`<button type="button" class="danger" data-delete-card="${esc(c.id)}">${c.deleting?'重試永久刪除':'永久刪除牌卡'}</button>`:''}</div>`).join(''):'<p class="muted">沒有已封存的牌卡。</p>';
   const attachments=b.cards.flatMap(card=>(card.archivedAttachments||[]).map(file=>({...file,cardId:card.id,cardTitle:card.title})));
   $('#archivedAttachments').innerHTML=attachments.length?attachments.map(file=>`<div class="archive-row"><span>${esc(file.name||'未命名附件')} <small class="muted">${esc(file.cardTitle)}</small></span><button type="button" data-restore-attachment="${esc(file.id)}" data-parent-card="${esc(file.cardId)}">復原附件</button></div>`).join(''):'<p class="muted">沒有已封存的附件。</p>';
   $$('[data-delete-card]').forEach(button=>button.onclick=()=>openLifecycle('delete',button.dataset.deleteCard));
@@ -377,11 +377,11 @@ let managementRequest=0,managementLoading=false;
 $('#simpleDialog').onclose=()=>{managementRequest++;managementLoading=false;flushLiveSync()};
 $('#archiveDialog').onclose=()=>{archiveRequest++;flushLiveSync()};
 $('#boardOrderDialog').onclose=()=>{flushLiveSync();$('#sortBoards').focus?.()};
-function canEdit(){return !loading && !saving && Boolean(baseline) && ['owner','admin','editor'].includes(googleAccount?.workspaceRole)}
-function canManage(){return canEdit() && ['owner','admin'].includes(googleAccount?.workspaceRole)}
-function canOwn(){return canEdit() && googleAccount?.workspaceRole==='owner'}
+function canEdit(){return !loading && !saving && Boolean(baseline) && ['admin','owner','editor'].includes(googleAccount?.workspaceRole)}
+function canManage(){return canEdit() && ['admin','owner'].includes(googleAccount?.workspaceRole)}
+function canAdmin(){return canEdit() && googleAccount?.workspaceRole==='admin'}
 function openLifecycle(action,cardId){
-  if(!canOwn())return;
+  if(!canAdmin())return;
   const b=board(),card=cardId?(b.cards.find(c=>c.id===cardId)||(b.archivedCards||[]).find(c=>c.id===cardId)):null;
   if(!b || (cardId&&!card))return;
   const name=card?card.title:b.name,kind=card?'牌卡':'看板';
@@ -394,7 +394,7 @@ function openLifecycle(action,cardId){
   lifecycleDialog=true;
   const submit=$('#managementSubmit');submit.textContent=verb;submit.classList.toggle('danger',action==='delete');
   $('#simpleForm').onsubmit=event=>{
-    event.preventDefault();if(!canOwn())return;
+    event.preventDefault();if(!canAdmin())return;
     if(action==='delete'&&$('#lifecycleConfirm').value!==name){$('#managementError').textContent='輸入的名稱不一致，請確認';return;}
     runManagedWrite(()=>manageContentLifecycle({requestId:operationId,boardId:b.id,...(card?{cardId:card.id}:{}),action,confirmName:name,expectedArchived:archived}),async()=>{
       const actor=googleAccount;
@@ -473,7 +473,7 @@ async function runManagedWrite(write,reload,allowMembershipRefresh=false){
   saving=true;saveFailure='';applyPermissions();$('#managementError').textContent='';syncStatus('正在儲存管理設定…');
   try{
     const result=await write();
-    if(version!==generation && !(allowMembershipRefresh && googleAccount?.uid===actor?.uid && googleAccount?.memberId===actor?.memberId && ['owner','admin'].includes(googleAccount?.workspaceRole)))return;
+    if(version!==generation && !(allowMembershipRefresh && googleAccount?.uid===actor?.uid && googleAccount?.memberId===actor?.memberId && ['admin','owner'].includes(googleAccount?.workspaceRole)))return;
     saving=false;
     if(request===managementRequest)$('#simpleDialog').close();
     await reload(result);
@@ -497,7 +497,7 @@ function renderEmpty(){
 }
 function applyPermissions(){
   const edit=canEdit() && Boolean(board()) && !board().archived && !board().deleting;
-  const reason=loading?'正在載入，請稍候。':saving?'正在儲存，完成後可繼續編輯。':!googleAccount?'請先使用 Google 登入。':!googleAccount.memberId?'尚未取得工作空間權限；請聯絡 Owner／Admin 核准。':!board()?'沒有可存取的看板；請聯絡 Owner／Admin 調整看板權限。':!edit?'目前為唯讀：可閱讀與下載；編輯需 Owner／Admin／Editor 權限。':'';
+  const reason=loading?'正在載入，請稍候。':saving?'正在儲存，完成後可繼續編輯。':!googleAccount?'請先使用 Google 登入。':!googleAccount.memberId?'尚未取得工作空間權限；請聯絡 Admin／Owner 核准。':!board()?'沒有可存取的看板；請聯絡 Admin／Owner 調整看板權限。':!edit?'目前為唯讀：可閱讀與下載；編輯需 Admin／Owner／Editor 權限。':'';
   $('#permissionNotice').textContent=reason;
   $('#search').disabled=!board();
   $('#mineFilter').disabled=!googleAccount?.memberId;
@@ -505,12 +505,12 @@ function applyPermissions(){
   $('#starBoard').setAttribute?.('aria-pressed',String(Boolean(board()?.starred)));
   $('#currentUser').setAttribute?.('aria-label',googleAccount ? `帳號與個人設定：${googleAccount.displayName}` : '使用 Google 登入');
   for(const selector of ['#quickCreate','#editBoard','#starBoard','#addColumn','[data-add-card]','[data-edit-col]'])$$(selector).forEach(el=>{el.disabled=!edit;el.title=edit?'':reason;});
-  $('#editBoard').disabled=!board() || (!edit&&!canOwn());
-  if($('#archiveBoard'))$('#archiveBoard').disabled=!canOwn() || Boolean(board()?.deleting);
-  if($('#deleteBoard'))$('#deleteBoard').disabled=!canOwn() || !board()?.archived;
-  if(board()?.archived || board()?.deleting)$('#permissionNotice').textContent=board().deleting?'此看板正在永久刪除中；Owner 可重試完成清理。':'此看板已封存；Owner 可復原或永久刪除。';
+  $('#editBoard').disabled=!board() || (!edit&&!canAdmin());
+  if($('#archiveBoard'))$('#archiveBoard').disabled=!canAdmin() || Boolean(board()?.deleting);
+  if($('#deleteBoard'))$('#deleteBoard').disabled=!canAdmin() || !board()?.archived;
+  if(board()?.archived || board()?.deleting)$('#permissionNotice').textContent=board().deleting?'此看板正在永久刪除中；Admin 可重試完成清理。':'此看板已封存；Admin 可復原或永久刪除。';
   $('#sortBoards').disabled=loading||saving||!googleAccount?.memberId||state.boards.length<2;
-  $('#addBoard').disabled=!canManage();$('#addBoard').title='Owner／Admin 可建立看板並選擇授權會員';
+  $('#addBoard').disabled=!canManage();$('#addBoard').title='Admin／Owner 可建立看板並選擇授權會員';
   $$('.card').forEach(el=>el.draggable=edit);
   $$('#editor input, #editor textarea, #editor select, #editor button').forEach(el=>{
     if(el.id!=='closeCard'&&!el.hasAttribute('data-download'))el.disabled=!edit;
@@ -521,14 +521,14 @@ function applyPermissions(){
   $('#closeLabels').disabled=saving;
   if($('#attachmentInput'))$('#attachmentInput').disabled=!edit;
   if($('#manageAssignees'))$('#manageAssignees').disabled=!canManage() || Boolean(board()?.archived);
-  if($('#managementSubmit'))$('#managementSubmit').disabled=managementLoading||(lifecycleDialog?!canOwn():!canManage());
-  if($('#deleteColumn'))$('#deleteColumn').disabled=!['owner','admin'].includes(googleAccount?.workspaceRole);
+  if($('#managementSubmit'))$('#managementSubmit').disabled=managementLoading||(lifecycleDialog?!canAdmin():!canManage());
+  if($('#deleteColumn'))$('#deleteColumn').disabled=!['admin','owner'].includes(googleAccount?.workspaceRole);
   $('#refreshWorkspace').disabled=loading||saving;
   $('#archiveBtn').disabled=loading||saving||!board();
   $('#simpleDialog').inert=saving;
   if((board()?.archived || board()?.deleting) && !lifecycleDialog)$$('#simpleDialog input, #simpleDialog textarea, #simpleDialog select, #simpleDialog button[type="submit"]').forEach(el=>el.disabled=true);
-  if(lifecycleDialog)$$('#simpleDialog input, #simpleDialog button[type="submit"]').forEach(el=>el.disabled=!canOwn());
-  $$('[data-delete-card]').forEach(el=>el.disabled=!canOwn());
+  if(lifecycleDialog)$$('#simpleDialog input, #simpleDialog button[type="submit"]').forEach(el=>el.disabled=!canAdmin());
+  $$('[data-delete-card]').forEach(el=>el.disabled=!canAdmin());
 }
 function syncStatus(message){$('#syncStatus').textContent=saveFailure?`${saveFailure}；${message}`:message;}
 function clearWorkspaceDialogs(){

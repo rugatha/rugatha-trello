@@ -8,7 +8,7 @@ const {getFirestore}=require('firebase-admin/firestore');
 const {getAuth}=require('firebase-admin/auth');
 const projectId='demo-rugatha-trello',root='workspaces/main';
 let app,db,auth;const tokens={};
-async function call(name,data,who='owner') {
+async function call(name,data,who='admin') {
  const response=await fetch(`http://127.0.0.1:5001/${projectId}/asia-east1/${name}`,{method:'POST',headers:{'Content-Type':'application/json',...(tokens[who]?{Authorization:'Bearer '+tokens[who]}:{})},body:JSON.stringify({data})});
  const body=await response.json();
  return body.error?{error:body.error.status,message:body.error.message}:body.result;
@@ -18,7 +18,7 @@ const assignment=(patch={})=>({requestId:randomUUID(),boardId:'allowed',cardId:'
 before(async()=>{
  if(!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_AUTH_EMULATOR_HOST || !process.env.FIREBASE_STORAGE_EMULATOR_HOST || process.env.GCLOUD_PROJECT!==projectId)throw Error('Only run through test:management against demo Auth, Firestore and Storage emulators.');
  app=initializeApp({projectId});db=getFirestore(app);auth=getAuth(app);
- const roles=['owner','admin','editor','viewer','member','disabled','outsider','unverified','unapproved'];
+ const roles=['admin','owner','editor','viewer','member','disabled','outsider','unverified','unapproved'];
  for(const name of roles){
   const email=name+'@example.com';
   await auth.createUser({uid:name,email,password:'local-test-password',emailVerified:name!=='unverified'});
@@ -26,10 +26,10 @@ before(async()=>{
   tokens[name]=(await login.json()).idToken;
   if(name==='unapproved')continue;
   await db.doc(`${root}/memberLookup/${email}`).set({memberId:name});
-  await db.doc(`${root}/members/${name}`).set({name,role:['disabled','outsider','unverified'].includes(name)?'owner':name,status:name==='disabled'?'pending':'active',accessboard:name==='outsider'?[]:['allowed']});
+  await db.doc(`${root}/members/${name}`).set({name,role:['disabled','outsider','unverified'].includes(name)?'admin':name,status:name==='disabled'?'pending':'active',accessboard:name==='outsider'?[]:['allowed']});
  }
  await db.doc(`${root}/boards/allowed`).set({name:'Allowed',archived:false});
- await db.doc(`${root}/boards/allowed/cards/card`).set({title:'Card',archived:false,assigneeIds:[],description:'Keep me',updatedBy:'owner'});
+ await db.doc(`${root}/boards/allowed/cards/card`).set({title:'Card',archived:false,assigneeIds:[],description:'Keep me',updatedBy:'admin'});
 });
 after(async()=>{await db?.terminate();if(app)await deleteApp(app);});
 for(const who of ['anonymous','unverified','unapproved','disabled','editor','viewer','member'])test(`${who} cannot use management endpoints`,async()=>{
@@ -38,7 +38,7 @@ for(const who of ['anonymous','unverified','unapproved','disabled','editor','vie
   assert.ok(['UNAUTHENTICATED','PERMISSION_DENIED'].includes(result.error),JSON.stringify(result));
  }
 });
-for(const who of ['owner','admin'])test(`${who} creates board, columns and grants atomically; retries do not duplicate`,async()=>{
+for(const who of ['admin','owner'])test(`${who} creates board, columns and grants atomically; retries do not duplicate`,async()=>{
  const payload=newBoard(),result=await call('createManagedBoard',payload,who);assert.ok(result.boardId,JSON.stringify(result));
  const board=db.doc(`${root}/boards/${result.boardId}`);
  assert.equal((await board.get()).data().createdBy,who);
@@ -72,19 +72,19 @@ test('assignment validates access, preserves card content, blocks conflicts and 
  const payload=assignment(),result=await call('setManagedAssignees',payload);assert.deepEqual(result.assigneeIds,['viewer']);
  assert.deepEqual(await call('setManagedAssignees',payload),result);
  assert.equal((await db.doc(`${root}/boards/allowed/cards/card`).get()).data().description,'Keep me');
- assert.equal((await call('setManagedAssignees',assignment({assigneeIds:['admin']}))).error,'ABORTED');
- assert.deepEqual((await call('setManagedAssignees',assignment({assigneeIds:[],expectedAssigneeIds:['viewer']}),'admin')).assigneeIds,[]);
+ assert.equal((await call('setManagedAssignees',assignment({assigneeIds:['owner']}))).error,'ABORTED');
+ assert.deepEqual((await call('setManagedAssignees',assignment({assigneeIds:[],expectedAssigneeIds:['viewer']}),'owner')).assigneeIds,[]);
 });
 test('revocation and archival are rechecked on the server',async()=>{
- await db.doc(`${root}/members/admin`).update({accessboard:[]});
- assert.equal((await call('setManagedAssignees',assignment(),'admin')).error,'PERMISSION_DENIED');
- assert.equal((await call('listManagementMembers',{boardId:'allowed',cardId:'card'},'admin')).error,'PERMISSION_DENIED');
+ await db.doc(`${root}/members/owner`).update({accessboard:[]});
+ assert.equal((await call('setManagedAssignees',assignment(),'owner')).error,'PERMISSION_DENIED');
+ assert.equal((await call('listManagementMembers',{boardId:'allowed',cardId:'card'},'owner')).error,'PERMISSION_DENIED');
  await db.doc(`${root}/boards/allowed/cards/card`).update({archived:true});
  assert.equal((await call('setManagedAssignees',assignment())).error,'FAILED_PRECONDITION');
  await db.doc(`${root}/boards/allowed/cards/card`).update({archived:false});
 });
 test('forged actor, unsafe IDs, oversized selections and invalid fields are rejected',async()=>{
- for(const patch of [{createdBy:'owner'},{memberIds:['../members']},{memberIds:Array.from({length:41},(_,i)=>'m'+i)},{name:' '},{description:'x'.repeat(5001)},{color:'red'},{requestId:'not-a-uuid'}])assert.equal((await call('createManagedBoard',{...newBoard(),...patch})).error,'INVALID_ARGUMENT');
+ for(const patch of [{createdBy:'admin'},{memberIds:['../members']},{memberIds:Array.from({length:41},(_,i)=>'m'+i)},{name:' '},{description:'x'.repeat(5001)},{color:'red'},{requestId:'not-a-uuid'}])assert.equal((await call('createManagedBoard',{...newBoard(),...patch})).error,'INVALID_ARGUMENT');
  assert.equal((await call('setManagedAssignees',assignment({cardId:'../card'}))).error,'INVALID_ARGUMENT');
 });
 
@@ -100,7 +100,7 @@ test('simultaneous assignment edits commit one winner and reject the stale updat
 });
 
 const invite=(patch={})=>({requestId:randomUUID(),name:'Invited member',email:randomUUID()+'@example.com',role:'viewer',status:'pending',accessboard:['allowed'],...patch});
-async function change(memberId,patch={},who='owner') {
+async function change(memberId,patch={},who='admin') {
  const data=(await db.doc(`${root}/members/${memberId}`).get()).data();
  return call('saveManagedMembership',{requestId:randomUUID(),memberId,expected:{role:data.role,status:data.status,accessboard:data.accessboard},role:data.role,status:data.status,accessboard:data.accessboard,...patch},who);
 }
@@ -127,27 +127,27 @@ test('invite is pending, normalized, atomic, idempotent and uniquely reserves em
  assert.equal((await db.doc(`${root}/members/${result.memberId}`).get()).data().status,'disabled');
  assert.ok(!(await change(result.memberId,{status:'active',role:'editor',accessboard:[]})).error);
 });
-test('admin cannot elevate or edit managers and cannot grant inaccessible boards',async()=>{
- await db.doc(`${root}/members/admin`).update({accessboard:['allowed']});
- for(const role of ['owner','admin'])assert.equal((await call('saveManagedMembership',invite({role}),'admin')).error,'PERMISSION_DENIED');
- assert.equal((await change('owner',{status:'disabled'},'admin')).error,'PERMISSION_DENIED');
- assert.equal((await change('admin',{role:'owner'},'admin')).error,'PERMISSION_DENIED');
- assert.equal((await call('saveManagedMembership',invite({accessboard:['forbidden']}),'admin')).error,'PERMISSION_DENIED');
- const invited=await call('saveManagedMembership',invite(),'admin');assert.ok(invited.memberId);
- assert.ok(!(await change(invited.memberId,{status:'active'},'admin')).error);
+test('owner cannot elevate or edit managers and cannot grant inaccessible boards',async()=>{
+ await db.doc(`${root}/members/owner`).update({accessboard:['allowed']});
+ for(const role of ['admin','owner'])assert.equal((await call('saveManagedMembership',invite({role}),'owner')).error,'PERMISSION_DENIED');
+ assert.equal((await change('admin',{status:'disabled'},'owner')).error,'PERMISSION_DENIED');
+ assert.equal((await change('owner',{role:'admin'},'owner')).error,'PERMISSION_DENIED');
+ assert.equal((await call('saveManagedMembership',invite({accessboard:['forbidden']}),'owner')).error,'PERMISSION_DENIED');
+ const invited=await call('saveManagedMembership',invite(),'owner');assert.ok(invited.memberId);
+ assert.ok(!(await change(invited.memberId,{status:'active'},'owner')).error);
 });
-test('last active owner cannot be disabled or demoted, even concurrently',async()=>{
- // Earlier fixtures deliberately include an owner with no board access.
+test('last active admin cannot be disabled or demoted, even concurrently',async()=>{
+ // Earlier fixtures deliberately include an admin with no board access.
  await db.doc(`${root}/members/outsider`).update({role:'viewer'});
  await db.doc(`${root}/members/unverified`).update({role:'viewer'});
- assert.equal((await change('owner',{status:'disabled'})).error,'FAILED_PRECONDITION');
- assert.equal((await change('owner',{role:'viewer'})).error,'FAILED_PRECONDITION');
- await db.doc(`${root}/members/second-owner`).set({name:'Second owner',role:'owner',status:'active',accessboard:[]});
- const results=await Promise.all([change('owner',{role:'viewer'}),change('second-owner',{role:'viewer'})]);
+ assert.equal((await change('admin',{status:'disabled'})).error,'FAILED_PRECONDITION');
+ assert.equal((await change('admin',{role:'viewer'})).error,'FAILED_PRECONDITION');
+ await db.doc(`${root}/members/second-owner`).set({name:'Second admin',role:'admin',status:'active',accessboard:[]});
+ const results=await Promise.all([change('admin',{role:'viewer'}),change('second-owner',{role:'viewer'})]);
  assert.equal(results.filter(r=>!r.error).length,1);
- const owners=await db.collection(`${root}/members`).where('role','==','owner').get();
+ const owners=await db.collection(`${root}/members`).where('role','==','admin').get();
  assert.equal(owners.docs.filter(d=>d.data().status==='active').length,1);
- await db.doc(`${root}/members/owner`).update({role:'owner'});
+ await db.doc(`${root}/members/admin`).update({role:'admin'});
 });
 test('stale membership edits fail without overwriting changes; malformed requests write nothing',async()=>{
  const created=await call('saveManagedMembership',invite()),memberId=created.memberId;
@@ -158,13 +158,13 @@ test('stale membership edits fail without overwriting changes; malformed request
  for(const patch of [{email:'../invalid'},{role:'superuser'},{status:'active'},{accessboard:['missing']},{accessboard:['allowed','allowed']},{name:''},{extra:true}])assert.ok((await call('saveManagedMembership',invite(patch))).error);
 });
 test('revoked manager cannot replay a previously authorized membership operation',async()=>{
- const payload=invite(),result=await call('saveManagedMembership',payload,'admin');assert.ok(result.memberId);
- await db.doc(`${root}/members/admin`).update({status:'disabled'});
- assert.equal((await call('saveManagedMembership',payload,'admin')).error,'PERMISSION_DENIED');
- await db.doc(`${root}/members/admin`).update({status:'active'});
+ const payload=invite(),result=await call('saveManagedMembership',payload,'owner');assert.ok(result.memberId);
+ await db.doc(`${root}/members/owner`).update({status:'disabled'});
+ assert.equal((await call('saveManagedMembership',payload,'owner')).error,'PERMISSION_DENIED');
+ await db.doc(`${root}/members/owner`).update({status:'active'});
 });
-test('private directory has explicit fields and limits admin board choices',async()=>{
- const result=await call('listMembershipDirectory',{},'admin');
+test('private directory has explicit fields and limits owner board choices',async()=>{
+ const result=await call('listMembershipDirectory',{},'owner');
  assert.deepEqual(result.boards.map(b=>b.id),['allowed']);
  for(const m of result.members)assert.deepEqual(Object.keys(m).sort(),['accessboard','emails','id','name','role','status']);
 });
@@ -175,11 +175,11 @@ test('concurrent invitations cannot create two members for one email',async()=>{
  assert.equal(results.filter(r=>r.error==='ALREADY_EXISTS').length,1);
 });
 
-test('Owner lifecycle callable enforces role, confirmation, archival and idempotent deletion',async()=>{
+test('Admin lifecycle callable enforces role, confirmation, archival and idempotent deletion',async()=>{
  const created=await call('createManagedBoard',newBoard());assert.ok(created.boardId);
  const boardRef=db.doc(`${root}/boards/${created.boardId}`);
  const p=action=>({requestId:randomUUID(),boardId:created.boardId,action,confirmName:'New board',expectedArchived:action!=='archive'});
- for(const who of ['anonymous','unverified','unapproved','disabled','admin','editor','viewer','member']){
+ for(const who of ['anonymous','unverified','unapproved','disabled','owner','editor','viewer','member']){
   assert.ok(['UNAUTHENTICATED','PERMISSION_DENIED'].includes((await call('manageContentLifecycle',p('archive'),who)).error));
  }
  assert.equal((await call('manageContentLifecycle',{...p('delete'),expectedArchived:false})).error,'FAILED_PRECONDITION');
@@ -188,7 +188,7 @@ test('Owner lifecycle callable enforces role, confirmation, archival and idempot
  const deletion=p('delete'),result=await call('manageContentLifecycle',deletion);assert.equal(result.action,'delete',JSON.stringify(result));
  assert.deepEqual(await call('manageContentLifecycle',deletion),result);
  assert.equal((await boardRef.get()).exists,false);assert.equal((await boardRef.collection('columns').get()).size,0);
- assert(!(await db.doc(root+'/members/owner').get()).data().accessboard.includes(created.boardId));
+ assert(!(await db.doc(root+'/members/admin').get()).data().accessboard.includes(created.boardId));
 });
 
 test('display directory includes the avatar without private member settings',async()=>{
@@ -246,13 +246,13 @@ test('only comment author can edit/delete; updates keep identity and notify only
  const at='2026-10-16T00:00:00Z',original={text:'@viewer',mentions:[{memberId:'viewer',label:'viewer',start:0,end:7}],editedAt:null};
  await ref.set({memberId:'editor',text:original.text,mentions:original.mentions,at});
  const count=(await card.collection('comments').get()).size;await card.update({commentCount:count});
- const payload={requestId:randomUUID(),boardId:'allowed',cardId:'card',commentId:ref.id,action:'edit',text:'@viewer @owner',mentions:[...original.mentions,{memberId:'owner',label:'owner',start:8,end:14}],expected:original};
- for(const who of ['owner','admin','viewer','member','outsider','disabled','anonymous'])assert.ok((await call('manageComment',payload,who)).error);
+ const payload={requestId:randomUUID(),boardId:'allowed',cardId:'card',commentId:ref.id,action:'edit',text:'@viewer @admin',mentions:[...original.mentions,{memberId:'admin',label:'admin',start:8,end:14}],expected:original};
+ for(const who of ['admin','owner','viewer','member','outsider','disabled','anonymous'])assert.ok((await call('manageComment',payload,who)).error);
  const edited=await call('manageComment',payload,'editor');assert.equal(edited.action,'edit',JSON.stringify(edited));
  assert.deepEqual(await call('manageComment',payload,'editor'),edited);
  const data=(await ref.get()).data();assert.equal(data.memberId,'editor');assert.equal(data.at,at);assert.ok(data.editedAt);assert.equal(data.text,payload.text);
  assert.equal((await card.get()).data().commentCount,count);
- assert.equal((await db.doc(`${root}/members/owner/notifications/mention-${payload.requestId}`).get()).exists,true);
+ assert.equal((await db.doc(`${root}/members/admin/notifications/mention-${payload.requestId}`).get()).exists,true);
  assert.equal((await db.doc(`${root}/members/viewer/notifications/mention-${payload.requestId}`).get()).exists,false);
  assert.equal((await call('manageComment',{...payload,requestId:randomUUID()},'editor')).error,'ABORTED');
  const expected={text:data.text,mentions:data.mentions,editedAt:data.editedAt};
@@ -260,7 +260,7 @@ test('only comment author can edit/delete; updates keep identity and notify only
  assert.equal((await call('manageComment',invalid,'editor')).error,'FAILED_PRECONDITION');
  assert.equal((await ref.get()).data().text,data.text);
  const deletion={requestId:randomUUID(),boardId:'allowed',cardId:'card',commentId:ref.id,action:'delete',expected};
- assert.equal((await call('manageComment',deletion,'owner')).error,'PERMISSION_DENIED');
+ assert.equal((await call('manageComment',deletion,'admin')).error,'PERMISSION_DENIED');
  const removed=await call('manageComment',deletion,'editor');assert.equal(removed.action,'delete');
  assert.deepEqual(await call('manageComment',deletion,'editor'),removed);
  assert.equal((await ref.get()).exists,false);assert.equal((await card.get()).data().commentCount,count-1);

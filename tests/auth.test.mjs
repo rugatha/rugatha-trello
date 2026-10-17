@@ -140,7 +140,7 @@ for(const kind of ['disabled','deleted','denied'])test('membership '+kind+' clea
 });
 test('cached snapshots cannot restore obsolete membership permissions',async()=>{
   const h=await setup();await h.login();
-  h.listeners[0].next(snapshot({status:'active',role:'owner'}, {fromCache:true}));
+  h.listeners[0].next(snapshot({status:'active',role:'admin'}, {fromCache:true}));
   assert.equal(h.window.boardlyGoogleUser.workspaceRole,'viewer');
 });
 test('old member callbacks cannot replace a new account or show stale errors',async()=>{
