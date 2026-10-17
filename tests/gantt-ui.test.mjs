@@ -67,8 +67,8 @@ test('changing assignee shows other members, completion toggle includes closed w
 test('gantt entry versions its filter dependency and has no scale selector',async()=>{
  const page=await fs.readFile(new URL('../gantt.html',import.meta.url),'utf8');
  const source=await fs.readFile(new URL('../src/gantt.js',import.meta.url),'utf8');
- assert.match(page,/src\/gantt\.js\?v=20261016-deadline/);
- assert.match(source,/gantt-data\.js\?v=20261016-deadline/);
+ assert.match(page,/src\/gantt\.js\?v=20261017-date-range/);
+ assert.match(source,/gantt-data\.js\?v=20261017-date-range/);
  assert.doesNotMatch(page,/scaleFilter|時間刻度/);
  assert.doesNotMatch(source,/scaleFilter/);
 });
@@ -103,4 +103,32 @@ test('live reloads preserve explicit board collapse and defer while deadline edi
  s.pending[1].resolve(structuredClone(data));await tick();assert.match(s.$('#ganttChart').innerHTML,/index.html\?board=b/);
  s.$('#ganttChart').onclick({target:{closest:selector=>selector==='[data-collapse]'?{dataset:{collapse:'board/b'}}:null}});
  assert.ok(!s.$('#ganttChart').innerHTML.includes('index.html?board=b'));
+});
+
+test('clearing both dates includes historical cards and sizes the timeline to their full extent',async()=>{
+ const s=await setup();s.auth(account);
+ const old=structuredClone(data);old.boards[0].cards=[{id:'old',title:'Historical task',createdAt:'2024-02-10',due:'2024-02-15',assignees:['m'],checklist:[]}];
+ s.pending[0].resolve(old);await tick();assert.match(s.$('#ganttStatus').textContent,/0 張牌卡/);
+ s.$('#dateFrom').value='';s.$('#dateTo').value='';s.$('#dateFrom').change();
+ assert.match(s.$('#ganttStatus').textContent,/1 張牌卡/);
+ assert.match(s.$('#ganttChart').innerHTML,/>2024-02-10<\/span>/);
+ assert.match(s.$('#ganttChart').innerHTML,/--timeline-width:100px/);
+ assert.equal(s.$('#dateFrom').value,'');assert.equal(s.$('#dateTo').value,'');
+});
+test('start-date minimum includes all accessible cards, including completed ones, and ignores inaccessible or archived cards',async()=>{
+ const s=await setup();s.auth(account);
+ const rows=structuredClone(data);rows.boards[0].cards.push(
+  {id:'earliest',title:'Earlier complete task',createdAt:'2020-04-01',done:true,assignees:['someone-else'],checklist:[]},
+  {id:'archived',createdAt:'2010-01-01',archived:true,checklist:[]});
+ rows.boards[1].cards[0].createdAt='2000-01-01';
+ s.pending[0].resolve(rows);await tick();
+ assert.equal(s.$('#dateFrom').min,'2020-04-01');
+ s.$('#dateFrom').value='1900-01-01';s.$('#dateFrom').change();assert.equal(s.$('#dateFrom').value,'2020-04-01');
+ s.auth(null);assert.equal(s.$('#dateFrom').min,'');assert.equal(s.$('#earliestDateHint').textContent,'');
+});
+test('default opening Sunday cannot fall before the first card creation date',async()=>{
+ const s=await setup();s.auth(account);const rows=structuredClone(data);
+ rows.boards[0].cards[0].createdAt='2026-10-15';s.pending[0].resolve(rows);await tick();
+ assert.equal(s.$('#dateFrom').min,'2026-10-15');assert.equal(s.$('#dateFrom').value,'2026-10-15');
+ assert.match(s.$('#ganttChart').innerHTML,/>2026-10-15<\/span>/);
 });

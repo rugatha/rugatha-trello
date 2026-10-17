@@ -79,3 +79,23 @@ export function deadlineInput(value) {
   const part = type => parts.find(p => p.type === type).value;
   return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}`;
 }
+
+// Creation dates define the beginning of a timeline; invalid earlier deadlines do not extend it.
+export function ganttDateExtent(boards) {
+  let firstCreated = null, lastDay = null;
+  for (const board of boards) for (const card of board.cards) {
+    const {start, end} = cardDates(card);
+    if (start != null) firstCreated = firstCreated == null ? start : Math.min(firstCreated, start);
+    for (const day of [start, end, ...(card.checklist || []).map(item => checklistEnd(item.text, start))]) {
+      if (day != null) lastDay = lastDay == null ? day : Math.max(lastDay, day);
+    }
+  }
+  return {firstCreated, lastDay};
+}
+export function ganttDateRange(boards, {from = null, to = null, today = dateDay(new Date())} = {}) {
+  const {firstCreated, lastDay} = ganttDateExtent(boards);
+  const start = from ?? firstCreated ?? lastDay ?? today;
+  // An explicitly selected start keeps the default six-week view. Empty dates use the full data extent.
+  const end = to ?? Math.max(start + (from == null ? 0 : 41), lastDay ?? start);
+  return {start, end};
+}

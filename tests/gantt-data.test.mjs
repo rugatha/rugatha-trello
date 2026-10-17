@@ -80,3 +80,18 @@ test('deadline edit requires active assignment and board access regardless of wo
  assert.equal(deadlineInput('2026-10-31T09:30:00Z'),'2026-10-31T17:30');
  assert.equal(deadlineInput('2026-10-31T17:30'),'2026-10-31T17:30');
 });
+
+test('full date range starts at first creation and includes every card and checklist end without six-week padding',async()=>{
+ const {ganttDateRange,ganttDateExtent}=await import('../src/gantt-data.js');
+ const boards=[{cards:[{createdAt:'2024-02-10',due:'2024-02-11',checklist:[{text:'2024/02/15 完成'}]},
+ {createdAt:'2024-02-12',due:'2020-01-01'}]}];
+ const range=ganttDateRange(boards,{today:dateDay('2026-10-17')});
+ assert.deepEqual(range,{start:dateDay('2024-02-10'),end:dateDay('2024-02-15')});
+ assert.deepEqual(ganttDateExtent(boards),{firstCreated:dateDay('2024-02-10'),lastDay:dateDay('2024-02-15')});
+});
+test('full range includes completion dates and handles missing dates without infinite bounds',async()=>{
+ const {ganttDateRange}=await import('../src/gantt-data.js');
+ assert.deepEqual(ganttDateRange([{cards:[{createdAt:'2024-02-10',done:true,completedAt:'2024-03-15'}]}]),{start:dateDay('2024-02-10'),end:dateDay('2024-03-15')});
+ const today=dateDay('2026-10-17');
+ assert.deepEqual(ganttDateRange([{cards:[{}]}],{today}),{start:today,end:today});
+});

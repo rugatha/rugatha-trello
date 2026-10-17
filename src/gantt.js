@@ -1,6 +1,6 @@
 import './auth.js';
 import { loadWorkspace, subscribeWorkspace, updateCardDeadline } from './storage.js?v=20261016-deadline';
-import { DAY, dateDay, dayLabel, cardDates, checklistEnd, ganttBoards, weekSunday, canSetDeadline, deadlineInput } from './gantt-data.js?v=20261016-deadline';
+import { DAY, dateDay, dayLabel, cardDates, checklistEnd, ganttBoards, weekSunday, canSetDeadline, deadlineInput, ganttDateExtent, ganttDateRange } from './gantt-data.js?v=20261017-date-range';
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let account = null, workspace = {boards:[]}, generation = 0, stop = null, timer = null;
@@ -23,6 +23,11 @@ function options(selector, items, title, first = [], value = $(selector).value) 
 }
 function updateFilters(selection = filters()) {
   const boards = ganttBoards(workspace, account, {showCompleted:true});
+  const earliest = ganttDateExtent(boards).firstCreated;
+  $('#dateFrom').min = earliest == null ? '' : dayLabel(earliest);
+  $('#earliestDateHint').textContent = earliest == null ? '' : `最早可選開始日期：${dayLabel(earliest)}。`;
+  const from = dateDay($('#dateFrom').value);
+  if (from != null && earliest != null && from < earliest) $('#dateFrom').value = dayLabel(earliest);
   options('#boardFilter', boards.map(b => [b.id,b.name+(b.archived?'（已封存）':'')]), '所有看板', [], selection.board);
   const selected = boards.filter(b => !$('#boardFilter').value || b.id === $('#boardFilter').value);
   const ids = new Set(selected.flatMap(b => b.cards.flatMap(c => c.assignees || [])));
@@ -30,25 +35,24 @@ function updateFilters(selection = filters()) {
 }
 function render() {
   const selection = filters();
-  if (selection.from != null && selection.to != null && selection.to < selection.from) {
+  const earliest = dateDay($('#dateFrom').min);
+  if (selection.to != null && (selection.from ?? earliest) != null && selection.to < (selection.from ?? earliest)) {
     $('#ganttChart').innerHTML = '<p class="gantt-empty">結束日期不可早於開始日期。</p>';
     $('#ganttStatus').textContent = '請調整日期篩選';
     return;
   }
   const boards = ganttBoards(workspace, account, selection);
   const today = dateDay(new Date());
-  const all = boards.flatMap(b => b.cards.flatMap(c => {const dates = cardDates(c);return [dates.start,dates.end,...(c.checklist||[]).map(t => checklistEnd(t.text, dates.start))];})).filter(d => d != null);
   if (!boards.length) {
     $('#ganttChart').innerHTML = '<p class="gantt-empty">'+(account?.memberId ? '沒有符合篩選的牌卡，或尚無可存取的看板。' : '使用 Google 登入後，查看你有權限的專案時程。')+'</p>';
     $('#ganttStatus').textContent = '0 個看板 · 0 張牌卡 · 0 個清單項目';
     return;
   }
-  const min = selection.from ?? (all.length ? Math.min(...all) : initialSunday);
-  const max = selection.to ?? Math.max(min + 41, ...all);
+  const {start:min, end:max} = ganttDateRange(boards, {...selection,today});
   const step = 7;
   const tickWidth = 100, unit = tickWidth / step, count = Math.ceil((max-min+1)/step), width = count*tickWidth;
   const ticks = Array.from({length:count},(_,i) => `<span>${dayLabel(min+i*step)}</span>`).join('');
-  const todayLine = today >= min && today <= min+count*step ? `<i class="gantt-today" style="left:${(today-min)*unit}px" title="今天 ${dayLabel(today)}"></i>` : '';
+  const todayLine = today >= min && today <= max ? `<i class="gantt-today" style="left:${(today-min)*unit}px" title="今天 ${dayLabel(today)}"></i>` : '';
   const track = (dates, done, kind, source) => {
     const invalid = dates.start != null && dates.end != null && dates.end < dates.start;
     const outside = !invalid && dates.start != null && dates.end != null && (dates.end < min || dates.start > max);
