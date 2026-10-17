@@ -69,7 +69,7 @@ test('me and selecting the signed-in member return the same ongoing work across 
  assert.deepEqual(mine[0].cards.map(c=>c.id),['undated','future']);
  assert.equal(mine[0].cards[1].checklist.length,1);
 });
-test('deadline edit requires active assignment and board access regardless of workspace role',async()=>{
+test('deadline edit requires assignment or owner role and board access',async()=>{
  const {canSetDeadline,deadlineInput}=await import('../src/gantt-data.js');
  const board={id:'b'},card={assignees:['m']},account={memberId:'m',workspaceRole:'viewer',accessboard:['b']};
  assert.equal(canSetDeadline(account,board,card),true);
@@ -94,4 +94,17 @@ test('full range includes completion dates and handles missing dates without inf
  assert.deepEqual(ganttDateRange([{cards:[{createdAt:'2024-02-10',done:true,completedAt:'2024-03-15'}]}]),{start:dateDay('2024-02-10'),end:dateDay('2024-03-15')});
  const today=dateDay('2026-10-17');
  assert.deepEqual(ganttDateRange([{cards:[{}]}],{today}),{start:today,end:today});
+});
+
+test('owner can edit unassigned cards across accessible boards including archived boards',async()=>{
+ const {canSetDeadline}=await import('../src/gantt-data.js');
+ const account={memberId:'owner',workspaceRole:'owner',accessboard:['a','b']};
+ for(const board of [{id:'a'},{id:'b',archived:true}]) {
+  assert.equal(canSetDeadline(account,board,{assignees:[]}),true);
+  assert.equal(canSetDeadline(account,board,{assignees:['other']}),true);
+ }
+ assert.equal(canSetDeadline(account,{id:'private'},{assignees:[]}),false);
+ assert.equal(canSetDeadline(account,{id:'a',deleting:true},{assignees:[]}),false);
+ assert.equal(canSetDeadline(account,{id:'a'},{archived:true}),false);
+ assert.equal(canSetDeadline({...account,workspaceRole:'viewer'},{id:'a'},{assignees:[]}),false);
 });
