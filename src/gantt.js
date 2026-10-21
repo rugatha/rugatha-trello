@@ -83,7 +83,7 @@ function render() {
         const end = checklistEnd(item.text,dates.start,item.due);
         const source = item.due ? '截止日' : '文字辨識截止日';
         const owner = item.assigneeId ? account.roster?.find(u=>u.id===item.assigneeId)?.name || '未知成員' : '未指派';
-        html += label((item.done?'☑ ':'☐ ')+(item.group?item.group+' / ':'')+item.text,`${owner} · ${source}：${dayLabel(end)}`,'item')+track({start:dates.start,end},item.done,'item',end==null?'未設定截止日':source);
+        html += label((item.done?'☑ ':'☐ ')+item.text,`${owner} · ${source}：${dayLabel(end)}`,'item')+track({start:dates.start,end},item.done,'item',end==null?'未設定截止日':source);
       }
     }
   }

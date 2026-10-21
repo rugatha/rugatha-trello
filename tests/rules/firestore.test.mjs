@@ -381,3 +381,16 @@ test('copied checklists cannot retain assignees on an unassigned new card',async
  batch.set(doc(db,path+'/checklist/item'),{text:'Task',done:false,assigneeId:'viewer'});
  await assertFails(batch.commit());
 });
+
+test('only board admins and owners can change checklist group definitions on an existing card',async()=>{
+ const path=board+'/cards/checklist-groups';
+ await env.withSecurityRulesDisabled(async context=>{
+  await setDoc(doc(context.firestore(),path),{title:'Groups',createdBy:'admin',assigneeIds:[],checklistGroups:[]});
+ });
+ await assertSucceeds(updateDoc(doc(dbFor('owner'),path),{checklistGroups:['發文'],updatedBy:'owner'}));
+ await assertSucceeds(updateDoc(doc(dbFor('admin'),path),{checklistGroups:['發文','檢查'],updatedBy:'admin'}));
+ for(const role of ['editor','viewer','member','outsider'])await assertFails(updateDoc(doc(dbFor(role),path),{checklistGroups:['Other'],updatedBy:role}));
+ for(const groups of ['bad',['發文','發文'],Array.from({length:51},(_,i)=>'Group '+i)])await assertFails(updateDoc(doc(dbFor('owner'),path),{checklistGroups:groups,updatedBy:'owner'}));
+ await assertSucceeds(updateDoc(doc(dbFor('editor'),path),{title:'Still editable',updatedBy:'editor'}));
+ await assertSucceeds(setDoc(doc(dbFor('editor'),board+'/cards/copied-groups'),{title:'Copy',createdBy:'editor',assigneeIds:[],checklistGroups:['發文','檢查']}));
+});

@@ -41,3 +41,10 @@ test('removing checklist item does not remove card',()=>{
  const a=fixture(),b=fixture();b.boards[0].cards[0].checklist=[];
  const ops=diff(a,b);assert.equal(ops.length,2);assert.ok(ops.find(op=>op.path.endsWith('/checklist/t')&&!op.after));
 });
+
+test('empty checklist groups persist on the card without fake checklist items',()=>{
+ const a=fixture(),b=fixture();b.boards[0].cards[0].checklistGroups=['發文','檢查'];
+ const ops=diff(a,b);assert.equal(ops.length,1);
+ assert.deepEqual(ops[0].patch,{checklistGroups:['發文','檢查']});
+ assert.equal(documents(b).get('workspaces/main/boards/b/cards/c').checklistCount,1);
+});

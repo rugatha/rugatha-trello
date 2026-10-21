@@ -108,6 +108,10 @@ service cloud.firestore {
             return getAfter(/databases/$(database)/documents/workspaces/$(w)/boards/$(b)/cards/$(cardId)).data != null
               && !getAfter(/databases/$(database)/documents/workspaces/$(w)/boards/$(b)/cards/$(cardId)).data.get('deleting', false);
           }
+          function validChecklistGroups() {
+            let groups = request.resource.data.get('checklistGroups', []);
+            return groups is list && groups.size() <= 50 && groups.toSet().size() == groups.size();
+          }
           function assignedDeadlineEdit() {
             return boardAccess(w, b) && !member(w).get('readOnly', false)
               && memberId(w) in resource.data.get('assigneeIds', [])
@@ -128,7 +132,7 @@ service cloud.firestore {
             && request.resource.data.title.size() > 0
             && request.resource.data.title.size() <= 150
             && request.resource.data.createdBy == memberId(w)
-            && request.resource.data.get('assigneeIds', []) == [];
+            && request.resource.data.get('assigneeIds', []) == [] && validChecklistGroups();
           allow update: if canEdit(w, b) && mutableCard()
             && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['deleting'])
             && request.resource.data.title is string
@@ -136,7 +140,9 @@ service cloud.firestore {
             && request.resource.data.title.size() <= 150
             && request.resource.data.get('createdBy', null) == resource.data.get('createdBy', null)
             && request.resource.data.updatedBy == memberId(w)
-            && request.resource.data.get('assigneeIds', []) == resource.data.get('assigneeIds', []);
+            && request.resource.data.get('assigneeIds', []) == resource.data.get('assigneeIds', [])
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['checklistGroups'])
+              || (isAdmin(w, b) && validChecklistGroups()));
           allow delete: if false;
           match /comments/{commentId} {
             allow read: if boardAccess(w, b);

@@ -150,3 +150,13 @@ test('gantt item displays its own deadline and assigned person',async()=>{
  s.$('#ganttChart').onclick({target:{closest:selector=>selector==='[data-collapse]'?{dataset:{collapse:'card/b/c'}}:null}});
  assert.match(s.$('#ganttChart').innerHTML,/Item owner · 截止日：2026-11-03/);
 });
+
+test('checklist categories do not add a level or prefix to gantt item names',async()=>{
+ const s=await setup();s.auth(account);const workspace=structuredClone(data);
+ workspace.boards[0].cards[0].checklist=[{id:'post',text:'排程',group:'發文',done:false},{id:'review',text:'確認連結',group:'檢查',done:false}];
+ s.pending[0].resolve(workspace);await tick();
+ s.$('#ganttChart').onclick({target:{closest:selector=>selector==='[data-collapse]'?{dataset:{collapse:'card/b/c'}}:null}});
+ const html=s.$('#ganttChart').innerHTML;
+ assert.match(html,/☐ 排程/);assert.match(html,/☐ 確認連結/);
+ assert.doesNotMatch(html,/發文|檢查|checklistGroup/);
+});

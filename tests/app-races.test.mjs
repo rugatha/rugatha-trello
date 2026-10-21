@@ -4,12 +4,12 @@ import vm from 'node:vm';
 import fs from 'node:fs/promises';
 import * as cardOptions from '../src/card-options.js';
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
-async function setup({search='',archiveLoad=async()=>[],deferredArchives=false,workspaceLoad,managementLoad=async()=>({members:[],assigneeIds:[]}),managedCreate=async()=>({boardId:'new'}),managedAssign=async()=>({}),managedLifecycle=async()=>({}),checklist=[],checklistControls={}}={}){
+async function setup({search='',archiveLoad=async()=>[],deferredArchives=false,workspaceLoad,managementLoad=async()=>({members:[],assigneeIds:[]}),managedCreate=async()=>({boardId:'new'}),managedAssign=async()=>({}),managedLifecycle=async()=>({}),checklist=[],checklistGroups,checklistControls={}}={}){
  const elements=new Map(),writes=[],restores=[],subscriptions=[],commentTargets=[],labelWrites=[];
  const element=s=>{if(!elements.has(s))elements.set(s,{value:s==='#dueFilter'?'all':'',classList:{add(){},remove(){},toggle(){}},style:{},replaceChildren(){this.innerHTML='';},close(){this.open=false;},showModal(){this.open=true;}});return elements.get(s);};
  const context=vm.createContext({console,structuredClone,setTimeout:()=>0,clearTimeout,Intl,Date,URLSearchParams,crypto:{randomUUID:()=>'copy-id'},
  document:{querySelector:element,querySelectorAll:s=>checklistControls[s]|| (s==='[data-comment-id]'?commentTargets:/^#[a-zA-Z]+$/.test(s)?[element(s)]:[]),addEventListener(){}},window:{location:{search},addEventListener(){}}});
- const data=()=>({users:[],boards:[{id:'b',name:'Board',columns:[{id:'col',name:'Todo'}],cards:[{id:'c',title:'Assigned',columnId:'col',createdAt:'2026-10-01T00:00:00Z',description:'',assignees:['viewer'],labels:[],checklist:structuredClone(checklist),comments:[],attachments:[],attachmentArchiveLoaded:!deferredArchives}]}]});
+ const data=()=>({users:[],boards:[{id:'b',name:'Board',columns:[{id:'col',name:'Todo'}],cards:[{id:'c',title:'Assigned',columnId:'col',createdAt:'2026-10-01T00:00:00Z',description:'',assignees:['viewer'],labels:[],checklist:structuredClone(checklist),...(checklistGroups?{checklistGroups:structuredClone(checklistGroups)}:{}),comments:[],attachments:[],attachmentArchiveLoaded:!deferredArchives}]}]});
  const deps={...cardOptions,saveBoardLabel:(...args)=>{const d=deferred();Object.assign(d,{args});labelWrites.push(d);return d.promise;},bindCommentComposer:()=>{},connectNotifications:()=>{},renderMentionText:()=>{},clearAttachmentUI:()=>{},hydrateAttachmentImages:()=>{},downloadAttachment:()=>{},bindAttachmentUpload:()=>{},listManagementMembers:managementLoad,createManagedBoard:managedCreate,setManagedAssignees:managedAssign,manageContentLifecycle:managedLifecycle,loadDeferredAttachmentArchives:archiveLoad,loadWorkspace:async(account,options)=>workspaceLoad?workspaceLoad(account,options,data):data(),subscribeWorkspace:(account,next,error)=>{const sub={account,next,error,stopped:false};subscriptions.push(sub);return ()=>sub.stopped=true;},persistWorkspace:(before,after,member)=>{const d=deferred();Object.assign(d,{before,after,member});writes.push(d);return d.promise;},restoreCard:()=>{const d=deferred();restores.push(d);return d.promise;},restoreAttachment:async()=>{},assignMovedOrderKey:()=>{}};
  const source=await fs.readFile(new URL('../src/app.js',import.meta.url),'utf8');
  const mod=new vm.SourceTextModule(source+'\nexport {selectBoard,applyGoogleAccount,save,restoreArchived,canEdit,openCard,refreshWorkspace,showArchive,canManage,openManagedBoard,openManagedAssignees,runManagedWrite,openLifecycle,canAdmin,openNotification,openLinkedCard};',{context});
@@ -471,4 +471,69 @@ test('checklist inputs save deadlines and eligible assignees and reject outsider
  due.value='';due.onchange();assert.equal(writes[2].after.boards[0].cards[0].checklist[0].due,'');
  writes[2].resolve([]);await new Promise(resolve=>setImmediate(resolve));
  await api.applyGoogleAccount({...account('viewer'),workspaceRole:'viewer'});api.openCard('c');owner.onchange();due.onchange();assert.equal(writes.length,3);
+});
+
+test('checklist categories render as separate named lists with collapsed item settings',async()=>{
+ const checklist=[{id:'a',text:'排程',group:'發文',done:true},{id:'b',text:'確認連結',group:'檢查',done:false},{id:'c',text:'Threads排程',group:'發文',done:false},{id:'d',text:'其他工作',done:false}];
+ const {api,element}=await setup({checklist});await api.applyGoogleAccount(account('editor'));api.openCard('c');
+ const html=element('#checklist').innerHTML;
+ assert.equal((html.match(/class="checklist-group"/g)||[]).length,3);
+ assert.match(html,/<h4 id="checklistGroup0">發文<\/h4><span class="muted small">1\/2/);
+ assert.match(html,/<h4 id="checklistGroup1">檢查<\/h4>/);
+ assert.match(html,/<h4 id="checklistGroup2">待辦事項<\/h4>/);
+ assert.ok(html.indexOf('Threads排程')<html.indexOf('checklistGroup1'));
+ assert.doesNotMatch(html,/<small class="muted">發文|發文 ·|檢查 ·/);
+ assert.equal((html.match(/class="checklist-toggle"/g)||[]).length,4);
+ assert.equal((html.match(/aria-expanded="false"/g)||[]).length,4);
+ assert.equal((html.match(/data-check-details="[^"]+" hidden/g)||[]).length,4);
+ assert.equal(element('#checkCount').textContent,'1/4');
+});
+test('expanded checklist settings remain open after an edit and new items keep their group',async()=>{
+ const input={value:'新增檢查'},form={dataset:{checkAdd:'1'},querySelector:()=>input};
+ const due={dataset:{checkDue:'a'},value:'2026-11-03T17:30',validity:{valid:true}};
+ const {api,element,writes}=await setup({checklist:[{id:'a',text:'排程',group:'發文',groupId:'posts',done:false},{id:'b',text:'確認',group:'檢查',groupId:'checks',done:false}],checklistControls:{'[data-check-due]':[due],'#checklist [data-check-details]:not([hidden])':[{dataset:{checkDetails:'a'}}],'[data-check-add]':[form]}});
+ await api.applyGoogleAccount(account('editor'));api.openCard('c');due.onchange();
+ assert.doesNotMatch(element('#checklist').innerHTML.match(/<div[^>]*data-check-details="a"[^>]*>/)[0],/hidden/);
+ assert.match(element('#checklist').innerHTML,/data-check-toggle="a"[^>]*aria-expanded="true"/);
+ writes[0].resolve([]);await new Promise(resolve=>setImmediate(resolve));
+ form.onsubmit({preventDefault(){}});
+ const item=writes[1].after.boards[0].cards[0].checklist.at(-1);
+ assert.equal(item.text,'新增檢查');assert.equal(item.group,'檢查');assert.equal(item.groupId,'checks');
+ writes[1].resolve([]);await new Promise(resolve=>setImmediate(resolve));
+});
+
+for(const role of ['admin','owner'])test(`${role} creates a persistent empty checklist and rejects duplicate names`,async()=>{
+ const {api,element,writes}=await setup({checklist:[{id:'a',text:'排程',group:'發文',done:false}]});
+ await api.applyGoogleAccount({...account(role),workspaceRole:role});api.openCard('c');
+ assert.match(element('#checklist').innerHTML,/新增待辦清單/);
+ element('#newChecklistName').value=' 發文 ';element('#createChecklistForm').onsubmit({preventDefault(){}});
+ assert.equal(writes.length,0);assert.equal(element('#checklistCreateError').textContent,'已有同名待辦清單');
+ element('#newChecklistName').value='檢查';element('#createChecklistForm').onsubmit({preventDefault(){}});
+ assert.equal(writes.length,1);
+ assert.deepEqual(Array.from(writes[0].after.boards[0].cards[0].checklistGroups),['發文','檢查']);
+ assert.match(element('#checklist').innerHTML,/>檢查<\/h4><span class="muted small">0\/0/);
+ assert.match(element('#checklist').innerHTML,/createChecklistForm/);
+ writes[0].resolve([]);await new Promise(resolve=>setImmediate(resolve));
+});
+for(const role of ['editor','viewer','member'])test(`${role} cannot open checklist creation`,async()=>{
+ const {api,element}=await setup();await api.applyGoogleAccount({...account(role),workspaceRole:role});api.openCard('c');
+ assert.doesNotMatch(element('#checklist').innerHTML,/createChecklistForm|新增待辦清單/);
+});
+test('empty checklist definitions reload and accept items with their list name',async()=>{
+ const input={value:'確認連結'},form={dataset:{checkAdd:'0'},querySelector:()=>input};
+ const {api,element,writes}=await setup({checklistGroups:['檢查'],checklistControls:{'[data-check-add]':[form]}});
+ await api.applyGoogleAccount(account('editor'));api.openCard('c');
+ assert.match(element('#checklist').innerHTML,/>檢查<\/h4><span class="muted small">0\/0/);
+ form.onsubmit({preventDefault(){}});assert.equal(writes[0].after.boards[0].cards[0].checklist[0].group,'檢查');
+ writes[0].resolve([]);await new Promise(resolve=>setImmediate(resolve));
+});
+test('item triangle expands and collapses settings independently of completion',async()=>{
+ const panel={dataset:{checkDetails:'a'},hidden:true};
+ const toggle={dataset:{checkToggle:'a'},setAttribute(key,value){this[key]=value;}};
+ const {api,writes,element}=await setup({checklist:[{id:'a',text:'排程',group:'發文',done:true}],checklistControls:{'[data-check-toggle]':[toggle],'[data-check-details]':[panel]}});
+ await api.applyGoogleAccount({...account('viewer'),workspaceRole:'viewer'});api.openCard('c');
+ assert.match(element('#checklist').innerHTML,/<div class="check-item checked"><button[^>]*data-check-toggle="a"[^>]*>▸<\/button><input/);
+ assert.doesNotMatch(element('#checklist').innerHTML,/<summary[^>]*>日期與負責人/);
+ toggle.onclick();assert.equal(panel.hidden,false);assert.equal(toggle['aria-expanded'],'true');assert.equal(toggle.textContent,'▾');
+ toggle.onclick();assert.equal(panel.hidden,true);assert.equal(toggle['aria-expanded'],'false');assert.equal(writes.length,0);
 });
