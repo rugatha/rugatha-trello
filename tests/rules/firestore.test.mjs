@@ -417,3 +417,19 @@ test('partial deadline input is stored with the effective time under existing ca
  await assertFails(updateDoc(item,{dueParts:{...dueParts,minute:59}}));
  await assertFails(updateDoc(doc(dbFor('viewer'),path+'/checklist/item'),{dueParts}));
 });
+
+for(const role of ['admin','owner','editor'])test(`${role} can create a self-assigned card but cannot assign other members directly`,async()=>{
+ const db=dbFor(role),path=board+'/cards/self-assigned-'+role;
+ await assertSucceeds(setDoc(doc(db,path),{title:'Mine',createdBy:role,assigneeIds:[role]}));
+ for(const assigneeIds of [['viewer'],[role,'viewer'],[role,role]]){
+  await assertFails(setDoc(doc(db,path+'-forged'),{title:'Forged',createdBy:role,assigneeIds}));
+ }
+ await assertFails(updateDoc(doc(db,path),{assigneeIds:['viewer'],updatedBy:role}));
+});
+
+test('owner can add and edit imported checklist items and persist their order',async()=>{
+ const db=dbFor('owner'),path=card+'/checklist/owner-imported';
+ await assertSucceeds(setDoc(doc(db,path),{text:'Imported',group:'Imported list',done:false,orderKey:'r:0/1'}));
+ await assertSucceeds(updateDoc(doc(db,path),{text:'Edited by owner',orderKey:'r:1/1'}));
+ const snapshot=await getDoc(doc(db,path));assert.equal(snapshot.data().text,'Edited by owner');
+});

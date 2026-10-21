@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import fs from 'node:fs/promises';
 import {documents,changes} from '../src/workspace-data.js';
 import {deadlineParts,resolveDeadline} from '../src/deadline.js';
+import {placeChecklist} from '../src/card-options.js';
 import {compareOrderKey} from '../src/order-key.js';
 async function setup(remote,fail=false){
  const writes=[],listeners=[],reads=[],oldView=structuredClone(remote);
@@ -243,4 +244,15 @@ test('partial deadline transaction stores original components and checks raw-inp
  assert.equal(writes[0][2].dueParts.day,'');assert.equal(writes[0][2].dueParts.minute,'');
  remote.set(path,{title:'Card',assigneeIds:['m'],due:'',dueParts:{...raw,minute:'59'}});
  await assert.rejects(api.updateCardDeadline(actor,'b','c','2026-10-31T21:59:00+08:00','',raw,raw),/輸入已被其他人修改/);
+});
+
+test('checklist drag order is persisted and restored on workspace reload',async()=>{
+ const before=fixture();before.boards[0].cards[0].checklist=[{id:'a',text:'A',done:false},{id:'b',text:'B',done:true},{id:'c',text:'C',done:false}];
+ const after=structuredClone(before);after.boards[0].cards[0].checklist=placeChecklist(after.boards[0].cards[0].checklist,'c','','a');
+ const remote=documents(before),{api,writes}=await setup(remote);
+ await api.persistWorkspace(before,after,'owner');
+ for(const [type,path,payload] of writes){if(type==='update')remote.set(path,{...remote.get(path),...payload});else if(type==='set')remote.set(path,payload);}
+ const loaded=await api.loadWorkspace({accessboard:['b']});
+ const items=loaded.boards[0].cards[0].checklist;
+ assert.deepEqual(Array.from(items,item=>item.id),['c','a','b']);assert.equal(items[2].done,true);
 });

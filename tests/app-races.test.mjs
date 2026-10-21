@@ -52,7 +52,7 @@ test('copying an assigned card resets checklist completion and owners without ch
  assert.equal(writes.length,1);
  const cards=writes[0].after.boards[0].cards;
  assert.deepEqual(Array.from(cards.find(c=>c.id==='c').assignees),['viewer']);
- assert.deepEqual(Array.from(cards.find(c=>c.id==='copy-id').assignees),[]);
+ assert.deepEqual(Array.from(cards.find(c=>c.id==='copy-id').assignees),['editor']);
  assert.deepEqual(JSON.parse(JSON.stringify(cards.find(c=>c.id==='c').checklist)),checklist);
  const copied=cards.find(c=>c.id==='copy-id').checklist;
  assert.ok(copied.every(item=>!item.done&&item.assigneeId===''));
@@ -408,7 +408,7 @@ test('copy placement honors a selected target stage and first position',async()=
  assert.equal(writes.length,0);element('#copyStage').value='target';element('#copyStage').onchange();element('#copyPosition').value='1';
  element('#simpleForm').onsubmit({preventDefault(){}});
  const target=writes[0].after.boards[0].cards.filter(c=>c.columnId==='target');
- assert.deepEqual(Array.from(target,c=>c.id),['copy-id','existing']);assert.deepEqual(Array.from(target[0].assignees),[]);
+ assert.deepEqual(Array.from(target,c=>c.id),['copy-id','existing']);assert.deepEqual(Array.from(target[0].assignees),['editor']);
  writes[0].resolve([]);await new Promise(resolve=>setImmediate(resolve));
 });
 
@@ -563,4 +563,37 @@ test('failed partial deadline autosave keeps entered components and retries on b
  const retry=d.fields.month.onblur();assert.equal(s.writes[1].after.boards[0].cards[0].dueParts.day,'');
  assert.equal(s.writes[1].after.boards[0].cards[0].due,'2026-02-28T23:59:00+08:00');
  s.writes[1].resolve([]);await retry;
+});
+
+test('new cards default to their creator as assignee',async()=>{
+ const {api,element,writes}=await setup({workspaceLoad:async(_,__,data)=>{const state=data();state.users=[{id:'creator',name:'Creator'}];return state;}});await api.applyGoogleAccount(account('creator'));
+ element('#quickCreate').onclick();element('#newCardTitle').value='New task';
+ element('#simpleForm').onsubmit({preventDefault(){}});
+ const created=writes[0].after.boards[0].cards.find(c=>c.title==='New task');
+ assert.deepEqual(Array.from(created.assignees),['creator']);
+ writes[0].resolve([]);await new Promise(resolve=>setImmediate(resolve));
+});
+
+test('owner edits item text and renames an imported checklist',async()=>{
+ const edit={dataset:{editCheck:'a'}},rename={dataset:{renameChecklist:'0'}};
+ const {api,element,writes}=await setup({checklist:[{id:'a',text:'Original',group:'Imported',done:false}],checklistControls:{'[data-edit-check]':[edit],'[data-rename-checklist]':[rename]}});
+ await api.applyGoogleAccount({...account('owner'),workspaceRole:'owner'});api.openCard('c');
+ edit.onclick();element('#editChecklistText').value='Updated';element('#simpleForm').onsubmit({preventDefault(){}});
+ assert.equal(writes[0].after.boards[0].cards[0].checklist[0].text,'Updated');
+ writes[0].resolve([]);await new Promise(resolve=>setImmediate(resolve));
+ rename.onclick();element('#editChecklistName').value='Renamed';element('#simpleForm').onsubmit({preventDefault(){}});
+ const card=writes[1].after.boards[0].cards[0];
+ assert.deepEqual(Array.from(card.checklistGroups),['Renamed']);assert.equal(card.checklist[0].group,'Renamed');
+ writes[1].resolve([]);await new Promise(resolve=>setImmediate(resolve));
+});
+
+test('owner drags an item to another checklist and saves its rank',async()=>{
+ const handle={dataset:{checkDrag:'a'}},target={dataset:{checkGroup:'1'},classList:{add(){},remove(){}}};
+ const {api,writes}=await setup({checklist:[{id:'a',text:'First',group:'One',done:false},{id:'b',text:'Second',group:'Two',done:false}],checklistControls:{'[data-check-drag]':[handle],'[data-check-group]':[target]}});
+ await api.applyGoogleAccount({...account('owner'),workspaceRole:'owner'});api.openCard('c');
+ handle.ondragstart({stopPropagation(){},dataTransfer:{setData(){}}});
+ target.ondrop({preventDefault(){},stopPropagation(){},target:{closest:()=>null}});
+ const items=writes[0].after.boards[0].cards[0].checklist;
+ assert.deepEqual(Array.from(items,item=>item.id),['b','a']);assert.equal(items[1].group,'Two');assert.ok(items[1].orderKey);
+ writes[0].resolve([]);await new Promise(resolve=>setImmediate(resolve));
 });

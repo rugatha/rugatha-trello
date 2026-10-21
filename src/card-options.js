@@ -1,4 +1,4 @@
-import {assignMovedOrderKey} from './order-key.js';
+import {assignMovedOrderKey,compareOrderKey} from './order-key.js';
 const legacyColors={purple:'#efe7fc',blue:'#e4edff',green:'#e4f3eb',orange:'#fff0dc',pink:'#fce5ef'};
 export function labelColor(value) {return /^#[0-9a-f]{6}$/i.test(value||'')?value.toLowerCase():legacyColors[value]||'#e4edff';}
 export function labelInk(value) {
@@ -18,3 +18,25 @@ export function placeCard(cards, card, columnId, position) {
  card.columnId=columnId;card.orderKey=placement.orderKey;remaining[index]=card;return remaining;
 }
 export {deadlineParts,resolveDeadline,deadlineDisplay,deadlineFields,bindDeadlineFields} from './deadline.js';
+
+// Legacy checklists may have missing or duplicate ranks. Normalize those once,
+// then subsequent moves only change the moved item's rank.
+export function placeChecklist(items, id, group, beforeId=null) {
+ const item=items.find(item=>item.id===id);
+ if(!item)throw Error('找不到待辦事項');
+ const remaining=items.filter(item=>item.id!==id).map(item=>({...item}));
+ const ranked=remaining.every((item,index)=>item.orderKey!=null && (!index||compareOrderKey(remaining[index-1].orderKey,item.orderKey)<0));
+ if(!ranked)remaining.forEach((item,index)=>item.orderKey=`r:${index}/1`);
+ const next={...item,group};
+ const siblings=remaining.filter(item=>String(item.group||'').trim()===group);
+ const before=beforeId? siblings.find(item=>item.id===beforeId):null;
+ const last=siblings.at(-1);
+ const index=before?remaining.indexOf(before):last?remaining.indexOf(last)+1:remaining.length;
+ remaining.splice(index,0,next);
+ // Group IDs are import metadata; use the destination group's ID when present.
+ const groupId=siblings.find(item=>item.groupId)?.groupId || (String(item.group||'').trim()===group?item.groupId:'');
+ if(next.groupId||groupId)next.groupId=groupId||'';
+ const ranks=remaining.map(item=>({...item,columnId:''}));
+ assignMovedOrderKey(ranks,ranks[index]);next.orderKey=ranks[index].orderKey;
+ return remaining;
+}

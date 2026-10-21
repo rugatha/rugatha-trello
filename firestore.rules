@@ -142,7 +142,7 @@ service cloud.firestore {
             && request.resource.data.title.size() > 0
             && request.resource.data.title.size() <= 150
             && request.resource.data.createdBy == memberId(w)
-            && request.resource.data.get('assigneeIds', []) == [] && validChecklistGroups() && validDeadlineParts(request.resource.data);
+            && request.resource.data.get('assigneeIds', []) in [[], [memberId(w)]] && validChecklistGroups() && validDeadlineParts(request.resource.data);
           allow update: if canEdit(w, b) && mutableCard()
             && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['deleting'])
             && request.resource.data.title is string

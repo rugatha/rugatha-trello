@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {boardLabels,labelColor,labelInk,placeCard} from '../src/card-options.js';
+import {boardLabels,labelColor,labelInk,placeCard,placeChecklist} from '../src/card-options.js';
 import {compareOrderKey} from '../src/order-key.js';
 test('board labels generate no default presets, preserve imported IDs and sanitize colors',()=>{
  assert.deepEqual(boardLabels({}),{});
@@ -25,4 +25,18 @@ test('rank conflicts leave the original card stage and rank untouched',()=>{
  const cards=[moving,{id:'a',columnId:'target',orderKey:'same'},{id:'b',columnId:'target',orderKey:'same'}];
  assert.throws(()=>placeCard(cards,moving,'target',2),/排序/);
  assert.equal(moving.columnId,'source');assert.equal(moving.orderKey,'9');
+});
+
+test('checklist moves normalize legacy ranks, survive reload and preserve item data',()=>{
+ const original=[{id:'a',text:'A',group:'One',groupId:'one',done:true,due:'date',assigneeId:'owner'},{id:'b',group:'One'},{id:'c',group:'Two',groupId:'two'}];
+ let items=placeChecklist(original,'a','One','b');
+ items=placeChecklist(items,'a','Two');
+ assert.deepEqual(items.map(item=>item.id),['b','c','a']);
+ assert.deepEqual([...items].sort((a,b)=>compareOrderKey(a.orderKey,b.orderKey)),items);
+ assert.equal(items[2].groupId,'two');assert.equal(items[2].done,true);assert.equal(items[2].due,'date');assert.equal(items[2].assigneeId,'owner');
+ assert.equal(original[0].group,'One');assert.equal(original[0].orderKey,undefined);
+ const prior=items;
+ items=placeChecklist(items,'a','One','b');
+ assert.equal(items.find(item=>item.id==='c').orderKey,prior.find(item=>item.id==='c').orderKey);
+ items=placeChecklist(items,'a','Empty');assert.equal(items.at(-1).groupId,'');
 });

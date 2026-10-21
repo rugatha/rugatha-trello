@@ -1047,3 +1047,8 @@ button.completion-toggle.completed:hover{background:#9acb42}
 .deadline-time select{width:76px!important;flex:0 0 76px;padding:8px 4px;font-size:13px}
 .partial-deadline small{display:block;font-size:11px;color:var(--muted);line-height:1.5}
 .partial-deadline [data-clear-deadline]{font-size:11px;padding:3px 0;color:var(--muted)}
+
+.checklist-drag{cursor:grab;color:var(--muted);font-size:20px;padding:2px 4px;flex-shrink:0}
+.checklist-drag:active{cursor:grabbing}
+.checklist-drop-target{outline:2px dashed var(--primary);outline-offset:4px;border-radius:4px}
+.checklist-group-heading button{margin-left:auto;font-size:12px;flex-shrink:0}
