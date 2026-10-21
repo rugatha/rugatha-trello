@@ -34,30 +34,65 @@ function personalBoards() {
   const positions = new Map((googleAccount?.boardOrder || []).map((id, i) => [id, i]));
   return [...state.boards].sort((a, b) => (positions.get(a.id) ?? Infinity) - (positions.get(b.id) ?? Infinity));
 }
-let boardOrderDraft = [], boardOrderSaving = false;
+let boardOrderDraft = [], boardOrderSaving = false, boardOrderDrag = null;
+function moveBoardOrder(from,to){
+  if(boardOrderSaving||from<0||to<0||to>=boardOrderDraft.length||from===to)return;
+  const [id]=boardOrderDraft.splice(from,1);boardOrderDraft.splice(to,0,id);
+  renderBoardOrder();
+}
 function renderBoardOrder() {
-  $('#boardOrderList').innerHTML = boardOrderDraft.map((id, i) => {
+  const list=$('#boardOrderList');
+  list.innerHTML = boardOrderDraft.map(id => {
     const b = state.boards.find(item => item.id === id);
-    return `<div class="row board-order-row"><span class="grow">${esc(b.name)}${b.archived?'（已封存）':''}</span><button type="button" data-board-up="${i}" aria-label="上移 ${esc(b.name)}" ${i===0||boardOrderSaving?'disabled':''}>↑</button><button type="button" data-board-down="${i}" aria-label="下移 ${esc(b.name)}" ${i===boardOrderDraft.length-1||boardOrderSaving?'disabled':''}>↓</button></div>`;
+    return `<div class="row board-order-row${boardOrderDrag?.id===id?' dragging':''}" data-board-order="${esc(id)}"><button type="button" class="board-order-handle" data-board-drag="${esc(id)}" aria-label="拖曳排序 ${esc(b.name)}" aria-describedby="boardOrderHelp" ${boardOrderSaving?'disabled':''}>⠿</button><span class="grow">${esc(b.name)}${b.archived?'（已封存）':''}</span></div>`;
   }).join('');
-  const move = (from, to) => {
-    if (boardOrderSaving || to < 0 || to >= boardOrderDraft.length) return;
-    const id = boardOrderDraft.splice(from, 1)[0]; boardOrderDraft.splice(to, 0, id);
+  const finish=cancel=>{
+    const drag=boardOrderDrag;if(!drag)return;
+    boardOrderDrag=null;
+    if(cancel)boardOrderDraft=drag.original;
+    if(list.hasPointerCapture?.(drag.pointerId))list.releasePointerCapture(drag.pointerId);
     renderBoardOrder();
-    $(`[data-board-${to===0?'down':'up'}="${to}"]`)?.focus?.();
+    $$('[data-board-drag]').find(el=>el.dataset.boardDrag===drag.id)?.focus?.();
   };
-  $$('[data-board-up]').forEach(el => el.onclick = () => move(Number(el.dataset.boardUp), Number(el.dataset.boardUp)-1));
-  $$('[data-board-down]').forEach(el => el.onclick = () => move(Number(el.dataset.boardDown), Number(el.dataset.boardDown)+1));
+  list.onpointerdown=event=>{
+    const handle=event.target.closest('[data-board-drag]');
+    if(!handle||boardOrderSaving||boardOrderDrag||event.button!==0||event.isPrimary===false)return;
+    boardOrderDrag={id:handle.dataset.boardDrag,pointerId:event.pointerId,startY:event.clientY,original:[...boardOrderDraft]};
+    list.setPointerCapture?.(event.pointerId);
+    handle.closest('[data-board-order]')?.classList.add('dragging');
+  };
+  list.onpointermove=event=>{
+    const drag=boardOrderDrag;
+    if(!drag||drag.pointerId!==event.pointerId||boardOrderSaving)return;
+    if(!drag.started&&Math.abs(event.clientY-drag.startY)<5)return;
+    drag.started=true;
+    event.preventDefault();
+    const rows=$$('[data-board-order]').filter(el=>el.dataset.boardOrder!==drag.id);
+    const to=rows.filter(el=>{const rect=el.getBoundingClientRect();return event.clientY>rect.top+rect.height/2;}).length;
+    moveBoardOrder(boardOrderDraft.indexOf(drag.id),to);
+  };
+  list.onpointerup=event=>{if(boardOrderDrag?.pointerId===event.pointerId)finish(false);};
+  list.onpointercancel=event=>{if(boardOrderDrag?.pointerId===event.pointerId)finish(true);};
+  list.onlostpointercapture=event=>{if(boardOrderDrag?.pointerId===event.pointerId)finish(true);};
+  $$('[data-board-drag]').forEach(el=>el.onkeydown=event=>{
+    if(event.key==='Escape'&&boardOrderDrag){event.preventDefault();finish(true);return;}
+    if(!['ArrowUp','ArrowDown'].includes(event.key)||boardOrderSaving||boardOrderDrag)return;
+    event.preventDefault();
+    const from=boardOrderDraft.indexOf(el.dataset.boardDrag);
+    moveBoardOrder(from,from+(event.key==='ArrowUp'?-1:1));
+    $$('[data-board-drag]').find(node=>node.dataset.boardDrag===el.dataset.boardDrag)?.focus?.();
+  });
 }
 $('#sortBoards').onclick = () => {
   if (!googleAccount?.memberId || loading || saving || boardOrderSaving) return;
-  boardOrderDraft = personalBoards().map(b => b.id);
+  boardOrderDrag=null;boardOrderDraft = personalBoards().map(b => b.id);
   $('#boardOrderStatus').textContent = '';
   renderBoardOrder(); $('#boardOrderDialog').showModal();
 };
 $('#closeBoardOrder').onclick = () => $('#boardOrderDialog').close();
+$('#boardOrderDialog').onclose=()=>{boardOrderDrag=null;};
 $('#saveBoardOrder').onclick = async () => {
-  if (boardOrderSaving || !googleAccount?.memberId) return;
+  if (boardOrderSaving || boardOrderDrag || !googleAccount?.memberId) return;
   const actor = googleAccount, version = generation;
   boardOrderSaving = true; $('#saveBoardOrder').disabled = true; renderBoardOrder();
   $('#boardOrderStatus').textContent = '正在儲存順序…';
@@ -651,7 +686,7 @@ function clearWorkspaceDialogs(){
   managementRequest++;managementLoading=false;
   currentCard=null;dragged=null;
   $('#editor').close();$('#simpleDialog').close();$('#archiveDialog').close();$('#boardOrderDialog').close();$('#labelsDialog').close();
-  boardOrderSaving=false;$('#saveBoardOrder').disabled=false;
+  boardOrderDrag=null;boardOrderSaving=false;$('#saveBoardOrder').disabled=false;
   for(const id of ['editor','simpleDialog','archiveBoardName','archivedCards','archivedAttachments'])$('#'+id).replaceChildren();
 }
 async function refreshWorkspace(boardIds=null,preferredBoard=null){

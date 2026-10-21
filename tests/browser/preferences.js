@@ -11,8 +11,15 @@ document.querySelector('#run').onclick=async()=>{
   check(!$('#sortBoards').disabled,'唯讀會員可排序自己的看板');
   $('#sortBoards').click();
   check($('#boardOrderDialog').open,'排序視窗開啟');
-  $('[data-board-up="1"]').click();
-  check($('#boardOrderList').firstElementChild.textContent.includes('第二個看板'),'上移按鈕調整順序');
+  const handle=$('[data-board-drag="second"]');
+  const first=$('#boardOrderList').firstElementChild.getBoundingClientRect();
+  const start=handle.getBoundingClientRect();
+  const list=$('#boardOrderList'),capture=list.setPointerCapture;list.setPointerCapture=()=>{};
+  handle.dispatchEvent(new (w().PointerEvent)('pointerdown',{bubbles:true,pointerId:1,button:0,isPrimary:true,clientY:start.top+start.height/2}));
+  $('#boardOrderList').dispatchEvent(new (w().PointerEvent)('pointermove',{bubbles:true,pointerId:1,clientY:first.top}));
+  $('#boardOrderList').dispatchEvent(new (w().PointerEvent)('pointerup',{bubbles:true,pointerId:1}));
+  list.setPointerCapture=capture;
+  check($('#boardOrderList').firstElementChild.textContent.includes('第二個看板'),'拖曳把手調整順序');
   $('#saveBoardOrder').click();await tick();
   check($('#boardNav [data-board]').dataset.board==='second','儲存後導覽套用個人順序');
   check(w().phase5Fixture.writes.at(-1).patch.boardOrder.join(',')==='second,b,new,old','只寫入會員的個人順序');

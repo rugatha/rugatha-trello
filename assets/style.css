@@ -1052,3 +1052,8 @@ button.completion-toggle.completed:hover{background:#9acb42}
 .checklist-drag:active{cursor:grabbing}
 .checklist-drop-target{outline:2px dashed var(--primary);outline-offset:4px;border-radius:4px}
 .checklist-group-heading button{margin-left:auto;font-size:12px;flex-shrink:0}
+
+.board-order-handle{touch-action:none;cursor:grab;font-size:24px;color:var(--muted);padding:4px 10px;flex-shrink:0}
+.board-order-handle:active{cursor:grabbing}
+.board-order-row.dragging{background:var(--surface);outline:2px solid var(--primary);outline-offset:-2px;border-radius:6px}
+.board-order-row.dragging .board-order-handle{cursor:grabbing}

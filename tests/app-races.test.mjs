@@ -597,3 +597,38 @@ test('owner drags an item to another checklist and saves its rank',async()=>{
  assert.deepEqual(Array.from(items,item=>item.id),['b','a']);assert.equal(items[1].group,'Two');assert.ok(items[1].orderKey);
  writes[0].resolve([]);await new Promise(resolve=>setImmediate(resolve));
 });
+
+async function boardOrderSetup(){
+ const rows=['b','second','last'].map((id,index)=>({dataset:{boardOrder:id},classList:{add(){}},getBoundingClientRect:()=>({top:index*50,height:50})}));
+ const handles=rows.map(row=>({dataset:{boardDrag:row.dataset.boardOrder},closest:selector=>selector==='[data-board-order]'?row:null}));
+ const instance=await setup({workspaceLoad:async(_,__,data)=>{const state=data();state.boards.push({...structuredClone(state.boards[0]),id:'second',name:'Second'},{...structuredClone(state.boards[0]),id:'last',name:'Last',archived:true});return state;},checklistControls:{'[data-board-order]':rows,'[data-board-drag]':handles}});
+ const saved=[];instance.window.boardlyGoogleAuth={saveBoardOrder:async order=>{saved.push(Array.from(order));return true;}};
+ await instance.api.applyGoogleAccount({...account('viewer'),workspaceRole:'viewer',accessboard:['b','second','last']});
+ instance.element('#sortBoards').onclick();
+ const list=instance.element('#boardOrderList');
+ const start=index=>list.onpointerdown({target:{closest:()=>handles[index]},pointerId:1,button:0,clientY:index*50+25});
+ const drag=y=>list.onpointermove({pointerId:1,clientY:y,preventDefault(){}});
+ return {...instance,list,start,drag,saved,handles};
+}
+
+test('personal board order supports dragging with mouse or touch and saves only the personal preference',async()=>{
+ const s=await boardOrderSetup();s.start(1);s.drag(0);s.list.onpointerup({pointerId:1});
+ await s.element('#saveBoardOrder').onclick();
+ assert.deepEqual(s.saved,[['second','b','last']]);assert.equal(s.writes.length,0);
+ assert.doesNotMatch(s.list.innerHTML,/data-board-up|data-board-down/);
+});
+
+test('canceling a board drag restores the draft, while other pointers cannot move it',async()=>{
+ const s=await boardOrderSetup();s.start(1);
+ s.list.onpointermove({pointerId:2,clientY:0,preventDefault(){throw Error('Wrong pointer');}});
+ s.drag(0);s.list.onpointercancel({pointerId:1});
+ await s.element('#saveBoardOrder').onclick();assert.deepEqual(s.saved,[['b','second','last']]);
+});
+
+test('board drag handles retain keyboard sorting and block saving during an active drag',async()=>{
+ const s=await boardOrderSetup();s.start(1);s.drag(0);
+ await s.element('#saveBoardOrder').onclick();assert.equal(s.saved.length,0);
+ s.list.onpointercancel({pointerId:1});
+ s.handles[1].onkeydown({key:'ArrowUp',preventDefault(){}});
+ await s.element('#saveBoardOrder').onclick();assert.deepEqual(s.saved,[['second','b','last']]);
+});
