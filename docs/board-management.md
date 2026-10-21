@@ -1,6 +1,8 @@
 # 看板建立與負責人管理
 
-2026-10-10 Cloud Functions 與新版前端已部署，Chrome Admin／Firefox Owner 建立、授權範圍、指派／取消及雙帳號衝突通過；詳細結果見 [階段六驗證](phase6-live-verification.md)。權限依使用者決定：只有有效的 Admin／Owner 能建立看板或修改負責人，Editor 保持既有牌卡編輯能力，Viewer／一般會員唯讀。
+2026-10-10 Cloud Functions 與新版前端已部署，Chrome Admin／Firefox Owner 建立、授權範圍、指派／取消及雙帳號衝突通過；詳細結果見 [階段六驗證](phase6-live-verification.md)。目前權限：有效的 Admin／Owner 可建立看板；Admin／Owner／Editor 可在有存取權限的看板指派與移除牌卡負責人，Viewer／一般會員唯讀。
+
+2026-10-21 已在程式開放 Editor 負責人管理，需同步部署前端與 `listManagementMembers`、`setManagedAssignees` 才會在正式站生效；不需修改會員角色或 Firestore 規則。Editor 僅可讀取指定看板與牌卡的指派選單，不能讀取新增看板用的全站管理名單。下列舊版驗證紀錄保留當時結果。
 
 ## 操作方式
 
@@ -12,7 +14,7 @@ Admin／Owner 點側欄「新增看板」，填寫名稱、說明與配色，選
 
 ## 可信任寫入邊界
 
-前端 `management.js` 使用 Firebase Callable SDK；管理程式位於 `functions/`，部署區域 `asia-east1`，執行環境 Node.js 22。Callable 自動驗證並附帶 Firebase 身分，服務再於 transaction 內重新讀取 `memberLookup` 與會員資料，要求已驗證信箱、active 狀態與 Admin／Owner 角色，不相信前端傳入的角色或會員 ID。機制依據 [Callable 官方文件](https://firebase.google.com/docs/functions/callable)。
+前端 `management.js` 使用 Firebase Callable SDK；管理程式位於 `functions/`，部署區域 `asia-east1`，執行環境 Node.js 22。Callable 自動驗證並附帶 Firebase 身分，服務再於 transaction 內重新讀取 `memberLookup` 與會員資料，要求已驗證信箱、active 狀態與符合端點的角色（建立看板限 Admin／Owner；牌卡指派允許 Admin／Owner／Editor），不相信前端傳入的角色或會員 ID。機制依據 [Callable 官方文件](https://firebase.google.com/docs/functions/callable)。
 
 | 端點 | 用途 | 伺服器檢查 |
 | --- | --- | --- |

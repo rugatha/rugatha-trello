@@ -32,11 +32,23 @@ before(async()=>{
  await db.doc(`${root}/boards/allowed/cards/card`).set({title:'Card',archived:false,assigneeIds:[],description:'Keep me',updatedBy:'admin'});
 });
 after(async()=>{await db?.terminate();if(app)await deleteApp(app);});
-for(const who of ['anonymous','unverified','unapproved','disabled','editor','viewer','member'])test(`${who} cannot use management endpoints`,async()=>{
+for(const who of ['anonymous','unverified','unapproved','disabled','viewer','member'])test(`${who} cannot use management endpoints`,async()=>{
  for(const [name,data] of [['listManagementMembers',{}],['createManagedBoard',newBoard()],['setManagedAssignees',assignment()]]){
   const result=await call(name,data,who);
   assert.ok(['UNAUTHENTICATED','PERMISSION_DENIED'].includes(result.error),JSON.stringify(result));
  }
+});
+test('editor assigns and removes assignees on accessible cards without broader management access',async()=>{
+ for(const [name,data] of [['listManagementMembers',{}],['createManagedBoard',newBoard()]])assert.equal((await call(name,data,'editor')).error,'PERMISSION_DENIED');
+ const picker=await call('listManagementMembers',{boardId:'allowed',cardId:'card'},'editor');
+ assert.ok(picker.members.some(m=>m.id==='viewer'&&m.eligible));
+ const payload=assignment();
+ assert.deepEqual((await call('setManagedAssignees',payload,'editor')).assigneeIds,['viewer']);
+ assert.deepEqual((await call('setManagedAssignees',{...assignment(),assigneeIds:[],expectedAssigneeIds:['viewer']},'editor')).assigneeIds,[]);
+ const member=db.doc(`${root}/members/editor`);
+ await member.update({accessboard:[]});
+ for(const [name,data] of [['listManagementMembers',{boardId:'allowed',cardId:'card'}],['setManagedAssignees',assignment()]])assert.equal((await call(name,data,'editor')).error,'PERMISSION_DENIED');
+ await member.update({accessboard:['allowed']});
 });
 for(const who of ['admin','owner'])test(`${who} creates board, columns and grants atomically; retries do not duplicate`,async()=>{
  const payload=newBoard(),result=await call('createManagedBoard',payload,who);assert.ok(result.boardId,JSON.stringify(result));

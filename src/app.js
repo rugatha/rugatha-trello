@@ -134,7 +134,7 @@ function openUsers(){
   }
   $('#editGoogleName').disabled=!googleAccount?.memberId;
   $('#displayMembers').hidden=!googleAccount?.memberId;
-  $('#displayMembers').innerHTML=googleAccount?.memberId ? '<h3>工作空間成員</h3><p class="help-note">此名冊僅供查閱；負責人請在牌卡內由 Admin／Owner 管理。</p>'+(googleAccount.roster||state.users).map(u=>`<div class="member-display">${avatar(u)}<span>${esc(u.name)}</span></div>`).join('') : '';
+  $('#displayMembers').innerHTML=googleAccount?.memberId ? '<h3>工作空間成員</h3><p class="help-note">此名冊僅供查閱；負責人請在牌卡內由 Admin／Owner／Editor 管理。</p>'+(googleAccount.roster||state.users).map(u=>`<div class="member-display">${avatar(u)}<span>${esc(u.name)}</span></div>`).join('') : '';
   if(!$('#userDialog').open)$('#userDialog').showModal();
 }
 async function applyGoogleAccount(account){
@@ -173,7 +173,7 @@ async function openNotification(item){
     comment.classList.add('comment-target');comment.scrollIntoView({block:'center',behavior:'smooth'});comment.focus({preventScroll:true});
   }
 }
-function simple(title,body,onSubmit){lifecycleDialog=false;managementRequest++;managementLoading=false;const d=$('#simpleDialog');d.innerHTML=`<form id="simpleForm"><div class="modal-head"><h2 id="simpleTitle">${esc(title)}</h2><button type="button" data-close-simple aria-label="關閉">✕</button></div><div class="modal-body">${body}<div class="row" style="justify-content:flex-end;margin-top:22px"><button type="button" data-close-simple>取消</button><button class="primary" type="submit">儲存</button></div></div></form>`;$$('[data-close-simple]').forEach(el=>el.onclick=()=>d.close());$('#simpleForm').onsubmit=e=>{e.preventDefault();if(onSubmit()!==false)d.close()};d.showModal();applyPermissions()}
+function simple(title,body,onSubmit){lifecycleDialog=false;assigneeDialog=false;managementRequest++;managementLoading=false;const d=$('#simpleDialog');d.innerHTML=`<form id="simpleForm"><div class="modal-head"><h2 id="simpleTitle">${esc(title)}</h2><button type="button" data-close-simple aria-label="關閉">✕</button></div><div class="modal-body">${body}<div class="row" style="justify-content:flex-end;margin-top:22px"><button type="button" data-close-simple>取消</button><button class="primary" type="submit">儲存</button></div></div></form>`;$$('[data-close-simple]').forEach(el=>el.onclick=()=>d.close());$('#simpleForm').onsubmit=e=>{e.preventDefault();if(onSubmit()!==false)d.close()};d.showModal();applyPermissions()}
 function editBoard(isNew=false){
   if(isNew){openManagedBoard();return;}
   if(!canEdit())return;
@@ -356,7 +356,7 @@ async function restoreArchived(type,id,cardId){
   }
 }
 $('#editor').onclose=()=>{const id=currentCard;currentCard=null;const source=$$('[data-card]').find(el=>el.dataset.card===id);if(source)source.focus?.();else $('#quickCreate').focus?.();flushLiveSync()};$('#currentUser').onclick=openUsers;$('#membersBtn').onclick=openUsers;$('#inviteBtn').onclick=openUsers;$('#closeUser').onclick=()=>$('#userDialog').close();$('#addBoard').onclick=()=>editBoard(true);$('#editBoard').onclick=()=>editBoard();$('#starBoard').onclick=()=>{board().starred=!board().starred;save();render()};$('#quickCreate').onclick=()=>createCard();$('#workspaceNav').onclick=()=>{state.activeBoard=null;if(baseline)baseline.activeBoard=null;mine=false;$('#search').value='';$('#dueFilter').value='all';render()};$('#search').oninput=render;$('#mineFilter').onclick=()=>requireUser(()=>{mine=!mine;render()});$('#dueFilter').onchange=render;$('#clearFilters').onclick=()=>{mine=false;$('#search').value='';$('#dueFilter').value='all';render()};
-let baseline=null, loading=false, saving=false, generation=0, saveFailure='', lifecycleDialog=false;
+let baseline=null, loading=false, saving=false, generation=0, saveFailure='', lifecycleDialog=false, assigneeDialog=false;
 let stopSubscription=null, livePending=false, liveTimer=null, liveBoards=new Set();
 function stopLiveSync(){
   stopSubscription?.();stopSubscription=null;
@@ -447,17 +447,17 @@ async function openManagedBoard(){
   }
 }
 async function openManagedAssignees(cardId){
-  if(!canManage()||board()?.archived)return;
+  if(!canEdit()||!board()||board().archived||board().deleting)return;
   const boardId=board().id,version=generation;
   const request=managementForm('管理負責人','<p class="help-note">只能指派目前可存取此看板的有效會員。最多 40 位。</p><div id="managedMembers">正在讀取目前指派…</div>');
-  $('#editor').close();managementLoading=true;applyPermissions();
+  assigneeDialog=true;$('#editor').close();managementLoading=true;applyPermissions();
   try{
     const {members,assigneeIds}=await listManagementMembers({boardId,cardId});
     if(request!==managementRequest||version!==generation||!$('#simpleDialog').open)return;
     $('#managedMembers').innerHTML=managedSelection(members,assigneeIds);
     let lastPayload='',operationId;
     $('#simpleForm').onsubmit=event=>{
-      event.preventDefault();if(managementLoading||!canManage())return;
+      event.preventDefault();if(managementLoading||!canEdit())return;
       const selected=$$('[data-managed-member]').filter(el=>el.checked).map(el=>el.dataset.managedMember).sort();
       const signature=JSON.stringify(selected);if(signature!==lastPayload){lastPayload=signature;operationId=uid();}
       runManagedWrite(()=>setManagedAssignees({requestId:operationId,boardId,cardId,assigneeIds:selected,expectedAssigneeIds:assigneeIds}),()=>refreshWorkspace([boardId]));
@@ -468,7 +468,7 @@ async function openManagedAssignees(cardId){
   }
 }
 async function runManagedWrite(write,reload,allowMembershipRefresh=false){
-  if(!canManage())return;
+  if(assigneeDialog?(!canEdit()||!board()||board().archived||board().deleting):!canManage())return;
   const version=generation,request=managementRequest,actor=googleAccount;
   saving=true;saveFailure='';applyPermissions();$('#managementError').textContent='';syncStatus('正在儲存管理設定…');
   try{
@@ -520,8 +520,8 @@ function applyPermissions(){
   $$('#labelsDialog input, #labelsDialog select, #saveLabel').forEach(el=>el.disabled=!canManageLabels());
   $('#closeLabels').disabled=saving;
   if($('#attachmentInput'))$('#attachmentInput').disabled=!edit;
-  if($('#manageAssignees'))$('#manageAssignees').disabled=!canManage() || Boolean(board()?.archived);
-  if($('#managementSubmit'))$('#managementSubmit').disabled=managementLoading||(lifecycleDialog?!canAdmin():!canManage());
+  if($('#manageAssignees'))$('#manageAssignees').disabled=!edit;
+  if($('#managementSubmit'))$('#managementSubmit').disabled=managementLoading||(lifecycleDialog?!canAdmin():assigneeDialog?!edit:!canManage());
   if($('#deleteColumn'))$('#deleteColumn').disabled=!['admin','owner'].includes(googleAccount?.workspaceRole);
   $('#refreshWorkspace').disabled=loading||saving;
   $('#archiveBtn').disabled=loading||saving||!board();

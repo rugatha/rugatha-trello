@@ -417,3 +417,28 @@ test('strict Viewer cannot manage labels or change card content',async()=>{
  await api.save();
  assert.equal(writes.length,0);assert.equal(labelWrites.length,0);
 });
+
+test('editor can open and submit assignee removal without board management access',async()=>{
+ const requests=[];
+ const {api,element,writes}=await setup({managementLoad:async()=>({members:[{id:'viewer',name:'Viewer',eligible:true}],assigneeIds:['viewer']}),managedAssign:async data=>{requests.push(data);return {};}});
+ await api.applyGoogleAccount(account('editor'));api.openCard('c');
+ assert.equal(element('#manageAssignees').disabled,false);
+ assert.equal(api.canManage(),false);
+ await api.openManagedAssignees('c');
+ assert.equal(element('#simpleDialog').open,true);
+ assert.equal(element('#managementSubmit').disabled,false);
+ element('#simpleForm').onsubmit({preventDefault(){}});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(requests.length,1);
+ assert.deepEqual(Array.from(requests[0].assigneeIds),[]);
+ assert.deepEqual(Array.from(requests[0].expectedAssigneeIds),['viewer']);
+ assert.equal(writes.length,0);
+});
+for(const role of ['viewer','member'])test(`${role} cannot open assignee management`,async()=>{
+ let loads=0;
+ const {api,element}=await setup({managementLoad:async()=>{loads++;return {members:[],assigneeIds:[]};}});
+ await api.applyGoogleAccount({...account(role),workspaceRole:role});api.openCard('c');
+ assert.equal(element('#manageAssignees').disabled,true);
+ await api.openManagedAssignees('c');
+ assert.equal(loads,0);assert.notEqual(element('#simpleDialog').open,true);
+});

@@ -35,7 +35,7 @@ document.querySelector('#permissions').onclick=()=>run('會員與權限',async()
  for(const role of ['admin','owner','editor','viewer','member']){
   await login(role);const edit=['admin','owner','editor'].includes(role),manage=['admin','owner'].includes(role);
   check($('#quickCreate').disabled===!edit&&$('.card').draggable===edit,role+' 編輯與拖曳限制一致');check($('#addBoard').disabled===!manage,role+' 建立看板限制');
-  $('.card').click();check($('#manageAssignees').disabled===!manage,role+' 負責人管理限制');check([...d().querySelectorAll('[data-assignee]')].every(el=>el.disabled),'指派勾選僅供閱讀');await close();
+  $('.card').click();check($('#manageAssignees').disabled===!edit,role+' 負責人管理限制');check([...d().querySelectorAll('[data-assignee]')].every(el=>el.disabled),'指派勾選僅供閱讀');await close();
   if(!edit)check($('#permissionNotice').textContent.includes('唯讀'),role+' 明確顯示唯讀提示');
  }
  $('#membersBtn').click();check($('#displayMembers').textContent.includes('唯讀會員')&&!$('#displayMembers').querySelector('input,button'),'會員名冊不提供身分切換');await close();

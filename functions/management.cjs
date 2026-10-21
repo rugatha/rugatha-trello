@@ -39,14 +39,14 @@ function commentMentions(data) {
   return mentions;
 }
 function createManagement(db) {
-  async function actor(tx, auth, management = true) {
+  async function actor(tx, auth, roles = ['admin','owner']) {
     const email=auth?.token?.email;
     if (!auth?.uid || auth.token.email_verified!==true || typeof email!=='string' || !email.includes('@') || email.includes('/')) fail('unauthenticated','請使用已驗證的 Google 帳號登入');
     const lookup=await tx.get(db.doc(`${ROOT}/memberLookup/${email.toLowerCase()}`));
     if (!lookup.exists) fail('permission-denied','尚未取得工作空間權限');
     const memberRef=db.doc(`${ROOT}/members/${id(lookup.data().memberId)}`);
     const member=await tx.get(memberRef), data=member.data();
-    if (!member.exists || data.status!=='active' || (management && !['admin','owner'].includes(data.role)) || !Array.isArray(data.accessboard)) fail('permission-denied','此操作僅限有效的 Admin／Owner');
+    if (!member.exists || data.status!=='active' || (roles && !roles.includes(data.role)) || !Array.isArray(data.accessboard)) fail('permission-denied','此帳號目前沒有此操作的權限');
     return {...data,id:member.id,ref:memberRef};
   }
   async function cardContext(tx, member, boardId, cardId) {
@@ -226,7 +226,7 @@ function createManagement(db) {
       const forCard=data.boardId!==undefined || data.cardId!==undefined;
       if (forCard) {id(data.boardId);id(data.cardId);}
       return db.runTransaction(async tx=>{
-        const member=await actor(tx,auth);
+        const member=await actor(tx,auth,forCard?['admin','owner','editor']:undefined);
         const card=forCard?await cardContext(tx,member,data.boardId,data.cardId):null;
         const snapshot=await tx.get(db.collection(`${ROOT}/members`));
         const assigned=card?.data.assigneeIds || [];
@@ -275,11 +275,11 @@ function createManagement(db) {
       const assigneeIds=ids(data.assigneeIds),expectedAssigneeIds=ids(data.expectedAssigneeIds);
       const payload={boardId,cardId,assigneeIds,expectedAssigneeIds};
       return db.runTransaction(async tx=>{
-        const member=await actor(tx,auth);
+        const member=await actor(tx,auth,['admin','owner','editor']);
         const card=await cardContext(tx,member,boardId,cardId);
         const op=operation(auth,operationId,'setAssignees',payload),previous=await tx.get(op.ref),result=replay(previous,op.fingerprint);
         if(result)return result;
-        if(!equalIds(card.data.assigneeIds||[],expectedAssigneeIds))fail('aborted','其他管理員已修改負責人，請重新開啟指派視窗');
+        if(!equalIds(card.data.assigneeIds||[],expectedAssigneeIds))fail('aborted','其他成員已修改負責人，請重新開啟指派視窗');
         const targets=await Promise.all(assigneeIds.map(m=>tx.get(db.doc(`${ROOT}/members/${m}`))));
         if(targets.some(s=>!s.exists || s.data().status!=='active' || s.data().assignable===false || !Array.isArray(s.data().accessboard) || !s.data().accessboard.includes(boardId))) fail('failed-precondition','負責人必須是允許指派且仍可存取此看板的有效會員；請取消無效的歷史指派');
         const now=new Date().toISOString(),updated={boardId,cardId,assigneeIds};

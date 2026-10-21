@@ -4,10 +4,10 @@ import {createRequire} from 'node:module';
 import {randomUUID} from 'node:crypto';
 const {createManagement}=createRequire(import.meta.url)('../functions/management.cjs');
 const root='workspaces/main';
-function setup(assigned=[]) {
+function setup(assigned=[],role='admin',accessboard=['b'],status='active') {
  const data=new Map([
   [root+'/memberLookup/owner@example.com',{memberId:'admin'}],
-  [root+'/members/admin',{name:'Rugatha',role:'admin',status:'active',assignable:false,accessboard:['b']}],
+  [root+'/members/admin',{name:'Rugatha',role,status,assignable:false,accessboard}],
   [root+'/members/worker',{name:'Worker',role:'viewer',status:'active',accessboard:['b']}],
   [root+'/boards/b',{name:'Board'}],
   [root+'/boards/b/cards/c',{title:'Card',assigneeIds:assigned}],
@@ -34,4 +34,21 @@ test('nonassignable admin retains management access but cannot be assigned throu
  assert.equal(writes.length,0);
  await service.setAssignees(auth,{requestId:randomUUID(),boardId:'b',cardId:'c',assigneeIds:['worker'],expectedAssigneeIds:[]});
  assert.deepEqual(writes[0].data.assigneeIds,['worker']);
+});
+
+test('editor can list card candidates, assign and remove while general management stays restricted',async()=>{
+ const {service,writes}=setup([],'editor');
+ assert.deepEqual((await service.listMembers(auth,{boardId:'b',cardId:'c'})).members.map(m=>m.id),['worker']);
+ await service.setAssignees(auth,{requestId:randomUUID(),boardId:'b',cardId:'c',assigneeIds:['worker'],expectedAssigneeIds:[]});
+ assert.deepEqual(writes[0].data.assigneeIds,['worker']);
+ const removal=setup(['worker'],'editor');
+ await removal.service.setAssignees(auth,{requestId:randomUUID(),boardId:'b',cardId:'c',assigneeIds:[],expectedAssigneeIds:['worker']});
+ assert.deepEqual(removal.writes[0].data.assigneeIds,[]);
+ await assert.rejects(service.listMembers(auth,{}),e=>e.code==='permission-denied');
+});
+for(const [role,accessboard,status] of [['viewer',['b'],'active'],['member',['b'],'active'],['editor',[],'active'],['editor',['b'],'disabled']])test(`assignment rejects ${role} with ${status} status and boards ${accessboard}`,async()=>{
+ const {service,writes}=setup([],role,accessboard,status);
+ await assert.rejects(service.listMembers(auth,{boardId:'b',cardId:'c'}),e=>e.code==='permission-denied');
+ await assert.rejects(service.setAssignees(auth,{requestId:randomUUID(),boardId:'b',cardId:'c',assigneeIds:['worker'],expectedAssigneeIds:[]}),e=>e.code==='permission-denied');
+ assert.equal(writes.length,0);
 });
