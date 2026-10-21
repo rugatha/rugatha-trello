@@ -148,7 +148,7 @@ export async function persistWorkspace(before, after, memberId) {
 
 // Only the deadline and write metadata change; unrelated concurrent card edits are preserved.
 export async function updateCardDeadline(account, boardId, cardId, due, expectedDue) {
-  if (!account?.memberId || !account.workspaceRole || !account.accessboard?.includes(boardId)) throw Error('尚未取得牌卡存取權限');
+  if (account?.readOnly || !account?.memberId || !account.workspaceRole || !account.accessboard?.includes(boardId)) throw Error('尚未取得牌卡存取權限');
   if (typeof due !== 'string' || due && (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00\+08:00$/.test(due) || !Number.isFinite(Date.parse(due)))) throw Error('截止日期格式無效');
   const boardRef = doc(firestore, `${root}/${boardId}`), cardRef = doc(firestore, `${root}/${boardId}/cards/${cardId}`);
   return runTransaction(firestore, async transaction => {
@@ -164,7 +164,7 @@ export async function updateCardDeadline(account, boardId, cardId, due, expected
 }
 
 export async function saveBoardLabel(account, boardId, labelId, definition, expected) {
-  if(!account?.memberId||!account.workspaceRole||!account.accessboard?.includes(boardId))throw Error('尚未取得看板權限');
+  if(account?.readOnly||!account?.memberId||!account.workspaceRole||!account.accessboard?.includes(boardId))throw Error('尚未取得看板權限');
   if(!/^[A-Za-z0-9_-]{1,128}$/.test(labelId)||typeof definition?.name!=='string'||!definition.name.trim()||definition.name.length>40||!/^#[0-9a-f]{6}$/i.test(definition.color))throw Error('標籤格式無效');
   const ref=doc(firestore,`${root}/${boardId}`);
   return runTransaction(firestore,async transaction=>{

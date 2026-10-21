@@ -1,6 +1,6 @@
 import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-functions.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
-import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
+import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signInWithEmailAndPassword, signOut } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
 import { getFirestore, doc, getDocFromServer, onSnapshot, updateDoc } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 
 const firebaseConfig = {
@@ -19,6 +19,41 @@ const nameForm = document.querySelector('#googleNameForm');
 const nameInput = document.querySelector('#googleDisplayName');
 const nameError = document.querySelector('#googleNameError');
 const loginButton = document.querySelector('#googleSignIn');
+const viewerButton = document.querySelector('#viewerSignIn');
+const viewerDialog = document.querySelector('#viewerDialog');
+const viewerPassword = document.querySelector('#viewerPassword');
+const viewerError = document.querySelector('#viewerError');
+const openViewer = () => {
+  document.querySelector('#userDialog').close();
+  viewerPassword.value = '';
+  viewerError.textContent = '';
+  viewerDialog.showModal();
+};
+viewerButton?.addEventListener('click', openViewer);
+document.querySelector('#dialogViewerSignIn')?.addEventListener('click', openViewer);
+document.querySelector('#closeViewer')?.addEventListener('click', () => viewerDialog.close());
+viewerDialog?.addEventListener('close', () => { viewerPassword.value = ''; });
+document.querySelector('#viewerForm')?.addEventListener('submit', async event => {
+  event.preventDefault();
+  const submit = document.querySelector('#submitViewer');
+  if (submit.disabled) return;
+  const password = viewerPassword.value;
+  if (!password) return;
+  submit.disabled = true;
+  viewerError.textContent = '';
+  try {
+    await signInWithEmailAndPassword(auth, 'viewer@rugatha-trello.invalid', password);
+    viewerDialog.close();
+  } catch (error) {
+    viewerError.textContent = error.code === 'auth/too-many-requests'
+      ? '嘗試次數過多，請稍後重試。'
+      : error.code === 'auth/network-request-failed'
+        ? '網路連線失敗，請重試。' : '密碼錯誤或 Viewer 帳號尚未啟用。';
+  } finally {
+    viewerPassword.value = '';
+    submit.disabled = false;
+  }
+});
 let currentUser = null;
 let currentMember = null;
 let membershipVersion = 0;
@@ -139,6 +174,7 @@ function publish(user, member = null) {
     displayName: member?.name || user.displayName || '',
     memberId: member?.status === 'active' ? member.id : null,
     workspaceRole: member?.status === 'active' ? member.role : null,
+    readOnly: member?.readOnly === true,
     accessboard: member?.accessboard || [],
     boardOrder: member?.boardOrder || [],
     avatar: member?.avatar || '',
@@ -227,6 +263,7 @@ onAuthStateChanged(auth, async user => {
   if (nameDialog.open) nameDialog.close();
   publish(null);
   loginButton.hidden = Boolean(user);
+  if (viewerButton) viewerButton.hidden = Boolean(user);
   if (!user) {
     if (nameDialog.open) nameDialog.close();
     publish(null);

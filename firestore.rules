@@ -79,7 +79,7 @@ service cloud.firestore {
           let changed = after.diff(before).affectedKeys();
           let key = request.resource.data.labelEditId;
           let label = after[key];
-          return boardAccess(w, b) && !resource.data.get('archived', false) && !resource.data.get('deleting', false)
+          return boardAccess(w, b) && !member(w).get('readOnly', false) && !resource.data.get('archived', false) && !resource.data.get('deleting', false)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['labelDefinitions','labelEditId'])
             && after is map && after.size() <= 200 && changed.size() == 1 && changed.hasOnly([key])
             && key is string && key.matches('[A-Za-z0-9_-]{1,128}') && label is map
@@ -109,7 +109,7 @@ service cloud.firestore {
               && !getAfter(/databases/$(database)/documents/workspaces/$(w)/boards/$(b)/cards/$(cardId)).data.get('deleting', false);
           }
           function assignedDeadlineEdit() {
-            return boardAccess(w, b)
+            return boardAccess(w, b) && !member(w).get('readOnly', false)
               && memberId(w) in resource.data.get('assigneeIds', [])
               && !resource.data.get('archived', false) && !resource.data.get('deleting', false)
               && !get(/databases/$(database)/documents/workspaces/$(w)/boards/$(b)).data.get('archived', false)

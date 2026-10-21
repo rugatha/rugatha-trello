@@ -290,3 +290,14 @@ test('header eligibility matches assignment access and hides boards outside call
  assert.deepEqual(result.members.filter(m=>m.boardIds.includes('allowed')).map(m=>m.id).sort(),
    picker.members.filter(m=>m.eligible).map(m=>m.id).sort());
 });
+
+test('new boards automatically grant active all-board Viewers without making them assignable',async()=>{
+  await db.doc(`${root}/members/shared-viewer`).set({name:'Viewer',role:'viewer',status:'active',accessboard:[],readOnly:true,allBoards:true,assignable:false});
+  await db.doc(`${root}/members/disabled-viewer`).set({name:'Disabled',role:'viewer',status:'disabled',accessboard:[],allBoards:true});
+  const result=await call('createManagedBoard',{...newBoard(),memberIds:[]});
+  assert.ok(result.boardId,JSON.stringify(result));
+  const viewer=(await db.doc(`${root}/members/shared-viewer`).get()).data();
+  assert.ok(viewer.accessboard.includes(result.boardId));
+  assert.equal(viewer.role,'viewer');assert.equal(viewer.readOnly,true);assert.equal(viewer.assignable,false);
+  assert.deepEqual((await db.doc(`${root}/members/disabled-viewer`).get()).data().accessboard,[]);
+});

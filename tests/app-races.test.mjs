@@ -405,3 +405,15 @@ test('copy placement honors a selected target stage and first position',async()=
  assert.deepEqual(Array.from(target,c=>c.id),['copy-id','existing']);assert.deepEqual(Array.from(target[0].assignees),[]);
  writes[0].resolve([]);await new Promise(resolve=>setImmediate(resolve));
 });
+
+test('strict Viewer cannot manage labels or change card content',async()=>{
+ const {api,element,writes,labelWrites}=await setup();
+ await api.applyGoogleAccount({...account('reader'),workspaceRole:'viewer',readOnly:true});api.openCard('c');
+ assert.equal(element('#manageLabels').disabled,true);
+ assert.equal(api.canEdit(),false);
+ element('#manageLabels').onclick();
+ assert.ok(!element('#labelsDialog').open);
+ element('#cardCompletion').onclick();
+ await api.save();
+ assert.equal(writes.length,0);assert.equal(labelWrites.length,0);
+});

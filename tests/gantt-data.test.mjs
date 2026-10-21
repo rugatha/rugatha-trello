@@ -73,6 +73,7 @@ test('deadline edit requires assignment or admin role and board access',async()=
  const {canSetDeadline,deadlineInput}=await import('../src/gantt-data.js');
  const board={id:'b'},card={assignees:['m']},account={memberId:'m',workspaceRole:'viewer',accessboard:['b']};
  assert.equal(canSetDeadline(account,board,card),true);
+ assert.equal(canSetDeadline({...account,readOnly:true},board,card),false);
  assert.equal(canSetDeadline({...account,memberId:'other'},board,card),false);
  assert.equal(canSetDeadline({...account,accessboard:[]},board,card),false);
  assert.equal(canSetDeadline(account,{...board,archived:true},card),false);

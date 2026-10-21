@@ -341,3 +341,17 @@ test('label editing is blocked after board archival or deletion starts',async()=
   finally{await env.withSecurityRulesDisabled(async context=>updateDoc(doc(context.firestore(),board),{archived:false,deleting:false}));}
  }
 });
+
+test('strict Viewer can read all granted boards but cannot edit labels or assigned deadlines',async()=>{
+  await env.withSecurityRulesDisabled(async c=>{
+    await setDoc(doc(c.firestore(),root+'/memberLookup/strict-viewer@example.com'),{memberId:'strict-viewer'});
+    await setDoc(doc(c.firestore(),root+'/members/strict-viewer'),{name:'Viewer',status:'active',role:'viewer',readOnly:true,accessboard:['allowed','forbidden']});
+    await setDoc(doc(c.firestore(),board+'/cards/strict-card'),{title:'Read only',assigneeIds:['strict-viewer'],due:''});
+  });
+  const db=dbFor('strict-viewer');
+  for(const id of ['allowed','forbidden'])await assertSucceeds(getDoc(doc(db,root+'/boards/'+id)));
+  await assertFails(updateDoc(doc(db,board),{labelDefinitions:{test:{name:'No',color:'#123456'}},labelEditId:'test'}));
+  await assertFails(updateDoc(doc(db,board+'/cards/strict-card'),{due:'2026-10-21T12:00:00+08:00',updatedAt:new Date().toISOString(),updatedBy:'strict-viewer'}));
+  await assertFails(updateDoc(doc(db,root+'/members/strict-viewer'),{readOnly:false}));
+  await assertFails(updateDoc(doc(db,board+'/cards/strict-card'),{title:'No',updatedBy:'strict-viewer'}));
+});

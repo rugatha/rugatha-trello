@@ -124,7 +124,7 @@ function requireUser(action){if(me())action();else openUsers()}
 function openUsers(){
   $('#googleAccountPanel').hidden=!googleAccount;
   $('#localUserPanel').hidden=Boolean(googleAccount);
-  $('#userDialogTitle').textContent=googleAccount?'Google 帳號':'Google 登入';
+  $('#userDialogTitle').textContent=googleAccount?'帳號設定':'登入';
   if(googleAccount){
     $('#googleAccountSummary').textContent=`${googleAccount.displayName} · ${googleAccount.email}`;
     const roleNames={admin:'Admin（全站管理員）',owner:'Owner（看板管理者）',editor:'Editor',viewer:'Viewer'};
@@ -225,7 +225,7 @@ function renderLabelControls(card) {
   $$('[data-label]').forEach(el=>el.onchange=()=>{if(!canEdit())return;card.labels=el.checked?[...new Set([...card.labels,el.dataset.label])]:card.labels.filter(id=>id!==el.dataset.label);$('#selectedLabels').innerHTML=card.labels.map(labelHTML).join('')||'<span class="help-note">尚未選取標籤</span>';save();render();});
 }
 let labelEditExpected=null;
-function canManageLabels(){return !loading&&!saving&&Boolean(baseline)&&Boolean(googleAccount?.memberId)&&googleAccount.accessboard?.includes(board()?.id)&&!board()?.archived&&!board()?.deleting;}
+function canManageLabels(){return !loading&&!saving&&Boolean(baseline)&&Boolean(googleAccount?.memberId)&&!googleAccount.readOnly&&googleAccount.accessboard?.includes(board()?.id)&&!board()?.archived&&!board()?.deleting;}
 function labelManagerOptions(selected='') {
   $('#editLabelSelect').innerHTML='<option value="">＋ 新增標籤</option>'+Object.entries(labelOptions()).map(([id,label])=>`<option value="${esc(id)}">${esc(label.name)}</option>`).join('');
   $('#editLabelSelect').value=selected;

@@ -12,7 +12,7 @@ async function setup() {
  };
  const window={addEventListener:(type,fn)=>events[type]=fn};
  const context=vm.createContext({window,document:{querySelector:element,querySelectorAll:()=>[]},Date:class extends Date {constructor(...args){super(...(args.length?args:['2026-10-16T00:00:00Z']));}},Intl,Set,Map,Math,String,Number,Promise,clearTimeout,setTimeout});
- const deps={...dates,updateCardDeadline:(...args)=>new Promise((resolve,reject)=>writes.push({args,resolve,reject})),loadWorkspace:(account,options)=>new Promise(resolve=>pending.push({account,options,resolve})),subscribeWorkspace:(actor,next,error)=>{const s={actor,next,error};subscriptions.push(s);return()=>s.stopped=true;}};
+ const deps={...dates,weekSunday:value=>dates.weekSunday(value ?? new Date('2026-10-16T00:00:00Z')),updateCardDeadline:(...args)=>new Promise((resolve,reject)=>writes.push({args,resolve,reject})),loadWorkspace:(account,options)=>new Promise(resolve=>pending.push({account,options,resolve})),subscribeWorkspace:(actor,next,error)=>{const s={actor,next,error};subscriptions.push(s);return()=>s.stopped=true;}};
  const mod=new vm.SourceTextModule(await fs.readFile(new URL('../src/gantt.js',import.meta.url),'utf8'),{context});
  await mod.link(async()=>new vm.SyntheticModule(Object.keys(deps),function(){for(const [key,value]of Object.entries(deps))this.setExport(key,value);},{context}));
  await mod.evaluate();
@@ -131,4 +131,12 @@ test('default opening Sunday cannot fall before the first card creation date',as
  rows.boards[0].cards[0].createdAt='2026-10-15';s.pending[0].resolve(rows);await tick();
  assert.equal(s.$('#dateFrom').min,'2026-10-15');assert.equal(s.$('#dateFrom').value,'2026-10-15');
  assert.match(s.$('#ganttChart').innerHTML,/>2026-10-15<\/span>/);
+});
+
+test('strict Viewer defaults to all assignees and never offers deadline editing',async()=>{
+ const s=await setup();s.auth({...account,readOnly:true});s.pending[0].resolve(data);await tick();
+ assert.equal(s.$('#assigneeFilter').value,'');
+ assert.ok(s.$('#ganttChart').innerHTML.includes('Visible'));
+ assert.ok(!s.$('#ganttChart').innerHTML.includes('data-deadline-card'));
+ s.$('#resetGantt').onclick();assert.equal(s.$('#assigneeFilter').value,'');
 });

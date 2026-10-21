@@ -123,7 +123,7 @@ async function refresh() {
 function applyAccount(next) {
   generation++; stop?.(); stop = null; clearTimeout(timer); account = next;
   expanded.clear(); knownBoards.clear(); syncPending = false; closeDeadlineEditor();
-  $('#assigneeFilter').value = '__me';
+  $('#assigneeFilter').value = next?.readOnly ? '' : '__me';
   $('#currentUser').textContent = next?.displayName || '帳號設定';
   $('#googleAccountPanel').hidden = !next;
   $('#localUserPanel').hidden = Boolean(next);
@@ -133,7 +133,7 @@ function applyAccount(next) {
 }
 window.addEventListener('boardly-auth-changed',event => applyAccount(event.detail));
 for (const id of ['boardFilter','assigneeFilter','dateFrom','dateTo','showCompleted']) $('#'+id).addEventListener('change',() => {updateFilters();render();});
-$('#resetGantt').onclick = () => {$('#boardFilter').value='';$('#assigneeFilter').value='__me';$('#dateFrom').value=dayLabel(initialSunday);$('#dateTo').value='';$('#showCompleted').checked=false;updateFilters();render();};
+$('#resetGantt').onclick = () => {$('#boardFilter').value='';$('#assigneeFilter').value=account?.readOnly?'':'__me';$('#dateFrom').value=dayLabel(initialSunday);$('#dateTo').value='';$('#showCompleted').checked=false;updateFilters();render();};
 $('#ganttChart').onclick = event => {const edit=event.target.closest('[data-deadline-card]');if(edit){openDeadlineEditor(edit.dataset.deadlineBoard,edit.dataset.deadlineCard);return;}const button=event.target.closest('[data-collapse]');if (!button) return;const key=button.dataset.collapse;expanded.has(key)?expanded.delete(key):expanded.add(key);render();[...document.querySelectorAll('[data-collapse]')].find(el=>el.dataset.collapse===key)?.focus();};
 function openDeadlineEditor(boardId, cardId) {
   if (savingDeadline) return;

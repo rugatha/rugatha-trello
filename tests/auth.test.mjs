@@ -17,6 +17,7 @@ async function setup(member = {name:'會員名稱',status:'active',role:'viewer'
     getFunctions:()=>({}),httpsCallable:()=>async()=>({data:{members:[{id:'m',name:member?.name}]}}),
     initializeApp:()=>({}),getAuth:()=>auth,getFirestore:()=>({}),GoogleAuthProvider:class{setCustomParameters(parameters){if(hooks.provider)hooks.provider(parameters);}},
     onAuthStateChanged:(_,fn)=>onAuth=fn,signInWithPopup:async()=>{},
+    signInWithEmailAndPassword:async(_,email,password)=>{await hooks.passwordSignIn?.(email,password);},
     signOut:async()=>{auth.currentUser=null;await onAuth(null);},
     doc:(_, ...parts)=>parts.join('/'),collection:()=>({}),
     getDocFromServer:async path=>{
@@ -263,4 +264,30 @@ test('old board order save cannot publish after sign out',async()=>{
   const pending=deferred();const h=await setup({name:'Member',status:'active',accessboard:['a']},{updateDoc:()=>pending.promise});await h.login();
   const save=h.window.boardlyGoogleAuth.saveBoardOrder(['a']);await h.window.boardlyGoogleAuth.signOut();pending.resolve();
   assert.equal(await save,false);assert.equal(h.window.boardlyGoogleUser,null);
+});
+
+test('Viewer password login uses Firebase and clears password on success and failure',async()=>{
+  const calls=[];
+  const h=await setup(undefined,{passwordSignIn:(email,password)=>calls.push({email,password})});
+  h.element('#viewerSignIn').events.click();
+  assert.equal(h.element('#viewerDialog').open,true);
+  h.element('#viewerPassword').value='test-only-password';
+  await h.element('#viewerForm').events.submit({preventDefault(){}});
+  assert.deepEqual(calls,[{email:'viewer@rugatha-trello.invalid',password:'test-only-password'}]);
+  assert.equal(h.element('#viewerPassword').value,'');
+  assert.equal(h.element('#viewerDialog').open,false);
+  const failed=await setup(undefined,{passwordSignIn:()=>{throw Object.assign(Error('private details'),{code:'auth/invalid-credential'});}});
+  failed.element('#viewerSignIn').events.click();
+  failed.element('#viewerPassword').value='wrong-password';
+  await failed.element('#viewerForm').events.submit({preventDefault(){}});
+  assert.equal(failed.element('#viewerDialog').open,true);
+  assert.equal(failed.element('#viewerPassword').value,'');
+  assert.match(failed.element('#viewerError').textContent,/密碼錯誤/);
+  assert.equal(failed.element('#submitViewer').disabled,false);
+});
+test('Viewer publishes strict read-only membership and hides password login while signed in',async()=>{
+  const h=await setup({name:'Viewer',status:'active',role:'viewer',readOnly:true,accessboard:['board']});
+  await h.login();
+  assert.equal(h.window.boardlyGoogleUser.readOnly,true);
+  assert.equal(h.element('#viewerSignIn').hidden,true);
 });

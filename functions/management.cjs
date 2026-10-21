@@ -249,7 +249,8 @@ function createManagement(db) {
         const member=await actor(tx,auth),op=operation(auth,operationId,'createBoard',payload);
         const previous=await tx.get(op.ref),result=replay(previous,op.fingerprint);
         if (result) return result;
-        const recipients=[...new Set([member.id,...memberIds])];
+        const viewers=await tx.get(db.collection(`${ROOT}/members`).where('allBoards','==',true));
+        const recipients=[...new Set([member.id,...memberIds,...viewers.docs.filter(s=>s.data().status==='active' && s.data().role==='viewer').map(s=>s.id)])];
         const refs=recipients.map(m=>db.doc(`${ROOT}/members/${m}`));
         const snapshots=await Promise.all(refs.map(ref=>tx.get(ref)));
         if(snapshots.some(s=>!s.exists || s.data().status!=='active' || !Array.isArray(s.data().accessboard))) fail('failed-precondition','選取的會員已停用或不存在，請重新載入名單');
