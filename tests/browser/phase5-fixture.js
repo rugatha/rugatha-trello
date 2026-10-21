@@ -5,7 +5,7 @@ const auth={currentUser:null,app:{}};let authChanged;
 export const initializeApp=()=>({});export const getAuth=()=>auth;export const getFirestore=()=>({});export const getFunctions=()=>({});export class GoogleAuthProvider {setCustomParameters(){}}
 export const httpsCallable=()=>async()=>({data:{members:users}});
 export const onAuthStateChanged=(_,fn)=>{authChanged=fn;queueMicrotask(()=>fn(null));};
-export const signInWithPopup=async()=>fixture.login('admin');export const signOut=async()=>{auth.currentUser=null;await authChanged(null);};
+export const signInWithPopup=async()=>fixture.login('admin');export const signInWithEmailAndPassword=async()=>fixture.login('viewer');export const signOut=async()=>{auth.currentUser=null;await authChanged(null);};
 export const doc=(_, ...parts)=>parts.join('/');
 export const getDocFromServer=async path=>path.includes('memberLookup')?{exists:()=>fixture.member!==null,data:()=>({memberId:'m'})}:{id:'m',exists:()=>!!fixture.member,data:()=>({...fixture.member})};
 export const onSnapshot=(_,next,error)=>{const listener={next,error};fixture.listener=listener;return ()=>{if(fixture.listener===listener)fixture.listener=null;};};

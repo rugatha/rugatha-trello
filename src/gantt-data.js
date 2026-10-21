@@ -20,7 +20,9 @@ export function dateDay(value) {
   return calendarDay(part('year'), part('month'), part('day'));
 }
 export const dayLabel = day => day == null ? '—' : new Date(day * DAY).toISOString().slice(0,10);
-export function checklistEnd(text, start) {
+export function checklistEnd(text, start, due) {
+  const explicit = dateDay(due);
+  if (explicit != null) return explicit;
   // Explicit calendar dates only: relative dates and arbitrary numbers are left undated.
   const pattern = /(?<![\d/年.])(?:(\d{4})\s*[-/.年]\s*)?(\d{1,2})\s*[-/.月]\s*(\d{1,2})(?:\s*日)?(?![\d/.])/gu;
   let previous = start, result = null;
@@ -60,7 +62,7 @@ export function ganttBoards(workspace, account, filters = {}) {
       .map(c => {
         const dates = cardDates(c);
         return {...c, checklist:(c.checklist || []).filter(item => (filters.showCompleted || !item.done)
-          && overlapsRange(dates.start, checklistEnd(item.text, dates.start), filters.from, filters.to))};
+          && overlapsRange(dates.start, checklistEnd(item.text, dates.start, item.due), filters.from, filters.to))};
       }).filter(c => {const dates = cardDates(c);return c.checklist.length || overlapsRange(dates.start, dates.end, filters.from, filters.to);})}))
     .filter(b => b.cards.length).sort((a,b) => (positions.get(a.id) ?? Infinity) - (positions.get(b.id) ?? Infinity));
 }
@@ -86,7 +88,7 @@ export function ganttDateExtent(boards) {
   for (const board of boards) for (const card of board.cards) {
     const {start, end} = cardDates(card);
     if (start != null) firstCreated = firstCreated == null ? start : Math.min(firstCreated, start);
-    for (const day of [start, end, ...(card.checklist || []).map(item => checklistEnd(item.text, start))]) {
+    for (const day of [start, end, ...(card.checklist || []).map(item => checklistEnd(item.text, start, item.due))]) {
       if (day != null) lastDay = lastDay == null ? day : Math.max(lastDay, day);
     }
   }

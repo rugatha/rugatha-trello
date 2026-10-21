@@ -4,16 +4,17 @@ import {createRequire} from 'node:module';
 import {randomUUID} from 'node:crypto';
 const {createManagement}=createRequire(import.meta.url)('../functions/management.cjs');
 const root='workspaces/main';
-function setup(assigned=[],role='admin',accessboard=['b'],status='active') {
+function setup(assigned=[],role='admin',accessboard=['b'],status='active',checklist=[]) {
  const data=new Map([
   [root+'/memberLookup/owner@example.com',{memberId:'admin'}],
   [root+'/members/admin',{name:'Rugatha',role,status,assignable:false,accessboard}],
   [root+'/members/worker',{name:'Worker',role:'viewer',status:'active',accessboard:['b']}],
   [root+'/boards/b',{name:'Board'}],
   [root+'/boards/b/cards/c',{title:'Card',assigneeIds:assigned}],
+ ...checklist.map(item=>[root+'/boards/b/cards/c/checklist/'+item.id,item]),
  ]),writes=[];
  const ref=path=>({path,id:path.split('/').at(-1),collection:name=>({doc:id=>ref(path+'/'+name+'/'+id)})});
- const snap=path=>({id:path.split('/').at(-1),exists:data.has(path),data:()=>data.get(path)});
+ const snap=path=>({ref:ref(path),id:path.split('/').at(-1),exists:data.has(path),data:()=>data.get(path)});
  const db={doc:ref,collection:path=>({path,collection:true}),runTransaction:fn=>fn({
   get:async r=>r.collection===true?{docs:[...data.keys()].filter(p=>p.startsWith(r.path+'/')&&!p.slice(r.path.length+1).includes('/')).map(snap)}:snap(r.path),
   update:(r,d)=>writes.push({path:r.path,data:d}),create:(r,d)=>writes.push({path:r.path,data:d}),
@@ -51,4 +52,17 @@ for(const [role,accessboard,status] of [['viewer',['b'],'active'],['member',['b'
  await assert.rejects(service.listMembers(auth,{boardId:'b',cardId:'c'}),e=>e.code==='permission-denied');
  await assert.rejects(service.setAssignees(auth,{requestId:randomUUID(),boardId:'b',cardId:'c',assigneeIds:['worker'],expectedAssigneeIds:[]}),e=>e.code==='permission-denied');
  assert.equal(writes.length,0);
+});
+
+test('removing a card assignee clears only that person from checklist assignments',async()=>{
+ const {service,writes}=setup(['worker','admin'],'editor',['b'],'active',[
+  {id:'a',text:'Keep deadline',done:true,due:'2026-11-01T10:00:00+08:00',assigneeId:'worker'},
+  {id:'b',text:'Remove owner',assigneeId:'admin'},
+  {id:'c',text:'Legacy'},
+ ]);
+ await service.setAssignees(auth,{requestId:randomUUID(),boardId:'b',cardId:'c',assigneeIds:['worker'],expectedAssigneeIds:['worker','admin']});
+ const children=writes.filter(w=>w.path.includes('/checklist/'));
+ assert.equal(children.length,1);
+ assert.ok(children[0].path.endsWith("/checklist/b"));
+ for(const child of children)assert.deepEqual(child.data,{assigneeId:''});
 });

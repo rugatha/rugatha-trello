@@ -974,9 +974,22 @@ button:disabled { opacity:.65; cursor:not-allowed; }
 }
 .main.welcome-view > :not(#welcomeScreen) { display: none; }
 .welcome-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(20px, 3vh, 32px);
   width: 100%;
   padding: 32px 20px;
   text-align: center;
+}
+.welcome-logo {
+  display: block;
+  width: clamp(105px, 18vw, 225px);
+  max-width: 52.5%;
+  height: auto;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 .welcome-screen h1 {
   margin: 0;
@@ -1005,3 +1018,9 @@ button.completion-toggle.completed:hover{background:#9acb42}
 .label-options{max-height:240px;overflow:auto;padding:0 10px 10px}
 .label-options label{margin:8px 0;font-weight:400}
 #labelColor{height:44px;width:100%;padding:4px}
+
+.checklist-entry{padding:4px 0 12px;border-bottom:1px solid var(--line)}
+.checklist-settings{display:flex;flex-wrap:wrap;gap:8px 12px;margin-left:24px}
+.checklist-settings label{display:flex;flex:1 1 150px;flex-direction:column;gap:4px;min-width:0;font-size:12px;color:var(--muted)}
+.checklist-settings input,.checklist-settings select{width:100%;min-width:0;box-sizing:border-box;font-size:13px}
+.checklist-hint{margin:6px 0 0 24px}

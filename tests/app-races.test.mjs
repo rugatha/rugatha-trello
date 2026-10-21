@@ -4,12 +4,12 @@ import vm from 'node:vm';
 import fs from 'node:fs/promises';
 import * as cardOptions from '../src/card-options.js';
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
-async function setup({search='',archiveLoad=async()=>[],deferredArchives=false,workspaceLoad,managementLoad=async()=>({members:[],assigneeIds:[]}),managedCreate=async()=>({boardId:'new'}),managedAssign=async()=>({}),managedLifecycle=async()=>({})}={}){
+async function setup({search='',archiveLoad=async()=>[],deferredArchives=false,workspaceLoad,managementLoad=async()=>({members:[],assigneeIds:[]}),managedCreate=async()=>({boardId:'new'}),managedAssign=async()=>({}),managedLifecycle=async()=>({}),checklist=[],checklistControls={}}={}){
  const elements=new Map(),writes=[],restores=[],subscriptions=[],commentTargets=[],labelWrites=[];
  const element=s=>{if(!elements.has(s))elements.set(s,{value:s==='#dueFilter'?'all':'',classList:{add(){},remove(){},toggle(){}},style:{},replaceChildren(){this.innerHTML='';},close(){this.open=false;},showModal(){this.open=true;}});return elements.get(s);};
  const context=vm.createContext({console,structuredClone,setTimeout:()=>0,clearTimeout,Intl,Date,URLSearchParams,crypto:{randomUUID:()=>'copy-id'},
- document:{querySelector:element,querySelectorAll:s=>s==='[data-comment-id]'?commentTargets:/^#[a-zA-Z]+$/.test(s)?[element(s)]:[],addEventListener(){}},window:{location:{search},addEventListener(){}}});
- const data=()=>({users:[],boards:[{id:'b',name:'Board',columns:[{id:'col',name:'Todo'}],cards:[{id:'c',title:'Assigned',columnId:'col',createdAt:'2026-10-01T00:00:00Z',description:'',assignees:['viewer'],labels:[],checklist:[],comments:[],attachments:[],attachmentArchiveLoaded:!deferredArchives}]}]});
+ document:{querySelector:element,querySelectorAll:s=>checklistControls[s]|| (s==='[data-comment-id]'?commentTargets:/^#[a-zA-Z]+$/.test(s)?[element(s)]:[]),addEventListener(){}},window:{location:{search},addEventListener(){}}});
+ const data=()=>({users:[],boards:[{id:'b',name:'Board',columns:[{id:'col',name:'Todo'}],cards:[{id:'c',title:'Assigned',columnId:'col',createdAt:'2026-10-01T00:00:00Z',description:'',assignees:['viewer'],labels:[],checklist:structuredClone(checklist),comments:[],attachments:[],attachmentArchiveLoaded:!deferredArchives}]}]});
  const deps={...cardOptions,saveBoardLabel:(...args)=>{const d=deferred();Object.assign(d,{args});labelWrites.push(d);return d.promise;},bindCommentComposer:()=>{},connectNotifications:()=>{},renderMentionText:()=>{},clearAttachmentUI:()=>{},hydrateAttachmentImages:()=>{},downloadAttachment:()=>{},bindAttachmentUpload:()=>{},listManagementMembers:managementLoad,createManagedBoard:managedCreate,setManagedAssignees:managedAssign,manageContentLifecycle:managedLifecycle,loadDeferredAttachmentArchives:archiveLoad,loadWorkspace:async(account,options)=>workspaceLoad?workspaceLoad(account,options,data):data(),subscribeWorkspace:(account,next,error)=>{const sub={account,next,error,stopped:false};subscriptions.push(sub);return ()=>sub.stopped=true;},persistWorkspace:(before,after,member)=>{const d=deferred();Object.assign(d,{before,after,member});writes.push(d);return d.promise;},restoreCard:()=>{const d=deferred();restores.push(d);return d.promise;},restoreAttachment:async()=>{},assignMovedOrderKey:()=>{}};
  const source=await fs.readFile(new URL('../src/app.js',import.meta.url),'utf8');
  const mod=new vm.SourceTextModule(source+'\nexport {selectBoard,applyGoogleAccount,save,restoreArchived,canEdit,openCard,refreshWorkspace,showArchive,canManage,openManagedBoard,openManagedAssignees,runManagedWrite,openLifecycle,canAdmin,openNotification,openLinkedCard};',{context});
@@ -44,13 +44,18 @@ test('successful restoration reloads and unlocks editing',async()=>{
  restores[0].resolve();await pending;assert.equal(api.canEdit(),true);assert.equal(element('#quickCreate').disabled,false);
 });
 
-test('copying an assigned card creates an unassigned copy without changing the source',async()=>{
- const {api,writes,element}=await setup();await api.applyGoogleAccount(account('editor'));
+test('copying an assigned card resets checklist completion and owners without changing the source',async()=>{
+ const checklist=[{id:'t',text:'Task',done:true,assigneeId:'viewer',due:'2026-11-01T10:00:00+08:00'},{id:'u',text:'Other',done:false}];
+ const {api,writes,element}=await setup({checklist});await api.applyGoogleAccount(account('editor'));
  api.openCard('c');element('#copyCard').onclick();element('#simpleForm').onsubmit({preventDefault(){}});
  assert.equal(writes.length,1);
  const cards=writes[0].after.boards[0].cards;
  assert.deepEqual(Array.from(cards.find(c=>c.id==='c').assignees),['viewer']);
  assert.deepEqual(Array.from(cards.find(c=>c.id==='copy-id').assignees),[]);
+ assert.deepEqual(JSON.parse(JSON.stringify(cards.find(c=>c.id==='c').checklist)),checklist);
+ const copied=cards.find(c=>c.id==='copy-id').checklist;
+ assert.ok(copied.every(item=>!item.done&&item.assigneeId===''));
+ assert.equal(copied[0].due,checklist[0].due);
  writes[0].resolve([]);await new Promise(resolve=>setImmediate(resolve));
  assert.equal(api.canEdit(),true);
 });
@@ -441,4 +446,29 @@ for(const role of ['viewer','member'])test(`${role} cannot open assignee managem
  assert.equal(element('#manageAssignees').disabled,true);
  await api.openManagedAssignees('c');
  assert.equal(loads,0);assert.notEqual(element('#simpleDialog').open,true);
+});
+
+test('checklist settings offer only parent card assignees and preserve Taipei deadlines',async()=>{
+ const {api,element}=await setup({checklist:[{id:'t',text:'Task',done:false,due:'2026-10-31T09:30:00Z',assigneeId:'viewer'}]});
+ await api.applyGoogleAccount({...account('editor'),roster:[{id:'viewer',name:'Allowed'},{id:'outsider',name:'Other'}]});api.openCard('c');
+ const html=element('#checklist').innerHTML;
+ assert.match(html,/data-check-due="t" value="2026-10-31T17:30"/);
+ assert.match(html,/<option value="viewer" selected>/);
+ assert.doesNotMatch(html,/<option value="outsider"/);
+});
+
+test('checklist inputs save deadlines and eligible assignees and reject outsiders',async()=>{
+ const due={dataset:{checkDue:'t'},value:'2026-11-03T17:30',validity:{valid:true}};
+ const owner={dataset:{checkAssignee:'t'},value:'viewer'};
+ const {api,element,writes}=await setup({checklist:[{id:'t',text:'Task',done:false}],checklistControls:{'[data-check-due]':[due],'[data-check-assignee]':[owner]}});
+ await api.applyGoogleAccount(account('editor'));api.openCard('c');due.onchange();
+ assert.equal(writes[0].after.boards[0].cards[0].checklist[0].due,'2026-11-03T17:30:00+08:00');
+ writes[0].resolve([]);await new Promise(resolve=>setImmediate(resolve));
+ owner.onchange();assert.equal(writes[1].after.boards[0].cards[0].checklist[0].assigneeId,'viewer');
+ writes[1].resolve([]);await new Promise(resolve=>setImmediate(resolve));
+ owner.value='outsider';owner.onchange();assert.equal(writes.length,2);
+ assert.equal(element('#toast').textContent,'只能選擇此牌卡的負責人');
+ due.value='';due.onchange();assert.equal(writes[2].after.boards[0].cards[0].checklist[0].due,'');
+ writes[2].resolve([]);await new Promise(resolve=>setImmediate(resolve));
+ await api.applyGoogleAccount({...account('viewer'),workspaceRole:'viewer'});api.openCard('c');owner.onchange();due.onchange();assert.equal(writes.length,3);
 });

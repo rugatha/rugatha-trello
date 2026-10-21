@@ -1,6 +1,6 @@
 import './auth.js';
 import { loadWorkspace, subscribeWorkspace, updateCardDeadline } from './storage.js?v=20261017-role-swap';
-import { DAY, dateDay, dayLabel, cardDates, checklistEnd, ganttBoards, weekSunday, canSetDeadline, deadlineInput, ganttDateExtent, ganttDateRange } from './gantt-data.js?v=20261017-role-swap';
+import { DAY, dateDay, dayLabel, cardDates, checklistEnd, ganttBoards, weekSunday, canSetDeadline, deadlineInput, ganttDateExtent, ganttDateRange } from './gantt-data.js?v=20261021-checklist';
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let account = null, workspace = {boards:[]}, generation = 0, stop = null, timer = null;
@@ -80,8 +80,10 @@ function render() {
       html += label((c.done?'✓ ':'')+c.title,`${names} · ${range}`,'task',c.checklist?.length?key:null,`./index.html?board=${encodeURIComponent(b.id)}&card=${encodeURIComponent(c.id)}`,deadline)+track(dates,c.done,'task',dates.source);
       if (!expanded.has(key)) continue;
       for (const item of c.checklist || []) {
-        const end = checklistEnd(item.text,dates.start);
-        html += label((item.done?'☑ ':'☐ ')+(item.group?item.group+' / ':'')+item.text,`文字辨識截止日：${dayLabel(end)}`,'item')+track({start:dates.start,end},item.done,'item',end==null?'未辨識日期':'文字辨識截止日');
+        const end = checklistEnd(item.text,dates.start,item.due);
+        const source = item.due ? '截止日' : '文字辨識截止日';
+        const owner = item.assigneeId ? account.roster?.find(u=>u.id===item.assigneeId)?.name || '未知成員' : '未指派';
+        html += label((item.done?'☑ ':'☐ ')+(item.group?item.group+' / ':'')+item.text,`${owner} · ${source}：${dayLabel(end)}`,'item')+track({start:dates.start,end},item.done,'item',end==null?'未設定截止日':source);
       }
     }
   }

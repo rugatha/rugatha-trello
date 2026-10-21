@@ -67,8 +67,8 @@ test('changing assignee shows other members, completion toggle includes closed w
 test('gantt entry versions its filter dependency and has no scale selector',async()=>{
  const page=await fs.readFile(new URL('../gantt.html',import.meta.url),'utf8');
  const source=await fs.readFile(new URL('../src/gantt.js',import.meta.url),'utf8');
- assert.match(page,/src\/gantt\.js\?v=20261017-role-swap/);
- assert.match(source,/gantt-data\.js\?v=20261017-role-swap/);
+ assert.match(page,/src\/gantt\.js\?v=20261021-checklist/);
+ assert.match(source,/gantt-data\.js\?v=20261021-checklist/);
  assert.doesNotMatch(page,/scaleFilter|時間刻度/);
  assert.doesNotMatch(source,/scaleFilter/);
 });
@@ -139,4 +139,14 @@ test('strict Viewer defaults to all assignees and never offers deadline editing'
  assert.ok(s.$('#ganttChart').innerHTML.includes('Visible'));
  assert.ok(!s.$('#ganttChart').innerHTML.includes('data-deadline-card'));
  s.$('#resetGantt').onclick();assert.equal(s.$('#assigneeFilter').value,'');
+});
+
+test('gantt item displays its own deadline and assigned person',async()=>{
+ const s=await setup();s.auth({...account,roster:[{id:'m',name:'Item owner'}]});
+ const workspace=structuredClone(data);
+ workspace.boards[0].cards[0].checklist[0].due='2026-11-03T17:30:00+08:00';
+ workspace.boards[0].cards[0].checklist[0].assigneeId='m';
+ s.pending[0].resolve(workspace);await tick();
+ s.$('#ganttChart').onclick({target:{closest:selector=>selector==='[data-collapse]'?{dataset:{collapse:'card/b/c'}}:null}});
+ assert.match(s.$('#ganttChart').innerHTML,/Item owner · 截止日：2026-11-03/);
 });

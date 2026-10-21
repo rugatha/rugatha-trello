@@ -313,3 +313,16 @@ test('new boards automatically grant active all-board Viewers without making the
   assert.equal(viewer.role,'viewer');assert.equal(viewer.readOnly,true);assert.equal(viewer.assignable,false);
   assert.deepEqual((await db.doc(`${root}/members/disabled-viewer`).get()).data().accessboard,[]);
 });
+
+test('removing parent card assignees atomically clears checklist owners and preserves schedules',async()=>{
+ const cardId='checklist-ownership',card=db.doc(`${root}/boards/allowed/cards/${cardId}`);
+ await card.set({title:'Checklist ownership',assigneeIds:['viewer','editor']});
+ const due='2026-11-03T17:30:00+08:00';
+ await card.collection('checklist').doc('removed').set({text:'Remove owner',done:true,assigneeId:'viewer',due});
+ await card.collection('checklist').doc('retained').set({text:'Keep owner',done:false,assigneeId:'editor',due});
+ const payload=assignment({cardId,assigneeIds:['editor'],expectedAssigneeIds:['viewer','editor']});
+ assert.deepEqual((await call('setManagedAssignees',payload,'editor')).assigneeIds,['editor']);
+ assert.deepEqual((await card.collection('checklist').doc('removed').get()).data(),{text:'Remove owner',done:true,assigneeId:'',due});
+ assert.equal((await card.collection('checklist').doc('retained').get()).data().assigneeId,'editor');
+ assert.deepEqual((await call('setManagedAssignees',payload,'editor')).assigneeIds,['editor']);
+});

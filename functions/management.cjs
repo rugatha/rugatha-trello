@@ -282,8 +282,14 @@ function createManagement(db) {
         if(!equalIds(card.data.assigneeIds||[],expectedAssigneeIds))fail('aborted','其他成員已修改負責人，請重新開啟指派視窗');
         const targets=await Promise.all(assigneeIds.map(m=>tx.get(db.doc(`${ROOT}/members/${m}`))));
         if(targets.some(s=>!s.exists || s.data().status!=='active' || s.data().assignable===false || !Array.isArray(s.data().accessboard) || !s.data().accessboard.includes(boardId))) fail('failed-precondition','負責人必須是允許指派且仍可存取此看板的有效會員；請取消無效的歷史指派');
+        // Read the children in the same transaction so concurrent checklist assignments
+        // cannot retain a person who is being removed from the parent card.
+        const checklist=await tx.get(db.collection(`${ROOT}/boards/${boardId}/cards/${cardId}/checklist`));
         const now=new Date().toISOString(),updated={boardId,cardId,assigneeIds};
         tx.update(card.ref,{assigneeIds,updatedBy:member.id,updatedAt:now});
+        for(const item of checklist.docs) if(item.data().assigneeId && !assigneeIds.includes(item.data().assigneeId)) {
+          tx.update(item.ref,{assigneeId:''});
+        }
         for(const recipient of assigneeIds.filter(m=>!(card.data.assigneeIds||[]).includes(m))) {
           tx.create(db.doc(`${ROOT}/members/${recipient}/notifications/assignment-${operationId}`),
             {type:'assignment',actorId:member.id,actorName:member.name || '未設定名稱',boardId,cardId,cardTitle:card.data.title,createdAt:now,read:false});

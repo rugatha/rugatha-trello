@@ -109,3 +109,12 @@ test('admin can edit unassigned cards across accessible boards including archive
  assert.equal(canSetDeadline(account,{id:'a'},{archived:true}),false);
  assert.equal(canSetDeadline({...account,workspaceRole:'viewer'},{id:'a'},{assignees:[]}),false);
 });
+
+test('explicit checklist deadlines override text dates for filtering and timeline bounds',async()=>{
+ const {ganttDateExtent}=await import('../src/gantt-data.js');
+ assert.equal(checklistEnd('10/20 legacy',start,'2026-11-03T17:30:00+08:00'),dateDay('2026-11-03'));
+ const workspace={boards:[{id:'b',cards:[{id:'c',createdAt:'2026-10-16',assignees:['m'],checklist:[{text:'10/20 legacy',due:'2026-11-03T17:30:00+08:00'}]}]}]};
+ assert.equal(ganttDateExtent(workspace.boards).lastDay,dateDay('2026-11-03'));
+ const filtered=ganttBoards(workspace,{memberId:'m',workspaceRole:'editor',accessboard:['b']},{from:dateDay('2026-11-01')});
+ assert.equal(filtered[0].cards[0].checklist.length,1);
+});

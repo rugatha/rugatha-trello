@@ -209,9 +209,9 @@ function syncCompletionButton(card) {
 function openCopyCard(card) {
   if(!canEdit())return;
   const sourceBoard=board(),version=generation;
-  simple('複製卡片',`<p class="help-note">副本不保留負責人、留言與附件。</p><div class="field"><label for="copyStage">目標階段</label><select id="copyStage" class="full">${sourceBoard.columns.map(col=>`<option value="${esc(col.id)}" ${col.id===card.columnId?'selected':''}>${esc(col.name)}</option>`).join('')}</select></div><div class="field"><label for="copyPosition">副本位置</label><select id="copyPosition" class="full"></select></div>`,()=>{
+  simple('複製卡片',`<p class="help-note">副本不保留負責人、留言與附件；待辦事項會全部取消勾選並清空項目負責人。</p><div class="field"><label for="copyStage">目標階段</label><select id="copyStage" class="full">${sourceBoard.columns.map(col=>`<option value="${esc(col.id)}" ${col.id===card.columnId?'selected':''}>${esc(col.name)}</option>`).join('')}</select></div><div class="field"><label for="copyPosition">副本位置</label><select id="copyPosition" class="full"></select></div>`,()=>{
     if(version!==generation||board()!==sourceBoard||!canEdit())return false;
-    const n=structuredClone(card);n.id=uid();n.title=(n.title.slice(0,146)+'（副本）');n.comments=[];n.assignees=[];n.attachments=[];n.archivedAttachments=[];n.coverId=null;n.createdAt=new Date().toISOString();n.completedAt=n.done?n.createdAt:'';
+    const n=structuredClone(card);n.id=uid();n.title=(n.title.slice(0,146)+'（副本）');n.comments=[];n.assignees=[];n.checklist=n.checklist.map(item=>({...item,done:false,assigneeId:''}));n.attachments=[];n.archivedAttachments=[];n.coverId=null;n.createdAt=new Date().toISOString();n.completedAt=n.done?n.createdAt:'';
     try{sourceBoard.cards=placeCard(sourceBoard.cards,n,$('#copyStage').value,Number($('#copyPosition').value));}
     catch(error){toast(error.message);return false;}
     save();render();openCard(n.id);toast('正在儲存卡片副本');
@@ -266,7 +266,34 @@ bindAttachmentUpload({input:$('#attachmentInput'),status:$('#attachmentStatus'),
  busy:value=>{if(uploadVersion===generation){saving=value;applyPermissions();}},
  complete:async()=>{if(uploadVersion!==generation)return;d.close();await refreshWorkspace([uploadBoard]);if(googleAccount&&board()?.id===uploadBoard)openCard(c.id);}});
 if(!d.open)d.showModal();applyPermissions()}
-function renderChecklist(c){const done=c.checklist.filter(x=>x.done).length;$('#checkCount').textContent=`${done}/${c.checklist.length}`;$('#checklist').innerHTML=`${c.checklist.length?`<div class="progress"><i style="width:${done/c.checklist.length*100}%"></i></div>`:''}`+c.checklist.map(t=>`<div class="check-item ${t.done?'checked':''}"><input type="checkbox" data-check="${t.id}" ${t.done?'checked':''} aria-label="${esc(t.text)}"><span>${t.group?`<small class="muted">${esc(t.group)} · </small>`:''}${esc(t.text)}</span><button data-remove-check="${t.id}" aria-label="刪除待辦事項">×</button></div>`).join('');$$('[data-check]').forEach(el=>el.onchange=()=>{c.checklist.find(t=>t.id===el.dataset.check).done=el.checked;save();render();renderChecklist(c);applyPermissions()});$$('[data-remove-check]').forEach(el=>el.onclick=()=>{c.checklist=c.checklist.filter(t=>t.id!==el.dataset.removeCheck);save();render();renderChecklist(c);applyPermissions()})}
+function renderChecklist(c){
+  const done=c.checklist.filter(x=>x.done).length;
+  $('#checkCount').textContent=`${done}/${c.checklist.length}`;
+  $('#checklist').innerHTML=(c.checklist.length?`<div class="progress"><i style="width:${done/c.checklist.length*100}%"></i></div>`:'')+c.checklist.map(t=>{
+    const names=(c.assignees||[]).map(id=>({id,name:state.users.find(u=>u.id===id)?.name||'未知成員'}));
+    return `<div class="checklist-entry"><div class="check-item ${t.done?'checked':''}"><input type="checkbox" data-check="${esc(t.id)}" ${t.done?'checked':''} aria-label="${esc(t.text)}"><span>${t.group?`<small class="muted">${esc(t.group)} · </small>`:''}${esc(t.text)}</span><button data-remove-check="${esc(t.id)}" aria-label="刪除待辦事項">×</button></div><div class="checklist-settings"><label>截止日期（台北時間）<input type="datetime-local" data-check-due="${esc(t.id)}" value="${esc(checklistDueInput(t.due))}" aria-label="${esc(t.text)}的截止日期"></label><label>負責人<select data-check-assignee="${esc(t.id)}" aria-label="${esc(t.text)}的負責人"><option value="">未指派</option>${names.map(u=>`<option value="${esc(u.id)}" ${t.assigneeId===u.id?'selected':''}>${esc(u.name)}</option>`).join('')}</select></label></div>${names.length?'':'<p class="help-note checklist-hint">請先指派牌卡負責人，再分配此項目。</p>'}</div>`;
+  }).join('');
+  const update=()=>{save();render();renderChecklist(c);applyPermissions();};
+  $$('[data-check]').forEach(el=>el.onchange=()=>{if(!canEdit())return;c.checklist.find(t=>t.id===el.dataset.check).done=el.checked;update();});
+  $$('[data-remove-check]').forEach(el=>el.onclick=()=>{if(!canEdit())return;c.checklist=c.checklist.filter(t=>t.id!==el.dataset.removeCheck);update();});
+  $$('[data-check-due]').forEach(el=>el.onchange=()=>{
+    if(!canEdit()||el.validity?.valid===false)return;
+    c.checklist.find(t=>t.id===el.dataset.checkDue).due=el.value?el.value+':00+08:00':'';update();
+  });
+  $$('[data-check-assignee]').forEach(el=>el.onchange=()=>{
+    if(!canEdit())return;
+    if(el.value&&!c.assignees.includes(el.value)){toast('只能選擇此牌卡的負責人');return;}
+    c.checklist.find(t=>t.id===el.dataset.checkAssignee).assigneeId=el.value;update();
+  });
+}
+function checklistDueInput(value){
+  if(!value)return '';
+  const date=new Date(value);
+  if(!Number.isFinite(date.getTime()))return '';
+  const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(date);
+  const part=type=>parts.find(p=>p.type===type).value;
+  return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}`;
+}
 function renderAttachments(c) {
   $('#attachments').innerHTML=c.attachments.map(a=>`<div class="attachment">
     ${attachmentImage(a)?`<img ${a.storagePath?`data-storage-path="${esc(a.storagePath)}"`:""} src="${esc(attachmentImage(a))}" alt="${esc(a.name)}" loading="lazy" referrerpolicy="no-referrer">`:'<span style="font-size:24px">▤</span>'}

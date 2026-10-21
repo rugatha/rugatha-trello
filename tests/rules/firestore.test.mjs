@@ -355,3 +355,29 @@ test('strict Viewer can read all granted boards but cannot edit labels or assign
   await assertFails(updateDoc(doc(db,root+'/members/strict-viewer'),{readOnly:false}));
   await assertFails(updateDoc(doc(db,board+'/cards/strict-card'),{title:'No',updatedBy:'strict-viewer'}));
 });
+
+test('checklist deadlines and assignees are validated against the parent card',async()=>{
+ const path=board+'/cards/checklist-schedule';
+ await env.withSecurityRulesDisabled(async context=>{
+  await setDoc(doc(context.firestore(),path),{title:'Schedule',createdBy:'admin',assigneeIds:['viewer']});
+ });
+ const db=dbFor('editor'),item=doc(db,path+'/checklist/item');
+ await assertSucceeds(setDoc(item,{text:'Task',done:false,due:'2026-11-03T17:30:00+08:00',assigneeId:'viewer'}));
+ await assertSucceeds(updateDoc(item,{due:'',assigneeId:''}));
+ await assertSucceeds(updateDoc(item,{assigneeId:'viewer'}));
+ for(const patch of [{assigneeId:'editor'},{assigneeId:['viewer']},{due:123},{due:'tomorrow'},{due:'2026-11-03T17:30'}])await assertFails(updateDoc(item,patch));
+ await assertFails(updateDoc(doc(dbFor('viewer'),path+'/checklist/item'),{due:'2026-11-04T17:30:00+08:00'}));
+ await assertFails(setDoc(doc(db,board+'/cards/missing-checklist-parent/checklist/item'),{text:'Orphan',assigneeId:'viewer'}));
+ await env.withSecurityRulesDisabled(async context=>{
+  await updateDoc(doc(context.firestore(),path),{assigneeIds:[]});
+ });
+ await assertFails(updateDoc(item,{done:true}));
+ await assertSucceeds(updateDoc(item,{assigneeId:'',done:true}));
+});
+test('copied checklists cannot retain assignees on an unassigned new card',async()=>{
+ const db=dbFor('editor'),path=board+'/cards/checklist-copy-invalid';
+ const batch=writeBatch(db);
+ batch.set(doc(db,path),{title:'Copy',createdBy:'editor',assigneeIds:[]});
+ batch.set(doc(db,path+'/checklist/item'),{text:'Task',done:false,assigneeId:'viewer'});
+ await assertFails(batch.commit());
+});
