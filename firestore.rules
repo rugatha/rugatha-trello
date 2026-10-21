@@ -27,6 +27,16 @@ service cloud.firestore {
     function isAdmin(w, b) {
       return boardAccess(w, b) && member(w).role in ['admin', 'owner'];
     }
+    function validDeadlineParts(data) {
+      let p = data.get('dueParts', {});
+      return p is map && p.keys().hasOnly(['year','month','day','period','hour','minute'])
+        && p.get('year', '') is string && p.get('year', '').matches('[0-9]{0,4}')
+        && p.get('month', '') is string && p.get('month', '').matches('[0-9]{0,2}')
+        && p.get('day', '') is string && p.get('day', '').matches('[0-9]{0,2}')
+        && p.get('hour', '') is string && p.get('hour', '').matches('[0-9]{0,2}')
+        && p.get('minute', '') is string && p.get('minute', '').matches('[0-9]{0,2}')
+        && p.get('period', '') in ['', 'AM', 'PM'];
+    }
     match /workspaces/{w} {
       allow get: if active(w);
       allow list, write: if false;
@@ -118,8 +128,8 @@ service cloud.firestore {
               && !resource.data.get('archived', false) && !resource.data.get('deleting', false)
               && !get(/databases/$(database)/documents/workspaces/$(w)/boards/$(b)).data.get('archived', false)
               && !get(/databases/$(database)/documents/workspaces/$(w)/boards/$(b)).data.get('deleting', false)
-              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['due', 'updatedAt', 'updatedBy'])
-              && request.resource.data.due is string
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['due', 'dueParts', 'updatedAt', 'updatedBy'])
+              && validDeadlineParts(request.resource.data) && request.resource.data.due is string
               && (request.resource.data.due == '' || request.resource.data.due.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:00[+]08:00'))
               && request.resource.data.updatedAt is string && request.resource.data.updatedAt.size() <= 64
               && request.resource.data.updatedBy == memberId(w);
@@ -132,7 +142,7 @@ service cloud.firestore {
             && request.resource.data.title.size() > 0
             && request.resource.data.title.size() <= 150
             && request.resource.data.createdBy == memberId(w)
-            && request.resource.data.get('assigneeIds', []) == [] && validChecklistGroups();
+            && request.resource.data.get('assigneeIds', []) == [] && validChecklistGroups() && validDeadlineParts(request.resource.data);
           allow update: if canEdit(w, b) && mutableCard()
             && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['deleting'])
             && request.resource.data.title is string
@@ -140,6 +150,7 @@ service cloud.firestore {
             && request.resource.data.title.size() <= 150
             && request.resource.data.get('createdBy', null) == resource.data.get('createdBy', null)
             && request.resource.data.updatedBy == memberId(w)
+            && validDeadlineParts(request.resource.data)
             && request.resource.data.get('assigneeIds', []) == resource.data.get('assigneeIds', [])
             && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['checklistGroups'])
               || (isAdmin(w, b) && validChecklistGroups()));
@@ -169,7 +180,7 @@ service cloud.firestore {
               let due = request.resource.data.get('due', '');
               let assignee = request.resource.data.get('assigneeId', '');
               let parent = getAfter(/databases/$(database)/documents/workspaces/$(w)/boards/$(b)/cards/$(cardId)).data;
-              return due is string
+              return validDeadlineParts(request.resource.data) && due is string
                 && (due == '' || due.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:00[+]08:00'))
                 && assignee is string && (assignee == '' || assignee in parent.get('assigneeIds', []));
             }

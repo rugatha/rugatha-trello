@@ -1038,3 +1038,12 @@ button.completion-toggle.completed:hover{background:#9acb42}
 .checklist-details[hidden]{display:none}
 .checklist-create{margin-top:16px}
 .checklist-create summary{width:fit-content;cursor:pointer;font-size:13px;color:var(--primary);padding:6px 0}
+
+.partial-deadline{border:0;padding:0;margin:0;min-width:0;flex:2 1 210px}
+.partial-deadline legend{padding:0;margin-bottom:6px;font-size:12px;color:var(--muted)}
+.deadline-date,.deadline-time{display:flex;align-items:center;gap:5px;margin:4px 0}
+.deadline-date input,.deadline-time input{width:0!important;min-width:0;flex:1;padding:8px 4px;text-align:center;font-size:13px}
+.deadline-date input:first-child{flex:1.5}
+.deadline-time select{width:76px!important;flex:0 0 76px;padding:8px 4px;font-size:13px}
+.partial-deadline small{display:block;font-size:11px;color:var(--muted);line-height:1.5}
+.partial-deadline [data-clear-deadline]{font-size:11px;padding:3px 0;color:var(--muted)}

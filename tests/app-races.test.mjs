@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import fs from 'node:fs/promises';
+import {deadlineRoot} from './helpers/deadline.mjs';
 import * as cardOptions from '../src/card-options.js';
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
 async function setup({search='',archiveLoad=async()=>[],deferredArchives=false,workspaceLoad,managementLoad=async()=>({members:[],assigneeIds:[]}),managedCreate=async()=>({boardId:'new'}),managedAssign=async()=>({}),managedLifecycle=async()=>({}),checklist=[],checklistGroups,checklistControls={}}={}){
@@ -452,25 +453,28 @@ test('checklist settings offer only parent card assignees and preserve Taipei de
  const {api,element}=await setup({checklist:[{id:'t',text:'Task',done:false,due:'2026-10-31T09:30:00Z',assigneeId:'viewer'}]});
  await api.applyGoogleAccount({...account('editor'),roster:[{id:'viewer',name:'Allowed'},{id:'outsider',name:'Other'}]});api.openCard('c');
  const html=element('#checklist').innerHTML;
- assert.match(html,/data-check-due="t" value="2026-10-31T17:30"/);
+ assert.match(html,/data-deadline-part="year"[^>]*value="2026"/);
+ assert.match(html,/data-deadline-part="hour"[^>]*value="05"/);
+ assert.match(html,/value="PM" selected/);
  assert.match(html,/<option value="viewer" selected>/);
  assert.doesNotMatch(html,/<option value="outsider"/);
 });
 
-test('checklist inputs save deadlines and eligible assignees and reject outsiders',async()=>{
- const due={dataset:{checkDue:'t'},value:'2026-11-03T17:30',validity:{valid:true}};
- const owner={dataset:{checkAssignee:'t'},value:'viewer'};
- const {api,element,writes}=await setup({checklist:[{id:'t',text:'Task',done:false}],checklistControls:{'[data-check-due]':[due],'[data-check-assignee]':[owner]}});
- await api.applyGoogleAccount(account('editor'));api.openCard('c');due.onchange();
- assert.equal(writes[0].after.boards[0].cards[0].checklist[0].due,'2026-11-03T17:30:00+08:00');
- writes[0].resolve([]);await new Promise(resolve=>setImmediate(resolve));
+test('checklist partial deadlines autosave on blur, keep raw blanks and reject outsiders',async()=>{
+ const deadline=deadlineRoot('t'),owner={dataset:{checkAssignee:'t'},value:'viewer'};
+ const {api,element,writes}=await setup({checklist:[{id:'t',text:'Task',done:false}],checklistControls:{'[data-deadline-fields]':[deadline.root],'[data-check-assignee]':[owner]}});
+ await api.applyGoogleAccount(account('editor'));api.openCard('c');
+ deadline.fill({year:'2026',month:'10',period:'PM',hour:'09'});const saving=deadline.fields.hour.onblur();
+ const item=writes[0].after.boards[0].cards[0].checklist[0];
+ assert.equal(item.due,'2026-10-31T21:59:00+08:00');assert.equal(item.dueParts.day,'');assert.equal(item.dueParts.minute,'');
+ writes[0].resolve([]);await saving;
  owner.onchange();assert.equal(writes[1].after.boards[0].cards[0].checklist[0].assigneeId,'viewer');
  writes[1].resolve([]);await new Promise(resolve=>setImmediate(resolve));
  owner.value='outsider';owner.onchange();assert.equal(writes.length,2);
  assert.equal(element('#toast').textContent,'只能選擇此牌卡的負責人');
- due.value='';due.onchange();assert.equal(writes[2].after.boards[0].cards[0].checklist[0].due,'');
+ deadline.clear.onclick();assert.equal(writes[2].after.boards[0].cards[0].checklist[0].due,'');
  writes[2].resolve([]);await new Promise(resolve=>setImmediate(resolve));
- await api.applyGoogleAccount({...account('viewer'),workspaceRole:'viewer'});api.openCard('c');owner.onchange();due.onchange();assert.equal(writes.length,3);
+ await api.applyGoogleAccount({...account('viewer'),workspaceRole:'viewer'});api.openCard('c');owner.onchange();deadline.fill({year:'2027'});deadline.fields.year.onblur();assert.equal(writes.length,3);
 });
 
 test('checklist categories render as separate named lists with collapsed item settings',async()=>{
@@ -490,9 +494,9 @@ test('checklist categories render as separate named lists with collapsed item se
 });
 test('expanded checklist settings remain open after an edit and new items keep their group',async()=>{
  const input={value:'新增檢查'},form={dataset:{checkAdd:'1'},querySelector:()=>input};
- const due={dataset:{checkDue:'a'},value:'2026-11-03T17:30',validity:{valid:true}};
- const {api,element,writes}=await setup({checklist:[{id:'a',text:'排程',group:'發文',groupId:'posts',done:false},{id:'b',text:'確認',group:'檢查',groupId:'checks',done:false}],checklistControls:{'[data-check-due]':[due],'#checklist [data-check-details]:not([hidden])':[{dataset:{checkDetails:'a'}}],'[data-check-add]':[form]}});
- await api.applyGoogleAccount(account('editor'));api.openCard('c');due.onchange();
+ const deadline=deadlineRoot('a');
+ const {api,element,writes}=await setup({checklist:[{id:'a',text:'排程',group:'發文',groupId:'posts',done:false},{id:'b',text:'確認',group:'檢查',groupId:'checks',done:false}],checklistControls:{'[data-deadline-fields]':[deadline.root],'#checklist [data-check-details]:not([hidden])':[{dataset:{checkDetails:'a'}}],'[data-check-add]':[form]}});
+ await api.applyGoogleAccount(account('editor'));api.openCard('c');deadline.fill({year:'2026',month:'11',day:'03',period:'PM',hour:'05',minute:'30'});deadline.fields.minute.onblur();
  assert.doesNotMatch(element('#checklist').innerHTML.match(/<div[^>]*data-check-details="a"[^>]*>/)[0],/hidden/);
  assert.match(element('#checklist').innerHTML,/data-check-toggle="a"[^>]*aria-expanded="true"/);
  writes[0].resolve([]);await new Promise(resolve=>setImmediate(resolve));
@@ -536,4 +540,27 @@ test('item triangle expands and collapses settings independently of completion',
  assert.doesNotMatch(element('#checklist').innerHTML,/<summary[^>]*>日期與負責人/);
  toggle.onclick();assert.equal(panel.hidden,false);assert.equal(toggle['aria-expanded'],'true');assert.equal(toggle.textContent,'▾');
  toggle.onclick();assert.equal(panel.hidden,true);assert.equal(toggle['aria-expanded'],'false');assert.equal(writes.length,0);
+});
+
+test('card partial deadline flushes when closing and queues newer input during a write',async()=>{
+ const d=deadlineRoot('card'),s=await setup();
+ Object.assign(s.element('[data-deadline-fields="card"]'),d.root);
+ await s.api.applyGoogleAccount(account('editor'));s.api.openCard('c');
+ d.fill({year:'2026',month:'10',period:'PM',hour:'09'});
+ s.element('#editor').onclose();assert.equal(s.writes.length,1);
+ assert.equal(s.writes[0].after.boards[0].cards[0].due,'2026-10-31T21:59:00+08:00');
+ d.fill({minute:'30'});d.fields.minute.onblur();assert.equal(s.writes.length,1);
+ s.writes[0].resolve([]);await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(s.writes.length,2);assert.equal(s.writes[1].after.boards[0].cards[0].due,'2026-10-31T21:30:00+08:00');
+ assert.equal(s.writes[1].after.boards[0].cards[0].dueParts.day,'');
+ s.writes[1].resolve([]);await new Promise(resolve=>setImmediate(resolve));
+});
+test('failed partial deadline autosave keeps entered components and retries on blur',async()=>{
+ const d=deadlineRoot('card'),s=await setup();Object.assign(s.element('[data-deadline-fields="card"]'),d.root);
+ await s.api.applyGoogleAccount(account('editor'));s.api.openCard('c');d.fill({year:'2026',month:'02'});
+ const first=d.fields.month.onblur();s.writes[0].reject(Error('offline'));await first;
+ assert.equal(s.element('#editor').open,true);assert.match(s.element('#syncStatus').textContent,/輸入已保留/);
+ const retry=d.fields.month.onblur();assert.equal(s.writes[1].after.boards[0].cards[0].dueParts.day,'');
+ assert.equal(s.writes[1].after.boards[0].cards[0].due,'2026-02-28T23:59:00+08:00');
+ s.writes[1].resolve([]);await retry;
 });

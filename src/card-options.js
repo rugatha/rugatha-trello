@@ -17,3 +17,4 @@ export function placeCard(cards, card, columnId, position) {
  const placement={...card,columnId};remaining.splice(index,0,placement);assignMovedOrderKey(remaining,placement);
  card.columnId=columnId;card.orderKey=placement.orderKey;remaining[index]=card;return remaining;
 }
+export {deadlineParts,resolveDeadline,deadlineDisplay,deadlineFields,bindDeadlineFields} from './deadline.js';

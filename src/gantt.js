@@ -1,16 +1,16 @@
 import './auth.js';
-import { loadWorkspace, subscribeWorkspace, updateCardDeadline } from './storage.js?v=20261017-role-swap';
-import { DAY, dateDay, dayLabel, cardDates, checklistEnd, ganttBoards, weekSunday, canSetDeadline, deadlineInput, ganttDateExtent, ganttDateRange } from './gantt-data.js?v=20261021-checklist';
+import { loadWorkspace, subscribeWorkspace, updateCardDeadline } from './storage.js?v=20261022-partial-deadline';
+import { DAY, dateDay, dayLabel, cardDates, checklistEnd, ganttBoards, weekSunday, canSetDeadline, deadlineInput, deadlineParts, resolveDeadline, deadlineFields, bindDeadlineFields, ganttDateExtent, ganttDateRange } from './gantt-data.js?v=20261022-partial-deadline';
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let account = null, workspace = {boards:[]}, generation = 0, stop = null, timer = null;
 const expanded = new Set(), knownBoards = new Set();
-let deadlineTarget = null, savingDeadline = false, syncPending = false;
+let deadlineTarget = null, savingDeadline = false, syncPending = false, deadlineTimer=null;
 function closeDeadlineEditor() {
-  deadlineTarget = null; savingDeadline = false;
+  clearTimeout(deadlineTimer);deadlineTarget = null; savingDeadline = false;
   $('#deadlineDialog').close();
   $('#deadlineStatus').textContent = '';
-  $('#saveDeadline').disabled = $('#deadlineValue').disabled = $('#closeDeadline').disabled = false;
+  $('#saveDeadline').disabled = $('#closeDeadline').disabled = false;
 }
 const initialSunday = weekSunday();
 $('#dateFrom').value = dayLabel(initialSunday);
@@ -141,45 +141,55 @@ function openDeadlineEditor(boardId, cardId) {
   if (savingDeadline) return;
   const board = workspace.boards.find(b => b.id === boardId), card = board?.cards.find(c => c.id === cardId);
   if (!canSetDeadline(account,board,card)) return;
-  deadlineTarget = {boardId,cardId,expectedDue:card.due || ''};
+  deadlineTarget = {boardId,cardId,expectedDue:card.due || '',expectedDueParts:card.dueParts,parts:deadlineParts(card.due,card.dueParts),dirty:false};
+  const target=deadlineTarget;
   $('#deadlineCardName').textContent = card.title;
-  $('#deadlineValue').value = deadlineInput(card.due);
+  $('#deadlineFields').innerHTML=deadlineFields(card.due,card.dueParts,'gantt','截止日期');
+  bindDeadlineFields($('#deadlineFields'),card.due,card.dueParts,parts=>{
+    if(deadlineTarget!==target)return;
+    target.parts=parts;target.dirty=true;
+    clearTimeout(deadlineTimer);deadlineTimer=setTimeout(()=>saveGanttDeadline(),350);
+  },()=>saveGanttDeadline());
   $('#deadlineStatus').textContent = '';
   $('#deadlineDialog').showModal();
 }
-function cancelDeadlineEditor() {closeDeadlineEditor();if (syncPending) {syncPending = false;refresh();}}
-$('#closeDeadline').onclick = cancelDeadlineEditor;
-$('#deadlineDialog').addEventListener('cancel',event => {if (savingDeadline) event.preventDefault();else cancelDeadlineEditor();});
-$('#deadlineForm').addEventListener('submit',async event => {
-  event.preventDefault();
-  if (!deadlineTarget || savingDeadline) return;
-  const value = $('#deadlineValue').value;
-  if (value && (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value) || dateDay(value) == null)) {
-    $('#deadlineStatus').textContent = '請輸入有效的截止日期'; return;
-  }
-  const target = deadlineTarget, actor = account, version = generation;
-  const board = workspace.boards.find(b => b.id === target.boardId), card = board?.cards.find(c => c.id === target.cardId);
-  if (!canSetDeadline(actor,board,card)) {closeDeadlineEditor();return;}
-  const due = value ? value+':00+08:00' : '';
-  savingDeadline = true;
-  $('#saveDeadline').disabled = $('#deadlineValue').disabled = $('#closeDeadline').disabled = true;
-  $('#deadlineStatus').textContent = '正在儲存截止日期…';
-  const current = () => account === actor && generation === version && deadlineTarget === target;
-  try {
-    const saved = await updateCardDeadline(actor,target.boardId,target.cardId,due,target.expectedDue);
-    if (!current()) return;
-    Object.assign(card,saved,{updatedBy:actor.memberId});
-    closeDeadlineEditor(); render();
-    $('#ganttStatus').textContent += ' · 截止日期已儲存';
-  } catch (error) {
-    if (current()) $('#deadlineStatus').textContent = '截止日期未儲存：'+error.message;
-  } finally {
-    if (account === actor && generation === version) {
-      savingDeadline = false;
-      $('#saveDeadline').disabled = $('#deadlineValue').disabled = $('#closeDeadline').disabled = false;
-      if (syncPending && !deadlineTarget) {syncPending = false;refresh();}
-    }
-  }
+async function saveGanttDeadline(close=false){
+  clearTimeout(deadlineTimer);
+  const target=deadlineTarget;
+  if(!target)return false;
+  if(target.write){const ok=await target.write;if(!ok||deadlineTarget!==target)return false;return saveGanttDeadline(close);}
+  if(!target.dirty){if(close){closeDeadlineEditor();if(syncPending){syncPending=false;refresh();}}return true;}
+  const actor=account,version=generation;
+  const board=workspace.boards.find(b=>b.id===target.boardId),card=board?.cards.find(c=>c.id===target.cardId);
+  if(!canSetDeadline(actor,board,card)){closeDeadlineEditor();return false;}
+  const parts={...target.parts},due=resolveDeadline(parts).due;
+  target.dirty=false;savingDeadline=true;$('#saveDeadline').disabled=true;
+  $('#deadlineStatus').textContent='正在儲存截止日期…';
+  const current=()=>account===actor&&generation===version&&deadlineTarget===target;
+  target.write=(async()=>{
+    try{
+      const saved=await updateCardDeadline(actor,target.boardId,target.cardId,due,target.expectedDue,parts,target.expectedDueParts);
+      if(!current())return false;
+      Object.assign(card,saved,{dueParts:parts,updatedBy:actor.memberId});
+      target.expectedDue=due;target.expectedDueParts=parts;
+      render();$('#deadlineStatus').textContent='已自動儲存，未填欄位仍保留 XX。';
+      return true;
+    }catch(error){
+      if(current()){target.dirty=true;$('#deadlineStatus').textContent='輸入已保留，尚未儲存：'+error.message;}
+      return false;
+    }finally{if(current()){target.write=null;savingDeadline=false;$('#saveDeadline').disabled=false;}}
+  })();
+  const ok=await target.write;
+  if(!current()||!ok)return false;
+  if(close)return saveGanttDeadline(true);
+  if(target.dirty)deadlineTimer=setTimeout(()=>saveGanttDeadline(),350);
+  return true;
+}
+$('#closeDeadline').onclick=()=>saveGanttDeadline(true);
+$('#deadlineDialog').addEventListener('cancel',event=>{event.preventDefault();saveGanttDeadline(true);});
+$('#deadlineForm').addEventListener('submit',event=>{event.preventDefault();return saveGanttDeadline(true);});
+window.addEventListener('beforeunload',event=>{
+  if(deadlineTarget?.dirty||savingDeadline){saveGanttDeadline();event.preventDefault();event.returnValue='';}
 });
 $('#refreshGantt').onclick = () => window.boardlyGoogleAuth.refreshMembership();
 $('#currentUser').onclick = () => $('#userDialog').showModal();

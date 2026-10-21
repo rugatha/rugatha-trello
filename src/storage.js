@@ -1,3 +1,4 @@
+import {deadlineParts,resolveDeadline} from './deadline.js';
 import { firestore } from './auth.js';
 import { collection, doc, onSnapshot, runTransaction } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 import {getFirestore as getReadFirestore, doc as readDoc, collection as readCollection, getDoc, getDocs} from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-lite.js';
@@ -147,9 +148,10 @@ export async function persistWorkspace(before, after, memberId) {
 }
 
 // Only the deadline and write metadata change; unrelated concurrent card edits are preserved.
-export async function updateCardDeadline(account, boardId, cardId, due, expectedDue) {
+export async function updateCardDeadline(account, boardId, cardId, due, expectedDue, dueParts, expectedDueParts) {
   if (account?.readOnly || !account?.memberId || !account.workspaceRole || !account.accessboard?.includes(boardId)) throw Error('尚未取得牌卡存取權限');
   if (typeof due !== 'string' || due && (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00\+08:00$/.test(due) || !Number.isFinite(Date.parse(due)))) throw Error('截止日期格式無效');
+  if(dueParts && resolveDeadline(deadlineParts('',dueParts)).due!==due)throw Error('截止日期與輸入不一致');
   const boardRef = doc(firestore, `${root}/${boardId}`), cardRef = doc(firestore, `${root}/${boardId}/cards/${cardId}`);
   return runTransaction(firestore, async transaction => {
     const [board, card] = await Promise.all([transaction.get(boardRef), transaction.get(cardRef)]);
@@ -157,9 +159,10 @@ export async function updateCardDeadline(account, boardId, cardId, due, expected
     if (!board.exists() || (board.data().archived && account.workspaceRole !== 'admin') || board.data().deleting || !card.exists() || data.archived || data.deleting) throw Error('看板或牌卡已封存、刪除或無法存取');
     if (account.workspaceRole !== 'admin' && !data.assigneeIds?.includes(account.memberId)) throw Error('只有全站管理員或此牌卡的負責人可以修改截止日期');
     if ((data.due || '') !== (expectedDue || '')) throw Error('截止日期已被其他人修改，請關閉視窗並重新整理');
-    const updatedAt = new Date().toISOString();
-    transaction.update(cardRef, {due, updatedAt, updatedBy:account.memberId});
-    return {due, updatedAt};
+    if(dueParts && JSON.stringify(deadlineParts('',data.dueParts))!==JSON.stringify(deadlineParts('',expectedDueParts)))throw Error('截止日期輸入已被其他人修改，請重新整理');
+    const updatedAt = new Date().toISOString(),patch={due,updatedAt,updatedBy:account.memberId,...(dueParts?{dueParts}:{})};
+    transaction.update(cardRef,patch);
+    return {due,updatedAt,...(dueParts?{dueParts}:{})};
   });
 }
 

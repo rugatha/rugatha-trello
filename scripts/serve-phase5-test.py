@@ -10,7 +10,7 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path.split('?')[0] == '/gantt-app':
             source = (root / 'gantt.html').read_text()
             fixture = '/tests/browser/gantt-fixture.js'
-            imports = {'/src/auth.js': fixture, '/src/storage.js?v=20261010-rest': fixture, '/src/storage.js?v=20261016-deadline': fixture, '/src/storage.js?v=20261016-card-controls-v2': fixture, '/src/storage.js?v=20261017-role-swap': fixture}
+            imports = {'/src/auth.js': fixture, '/src/storage.js?v=20261010-rest': fixture, '/src/storage.js?v=20261016-deadline': fixture, '/src/storage.js?v=20261016-card-controls-v2': fixture, '/src/storage.js?v=20261017-role-swap': fixture, '/src/storage.js?v=20261022-partial-deadline': fixture}
             source = source.replace('<head>', '<head><script type="importmap">'+json.dumps({'imports': imports})+'</script>')
             self.send_response(200); self.send_header('Content-Type', 'text/html; charset=utf-8'); self.end_headers(); self.wfile.write(source.encode())
         elif self.path.split('?')[0] in ['/phase5-app', '/owner-app', '/preferences-app']:
@@ -23,6 +23,7 @@ class Handler(SimpleHTTPRequestHandler):
             imports['/src/storage.js?v=20261010-rest'] = fixture
             imports['/src/storage.js?v=20261016-card-controls-v2'] = fixture
             imports['/src/storage.js?v=20261017-role-swap'] = fixture
+            imports['/src/storage.js?v=20261022-partial-deadline'] = fixture
             source=source.replace('<head>', '<head><base href="/phase5-app"><script type="importmap">'+json.dumps({'imports':imports})+'</script><script type="module" src="/src/auth.js"></script>')
             self.send_response(200); self.send_header('Content-Type','text/html; charset=utf-8'); self.end_headers();self.wfile.write(source.encode())
         else:

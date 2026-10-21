@@ -394,3 +394,26 @@ test('only board admins and owners can change checklist group definitions on an 
  await assertSucceeds(updateDoc(doc(dbFor('editor'),path),{title:'Still editable',updatedBy:'editor'}));
  await assertSucceeds(setDoc(doc(dbFor('editor'),board+'/cards/copied-groups'),{title:'Copy',createdBy:'editor',assigneeIds:[],checklistGroups:['發文','檢查']}));
 });
+
+test('partial deadline input is stored with the effective time under existing card permissions',async()=>{
+ const path=board+'/cards/partial-deadline';
+ await env.withSecurityRulesDisabled(async context=>{
+  await setDoc(doc(context.firestore(),path),{title:'Partial',createdBy:'admin',assigneeIds:['viewer'],due:''});
+ });
+ const dueParts={year:'2026',month:'10',day:'',period:'PM',hour:'09',minute:''};
+ const patch={due:'2026-10-31T21:59:00+08:00',dueParts,updatedAt:new Date().toISOString(),updatedBy:'viewer'};
+ const viewer=doc(dbFor('viewer'),path);
+ await assertSucceeds(updateDoc(viewer,patch));
+ assert.deepEqual((await getDoc(viewer)).data().dueParts,dueParts);
+ await assertSucceeds(updateDoc(viewer,{...patch,due:'',dueParts:{...dueParts,year:'2',month:'13'}}));
+ await assertFails(updateDoc(doc(dbFor('member'),path),{...patch,updatedBy:'member'}));
+ for(const malformed of [{...dueParts,minute:59},{...dueParts,year:'12345'},{...dueParts,period:'unknown'},{...dueParts,unexpected:'field'}]){
+  await assertFails(updateDoc(viewer,{...patch,dueParts:malformed}));
+ }
+ const item=doc(dbFor('editor'),path+'/checklist/item');
+ await assertSucceeds(setDoc(item,{text:'Task',done:false,due:patch.due,dueParts,assigneeId:'viewer'}));
+ assert.equal((await getDoc(item)).data().dueParts.day,'');
+ await assertSucceeds(updateDoc(item,{due:'',dueParts:{...dueParts,year:'2'}}));
+ await assertFails(updateDoc(item,{dueParts:{...dueParts,minute:59}}));
+ await assertFails(updateDoc(doc(dbFor('viewer'),path+'/checklist/item'),{dueParts}));
+});

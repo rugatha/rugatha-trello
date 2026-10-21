@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import fs from 'node:fs/promises';
 import {documents,changes} from '../src/workspace-data.js';
+import {deadlineParts,resolveDeadline} from '../src/deadline.js';
 import {compareOrderKey} from '../src/order-key.js';
 async function setup(remote,fail=false){
  const writes=[],listeners=[],reads=[],oldView=structuredClone(remote);
  const context=vm.createContext({console,Set,Map,Date,JSON,Promise,Error});
- const deps={firestore:{app:{}},getFirestore:()=>({}),documents,changes,compareOrderKey,collection:(_,path)=>path,doc:(_,path)=>path,
+ const deps={deadlineParts,resolveDeadline,firestore:{app:{}},getFirestore:()=>({}),documents,changes,compareOrderKey,collection:(_,path)=>path,doc:(_,path)=>path,
  getDoc:async path=>{reads.push(path);return {exists:()=>remote.has(path),data:()=>remote.get(path)}},
  getDocs:async path=>{reads.push(path);return {docs:[...remote].filter(([key])=>key.startsWith(path+'/')&&key.split('/').length===path.split('/').length+1).map(([key,value])=>({id:key.split('/').at(-1),data:()=>value}))}},
  onSnapshot:(path,next,error)=>{const listener={path,next,error,active:true};listeners.push(listener);return()=>{listener.active=false}},
@@ -232,4 +233,14 @@ test('admin deadline edits do not require assignment and retain access and confl
   await assert.rejects(api.updateCardDeadline(actor,'b','c','',''));
   assert.equal(writes.length,0);
  }
+});
+
+test('partial deadline transaction stores original components and checks raw-input conflicts',async()=>{
+ const root='workspaces/main/boards/b',path=root+'/cards/c',remote=new Map([[root,{}],[path,{title:'Card',assigneeIds:['m'],due:''}]]);
+ const {api,writes}=await setup(remote),actor={memberId:'m',workspaceRole:'viewer',accessboard:['b']};
+ const raw=deadlineParts('',{year:'2026',month:'10',hour:'09',period:'PM'});
+ await api.updateCardDeadline(actor,'b','c','2026-10-31T21:59:00+08:00','',raw);
+ assert.equal(writes[0][2].dueParts.day,'');assert.equal(writes[0][2].dueParts.minute,'');
+ remote.set(path,{title:'Card',assigneeIds:['m'],due:'',dueParts:{...raw,minute:'59'}});
+ await assert.rejects(api.updateCardDeadline(actor,'b','c','2026-10-31T21:59:00+08:00','',raw,raw),/輸入已被其他人修改/);
 });

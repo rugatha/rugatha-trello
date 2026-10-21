@@ -118,3 +118,12 @@ test('explicit checklist deadlines override text dates for filtering and timelin
  const filtered=ganttBoards(workspace,{memberId:'m',workspaceRole:'editor',accessboard:['b']},{from:dateDay('2026-11-01')});
  assert.equal(filtered[0].cards[0].checklist.length,1);
 });
+
+test('partial deadline effective dates determine gantt ranges without replacing input blanks',async()=>{
+ const {resolveDeadline,deadlineParts}=await import('../src/deadline.js');
+ const raw=deadlineParts('',{year:'2026',month:'10',period:'PM',hour:'09'}),due=resolveDeadline(raw).due;
+ const card={createdAt:'2026-10-01',due,dueParts:raw,checklist:[{text:'Task',due,dueParts:raw}]};
+ assert.equal(cardDates(card).end,dateDay('2026-10-31'));
+ assert.equal(checklistEnd('Task',dateDay('2026-10-01'),due),dateDay('2026-10-31'));
+ assert.equal(card.dueParts.day,'');
+});

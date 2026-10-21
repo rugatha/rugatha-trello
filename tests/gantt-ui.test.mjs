@@ -2,21 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import fs from 'node:fs/promises';
+import {deadlineRoot} from './helpers/deadline.mjs';
 import * as dates from '../src/gantt-data.js';
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 async function setup() {
- const elements=new Map(),events={},pending=[],subscriptions=[],writes=[];
+ const elements=new Map(),events={},pending=[],subscriptions=[],writes=[],deadline=deadlineRoot();
  const element=selector=>{
   if(!elements.has(selector))elements.set(selector,{value:'',innerHTML:'',textContent:'',addEventListener(type,fn){this[type]=fn;},close(){this.open=false;},showModal(){this.open=true;}});
   return elements.get(selector);
  };
+ Object.assign(element('#deadlineFields'),deadline.root);
  const window={addEventListener:(type,fn)=>events[type]=fn};
  const context=vm.createContext({window,document:{querySelector:element,querySelectorAll:()=>[]},Date:class extends Date {constructor(...args){super(...(args.length?args:['2026-10-16T00:00:00Z']));}},Intl,Set,Map,Math,String,Number,Promise,clearTimeout,setTimeout});
  const deps={...dates,weekSunday:value=>dates.weekSunday(value ?? new Date('2026-10-16T00:00:00Z')),updateCardDeadline:(...args)=>new Promise((resolve,reject)=>writes.push({args,resolve,reject})),loadWorkspace:(account,options)=>new Promise(resolve=>pending.push({account,options,resolve})),subscribeWorkspace:(actor,next,error)=>{const s={actor,next,error};subscriptions.push(s);return()=>s.stopped=true;}};
  const mod=new vm.SourceTextModule(await fs.readFile(new URL('../src/gantt.js',import.meta.url),'utf8'),{context});
  await mod.link(async()=>new vm.SyntheticModule(Object.keys(deps),function(){for(const [key,value]of Object.entries(deps))this.setExport(key,value);},{context}));
  await mod.evaluate();
- return {$:element,pending,subscriptions,writes,auth:account=>events['boardly-auth-changed']({detail:account})};
+ return {$:element,pending,subscriptions,writes,deadline,auth:account=>events['boardly-auth-changed']({detail:account})};
 }
 const account={uid:'u',memberId:'m',workspaceRole:'viewer',accessboard:['b'],roster:[]};
 const data={boards:[{id:'b',name:'Visible',cards:[{id:'c',title:'<script>unsafe</script>',createdAt:'2026-10-01',due:'2026-10-31',assignees:['m'],checklist:[{id:'t',text:'10/20 工作',done:false}]}]},{id:'secret',name:'Private',cards:[{id:'private',title:'Private'}]}]};
@@ -67,8 +69,8 @@ test('changing assignee shows other members, completion toggle includes closed w
 test('gantt entry versions its filter dependency and has no scale selector',async()=>{
  const page=await fs.readFile(new URL('../gantt.html',import.meta.url),'utf8');
  const source=await fs.readFile(new URL('../src/gantt.js',import.meta.url),'utf8');
- assert.match(page,/src\/gantt\.js\?v=20261021-checklist/);
- assert.match(source,/gantt-data\.js\?v=20261021-checklist/);
+ assert.match(page,/src\/gantt\.js\?v=20261022-partial-deadline/);
+ assert.match(source,/gantt-data\.js\?v=20261022-partial-deadline/);
  assert.doesNotMatch(page,/scaleFilter|時間刻度/);
  assert.doesNotMatch(source,/scaleFilter/);
 });
@@ -77,10 +79,10 @@ const editDeadline=s=>s.$('#ganttChart').onclick({target:{closest:selector=>sele
 test('assigned viewers edit only the deadline, with save failures retaining the original chart',async()=>{
  const s=await setup();s.auth(account);s.pending[0].resolve(structuredClone(data));await tick();
  assert.match(s.$('#ganttChart').innerHTML,/data-deadline-card="c"/);editDeadline(s);
- assert.equal(s.$('#deadlineValue').value,'2026-10-31T00:00');
- s.$('#deadlineValue').value='2026-11-06T17:30';
+ assert.equal(s.deadline.fields.day.value,'31');assert.equal(s.deadline.fields.hour.value,'12');assert.equal(s.deadline.fields.period.value,'AM');
+ s.deadline.fill({year:'2026',month:'11',day:'06',period:'PM',hour:'05',minute:'30'});
  const save=s.$('#deadlineForm').submit({preventDefault(){}});
- assert.deepEqual(s.writes[0].args.slice(1),['b','c','2026-11-06T17:30:00+08:00','2026-10-31']);
+ assert.deepEqual(s.writes[0].args.slice(1,5),['b','c','2026-11-06T17:30:00+08:00','2026-10-31']);
  assert.equal(s.$('#saveDeadline').disabled,true);
  s.writes[0].reject(Error('offline'));await save;
  assert.equal(s.$('#deadlineDialog').open,true);assert.match(s.$('#deadlineStatus').textContent,/offline/);
@@ -91,7 +93,7 @@ test('assigned viewers edit only the deadline, with save failures retaining the 
 });
 test('switching accounts closes the deadline editor and stale write completion cannot reveal prior data',async()=>{
  const s=await setup();s.auth(account);s.pending[0].resolve(structuredClone(data));await tick();editDeadline(s);
- s.$('#deadlineValue').value='2026-11-06T17:30';const save=s.$('#deadlineForm').submit({preventDefault(){}});
+ s.deadline.fill({year:'2026',month:'11',day:'06',period:'PM',hour:'05',minute:'30'});const save=s.$('#deadlineForm').submit({preventDefault(){}});
  s.auth(null);assert.equal(s.$('#deadlineDialog').open,false);
  s.writes[0].resolve({due:'2026-11-06T17:30:00+08:00'});await save;
  assert.ok(!s.$('#ganttChart').innerHTML.includes('&lt;script&gt;'));
@@ -159,4 +161,16 @@ test('checklist categories do not add a level or prefix to gantt item names',asy
  const html=s.$('#ganttChart').innerHTML;
  assert.match(html,/☐ 排程/);assert.match(html,/☐ 確認連結/);
  assert.doesNotMatch(html,/發文|檢查|checklistGroup/);
+});
+
+test('gantt saves unfinished deadline components on close and keeps the entered blanks on reopen',async()=>{
+ const s=await setup();s.auth(account);s.pending[0].resolve(structuredClone(data));await tick();editDeadline(s);
+ s.deadline.clear.onclick();
+ s.writes[0].resolve({due:'',dueParts:dates.deadlineParts('')});await tick();
+ s.deadline.fill({year:'2026',month:'10',period:'PM',hour:'09'});
+ const close=s.$('#closeDeadline').onclick();
+ assert.equal(s.writes[1].args[3],'2026-10-31T21:59:00+08:00');assert.equal(s.writes[1].args[5].day,'');
+ s.writes[1].resolve({due:'2026-10-31T21:59:00+08:00'});await close;
+ assert.equal(s.$('#deadlineDialog').open,false);editDeadline(s);
+ assert.equal(s.deadline.fields.day.value,'');assert.equal(s.deadline.fields.minute.value,'');assert.equal(s.deadline.fields.hour.value,'09');
 });

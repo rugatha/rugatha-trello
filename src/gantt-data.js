@@ -1,3 +1,4 @@
+export {deadlineParts,resolveDeadline,deadlineFields,bindDeadlineFields} from './deadline.js';
 // Calendar days are UTC day numbers; timestamps are displayed in the workspace's Taipei timezone.
 export const DAY = 86400000;
 function calendarDay(year, month, day) {
