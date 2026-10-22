@@ -632,3 +632,43 @@ test('board drag handles retain keyboard sorting and block saving during an acti
  s.handles[1].onkeydown({key:'ArrowUp',preventDefault(){}});
  await s.element('#saveBoardOrder').onclick();assert.deepEqual(s.saved,[['second','b','last']]);
 });
+
+const navigationIds=instance=>Array.from(instance.element('#boardNav').innerHTML.matchAll(/data-board="([^"]+)"/g),match=>match[1]);
+async function favoritesSetup(saved){
+ return setup({workspaceLoad:async(_,__,data)=>{
+  if(saved)return structuredClone(saved);
+  const state=data(),base=state.boards[0];
+  state.boards.push({...structuredClone(base),id:'first',name:'First favorite',starred:true},
+   {...structuredClone(base),id:'second',name:'Second favorite',starred:true},
+   {...structuredClone(base),id:'normal',name:'Normal'});
+  return state;
+ }});
+}
+const favoritesAccount={...account('editor'),accessboard:['b','first','second','normal'],boardOrder:['b','second','normal','first']};
+test('favorites precede other boards and legacy favorites retain their personal relative order',async()=>{
+ const s=await favoritesSetup();await s.api.applyGoogleAccount(favoritesAccount);
+ assert.deepEqual(navigationIds(s),['second','first','b','normal']);
+});
+test('new favorites append after existing favorites and retain their order after reload and re-starring',async()=>{
+ const s=await favoritesSetup();await s.api.applyGoogleAccount(favoritesAccount);
+ const settle=async index=>{s.writes[index].resolve([]);await new Promise(resolve=>setImmediate(resolve));};
+ s.element('#starBoard').onclick();
+ assert.deepEqual(navigationIds(s),['second','first','b','normal']);
+ assert.equal(s.writes[0].after.boards.find(b=>b.id==='b').starredOrder,1);
+ await settle(0);
+ s.api.selectBoard('normal');s.element('#starBoard').onclick();await settle(1);
+ const reloaded=await favoritesSetup(s.writes[1].after);await reloaded.api.applyGoogleAccount(favoritesAccount);
+ assert.deepEqual(navigationIds(reloaded),['second','first','b','normal']);
+ s.api.selectBoard('b');s.element('#starBoard').onclick();await settle(2);
+ assert.deepEqual(navigationIds(s),['second','first','normal','b']);
+ s.element('#starBoard').onclick();await settle(3);
+ assert.deepEqual(navigationIds(s),['second','first','normal','b']);
+ assert.equal(s.writes[3].after.boards.find(b=>b.id==='b').starredOrder,3);
+});
+test('a failed favorite save restores the previous navigation order',async()=>{
+ const s=await favoritesSetup();await s.api.applyGoogleAccount(favoritesAccount);
+ s.api.selectBoard('normal');s.element('#starBoard').onclick();
+ assert.deepEqual(navigationIds(s),['second','first','normal','b']);
+ s.writes[0].reject(Error('offline'));await new Promise(resolve=>setImmediate(resolve));
+ assert.deepEqual(navigationIds(s),['second','first','b','normal']);
+});

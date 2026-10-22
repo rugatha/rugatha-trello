@@ -32,7 +32,20 @@ function applyBoardColor(value){
 }
 function personalBoards() {
   const positions = new Map((googleAccount?.boardOrder || []).map((id, i) => [id, i]));
-  return [...state.boards].sort((a, b) => (positions.get(a.id) ?? Infinity) - (positions.get(b.id) ?? Infinity));
+  return [...state.boards].sort((a, b) =>
+    Number(Boolean(b.starred)) - Number(Boolean(a.starred)) ||
+    (a.starred && b.starred ? (a.starredOrder || 0) - (b.starredOrder || 0) : 0) ||
+    (positions.get(a.id) ?? Infinity) - (positions.get(b.id) ?? Infinity));
+}
+function toggleBoardStar(){
+  const active=board();
+  if(!active||!canEdit()||active.archived||active.deleting)return;
+  active.starred=!active.starred;
+  if(active.starred){
+    // Legacy favorites have rank zero; each new favorite follows all existing ones.
+    active.starredOrder=state.boards.reduce((last,b)=>b.starred?Math.max(last,b.starredOrder||0):last,0)+1;
+  }
+  save();render();
 }
 let boardOrderDraft = [], boardOrderSaving = false, boardOrderDrag = null;
 function moveBoardOrder(from,to){
@@ -499,7 +512,7 @@ async function restoreArchived(type,id,cardId){
     }
   }
 }
-$('#editor').onclose=()=>{flushDeadlineSave();const id=currentCard;currentCard=null;const source=$$('[data-card]').find(el=>el.dataset.card===id);if(source)source.focus?.();else $('#quickCreate').focus?.();flushLiveSync()};$('#currentUser').onclick=openUsers;$('#membersBtn').onclick=openUsers;$('#inviteBtn').onclick=openUsers;$('#closeUser').onclick=()=>$('#userDialog').close();$('#addBoard').onclick=()=>editBoard(true);$('#editBoard').onclick=()=>editBoard();$('#starBoard').onclick=()=>{board().starred=!board().starred;save();render()};$('#quickCreate').onclick=()=>createCard();$('#workspaceNav').onclick=()=>{state.activeBoard=null;if(baseline)baseline.activeBoard=null;mine=false;$('#search').value='';$('#dueFilter').value='all';render()};$('#search').oninput=render;$('#mineFilter').onclick=()=>requireUser(()=>{mine=!mine;render()});$('#dueFilter').onchange=render;$('#clearFilters').onclick=()=>{mine=false;$('#search').value='';$('#dueFilter').value='all';render()};
+$('#editor').onclose=()=>{flushDeadlineSave();const id=currentCard;currentCard=null;const source=$$('[data-card]').find(el=>el.dataset.card===id);if(source)source.focus?.();else $('#quickCreate').focus?.();flushLiveSync()};$('#currentUser').onclick=openUsers;$('#membersBtn').onclick=openUsers;$('#inviteBtn').onclick=openUsers;$('#closeUser').onclick=()=>$('#userDialog').close();$('#addBoard').onclick=()=>editBoard(true);$('#editBoard').onclick=()=>editBoard();$('#starBoard').onclick=toggleBoardStar;$('#quickCreate').onclick=()=>createCard();$('#workspaceNav').onclick=()=>{state.activeBoard=null;if(baseline)baseline.activeBoard=null;mine=false;$('#search').value='';$('#dueFilter').value='all';render()};$('#search').oninput=render;$('#mineFilter').onclick=()=>requireUser(()=>{mine=!mine;render()});$('#dueFilter').onchange=render;$('#clearFilters').onclick=()=>{mine=false;$('#search').value='';$('#dueFilter').value='all';render()};
 let deadlineSaveTimer=null,deadlineSavePending=false;
 let baseline=null, loading=false, saving=false, generation=0, saveFailure='', lifecycleDialog=false, assigneeDialog=false;
 let stopSubscription=null, livePending=false, liveTimer=null, liveBoards=new Set();
