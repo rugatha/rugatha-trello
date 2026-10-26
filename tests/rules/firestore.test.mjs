@@ -382,6 +382,31 @@ test('copied checklists cannot retain assignees on an unassigned new card',async
  await assertFails(batch.commit());
 });
 
+test('imported checklists with null deadlines can be checked and unchecked by editors',async()=>{
+ const path=board+'/cards/imported-null-deadline';
+ await env.withSecurityRulesDisabled(async context=>{
+  const db=context.firestore();
+  await setDoc(doc(db,path),{title:'Imported card',createdBy:'admin',assigneeIds:['editor']});
+  await setDoc(doc(db,path+'/checklist/item'),{text:'Imported task',done:false,due:null,group:'Imported list'});
+ });
+ const db=dbFor('editor'),item=doc(db,path+'/checklist/item');
+ for(const done of [true,false]){
+  // The UI also touches the parent card to notify live board listeners.
+  const batch=writeBatch(db);
+  batch.update(item,{done});
+  batch.update(doc(db,path),{updatedBy:'editor',updatedAt:new Date().toISOString()});
+  await assertSucceeds(batch.commit());
+  const saved=(await getDoc(item)).data();
+  assert.equal(saved.done,done);assert.equal(saved.due,null);assert.equal(saved.group,'Imported list');
+ }
+ for(const role of ['viewer','member','outsider','disabled']){
+  await assertFails(updateDoc(doc(dbFor(role),path+'/checklist/item'),{done:true}));
+ }
+ for(const due of [123,{},[],false,'tomorrow','2026-11-03T17:30'])await assertFails(updateDoc(item,{due}));
+ await assertSucceeds(updateDoc(item,{due:'2026-11-03T17:30:00+08:00'}));
+ await assertSucceeds(updateDoc(item,{due:''}));
+});
+
 test('only board admins and owners can change checklist group definitions on an existing card',async()=>{
  const path=board+'/cards/checklist-groups';
  await env.withSecurityRulesDisabled(async context=>{

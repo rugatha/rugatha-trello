@@ -177,7 +177,9 @@ service cloud.firestore {
           match /checklist/{itemId} {
             allow read: if boardAccess(w, b);
             function validChecklistSchedule() {
-              let due = request.resource.data.get('due', '');
+              // Trello imports store an unset deadline as null; treat it as empty.
+              let storedDue = request.resource.data.get('due', '');
+              let due = storedDue == null ? '' : storedDue;
               let assignee = request.resource.data.get('assigneeId', '');
               let parent = getAfter(/databases/$(database)/documents/workspaces/$(w)/boards/$(b)/cards/$(cardId)).data;
               return validDeadlineParts(request.resource.data) && due is string
