@@ -170,7 +170,7 @@ function openUsers(){
   $('#userDialogTitle').textContent=googleAccount?'帳號設定':'登入';
   if(googleAccount){
     $('#googleAccountSummary').textContent=`${googleAccount.displayName} · ${googleAccount.email}`;
-    const roleNames={admin:'Admin（全站管理員）',owner:'Owner（看板管理者）',editor:'Editor',viewer:'Viewer'};
+    const roleNames={admin:'Admin（全站管理員）',owner:'Owner（看板管理者）',editor:'Editor',member:'Member'};
     $('#workspaceAccess').textContent=googleAccount.workspaceRole
       ?`工作空間權限：${roleNames[googleAccount.workspaceRole]||googleAccount.workspaceRole}`
       :'Google 登入成功；此帳號尚未取得工作空間成員權限。';

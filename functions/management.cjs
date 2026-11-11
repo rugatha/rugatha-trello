@@ -1,6 +1,7 @@
 'use strict';
 const {createHash} = require('node:crypto');
 const ROOT = 'workspaces/main';
+const activeMember = data => data?.status === 'active' && ['admin','owner','editor','member'].includes(data.role);
 const COLORS = ['#455f56','#c8b58f','#8fa697','#bca582','#ad9790'];
 class ManagementError extends Error {
   constructor(code, message) { super(message); this.code = code; }
@@ -46,7 +47,7 @@ function createManagement(db) {
     if (!lookup.exists) fail('permission-denied','尚未取得工作空間權限');
     const memberRef=db.doc(`${ROOT}/members/${id(lookup.data().memberId)}`);
     const member=await tx.get(memberRef), data=member.data();
-    if (!member.exists || data.status!=='active' || (roles && !roles.includes(data.role)) || !Array.isArray(data.accessboard)) fail('permission-denied','此帳號目前沒有此操作的權限');
+    if (!member.exists || !activeMember(data) || (roles && !roles.includes(data.role)) || !Array.isArray(data.accessboard)) fail('permission-denied','此帳號目前沒有此操作的權限');
     return {...data,id:member.id,ref:memberRef};
   }
   async function cardContext(tx, member, boardId, cardId) {
@@ -72,7 +73,7 @@ function createManagement(db) {
         const member=await actor(tx,auth,false);
         await cardContext(tx,member,boardId,cardId);
         const snapshot=await tx.get(db.collection(`${ROOT}/members`));
-        return {members:snapshot.docs.filter(d=>d.data().status==='active' && d.data().accessboard?.includes(boardId))
+        return {members:snapshot.docs.filter(d=>activeMember(d.data()) && d.data().accessboard?.includes(boardId))
           .map(d=>({id:d.id,name:d.data().name || '未設定名稱'}))};
       });
     },
@@ -89,7 +90,7 @@ function createManagement(db) {
         const op=operation(auth,operationId,'postComment',payload),previous=await tx.get(op.ref),result=replay(previous,op.fingerprint);
         if(result)return result;
         const recipients=await Promise.all(targets.map(m=>tx.get(db.doc(`${ROOT}/members/${m}`))));
-        if(recipients.some(s=>!s.exists || s.data().status!=='active' || !s.data().accessboard?.includes(boardId)))
+        if(recipients.some(s=>!s.exists || !activeMember(s.data()) || !s.data().accessboard?.includes(boardId)))
           fail('failed-precondition','被標註的會員已無此牌卡權限，請重新選取');
         const at=new Date().toISOString(),commentId=`comment-${operationId}`;
         tx.create(card.ref.collection('comments').doc(commentId),{memberId:member.id,text:data.text,mentions,at});
@@ -122,7 +123,7 @@ function createManagement(db) {
         if(comment.text!==data.expected.text || JSON.stringify(comment.mentions||[])!==JSON.stringify(data.expected.mentions) || (comment.editedAt||null)!==(data.expected.editedAt||null))
           fail('aborted','留言已在其他視窗變更，請重新整理後再試');
         const recipients=await Promise.all(targets.map(m=>tx.get(db.doc(`${ROOT}/members/${m}`))));
-        if(recipients.some(s=>!s.exists || s.data().status!=='active' || !s.data().accessboard?.includes(boardId)))
+        if(recipients.some(s=>!s.exists || !activeMember(s.data()) || !s.data().accessboard?.includes(boardId)))
           fail('failed-precondition','被標註的會員已無此牌卡權限，請重新選取');
         const comments=data.action==='delete'?await tx.get(card.ref.collection('comments')):null;
         const at=new Date().toISOString();
@@ -145,7 +146,7 @@ function createManagement(db) {
         return {members: snapshot.docs.map(d => {
           const profile = d.data();
           // Expose assignment eligibility only for boards the caller can access.
-          const boardIds = profile.status === 'active'
+          const boardIds = activeMember(profile)
             ? member.accessboard.filter(boardId => profile.accessboard?.includes(boardId)) : [];
           return {id:d.id, name:profile.name || '未設定名稱', boardIds,
             ...(profile.avatar ? {avatar:profile.avatar} : {})};
@@ -172,7 +173,7 @@ function createManagement(db) {
       input(data, ['requestId','memberId','email','name','role','status','accessboard','expected']);
       const operationId=requestId(data.requestId), creating=data.memberId === undefined;
       const memberId=creating ? `invited-${operationId}` : id(data.memberId);
-      if (!['admin','owner','editor','viewer','member'].includes(data.role) ||
+      if (!['admin','owner','editor','member'].includes(data.role) ||
           !['pending','active','disabled'].includes(data.status)) fail('invalid-argument','角色或狀態不正確');
       const accessboard=ids(data.accessboard,200);
       let email, name;
@@ -205,7 +206,7 @@ function createManagement(db) {
         if(boards.some(b=>!b.exists || b.data().deleting))fail('failed-precondition','授權看板不存在或正在刪除');
         if (!creating && old.role==='admin' && old.status==='active' && (data.role!=='admin' || data.status!=='active')) {
           const admins=await tx.get(db.collection(`${ROOT}/members`).where('role','==','admin'));
-          if(!admins.docs.some(d=>d.id!==memberId && d.data().status==='active'))fail('failed-precondition','必須保留至少一位有效 Admin');
+          if(!admins.docs.some(d=>d.id!==memberId && activeMember(d.data())))fail('failed-precondition','必須保留至少一位有效 Admin');
         }
         let lookup;
         if(creating){
@@ -230,7 +231,7 @@ function createManagement(db) {
         const card=forCard?await cardContext(tx,member,data.boardId,data.cardId):null;
         const snapshot=await tx.get(db.collection(`${ROOT}/members`));
         const assigned=card?.data.assigneeIds || [];
-        const members=snapshot.docs.filter(d=>d.data().status==='active' && (!forCard || (d.data().assignable!==false && d.data().accessboard?.includes(data.boardId))))
+        const members=snapshot.docs.filter(d=>activeMember(d.data()) && (!forCard || (d.data().assignable!==false && d.data().accessboard?.includes(data.boardId))))
           .map(d=>({id:d.id,name:d.data().name || d.id,eligible:true}));
         for (const memberId of assigned) if (!members.some(m=>m.id===memberId)) {
           const historical=snapshot.docs.find(d=>d.id===memberId);
@@ -249,11 +250,10 @@ function createManagement(db) {
         const member=await actor(tx,auth),op=operation(auth,operationId,'createBoard',payload);
         const previous=await tx.get(op.ref),result=replay(previous,op.fingerprint);
         if (result) return result;
-        const viewers=await tx.get(db.collection(`${ROOT}/members`).where('allBoards','==',true));
-        const recipients=[...new Set([member.id,...memberIds,...viewers.docs.filter(s=>s.data().status==='active' && s.data().role==='viewer').map(s=>s.id)])];
+        const recipients=[...new Set([member.id,...memberIds])];
         const refs=recipients.map(m=>db.doc(`${ROOT}/members/${m}`));
         const snapshots=await Promise.all(refs.map(ref=>tx.get(ref)));
-        if(snapshots.some(s=>!s.exists || s.data().status!=='active' || !Array.isArray(s.data().accessboard))) fail('failed-precondition','選取的會員已停用或不存在，請重新載入名單');
+        if(snapshots.some(s=>!s.exists || !activeMember(s.data()) || !Array.isArray(s.data().accessboard))) fail('failed-precondition','選取的會員已停用或不存在，請重新載入名單');
         const boardId=`managed-${operationId}`,boardRef=db.doc(`${ROOT}/boards/${boardId}`);
         const existing=await tx.get(boardRef);
         if(existing.exists)fail('already-exists','看板 ID 已存在，請重新開啟表單');
@@ -281,7 +281,7 @@ function createManagement(db) {
         if(result)return result;
         if(!equalIds(card.data.assigneeIds||[],expectedAssigneeIds))fail('aborted','其他成員已修改負責人，請重新開啟指派視窗');
         const targets=await Promise.all(assigneeIds.map(m=>tx.get(db.doc(`${ROOT}/members/${m}`))));
-        if(targets.some(s=>!s.exists || s.data().status!=='active' || s.data().assignable===false || !Array.isArray(s.data().accessboard) || !s.data().accessboard.includes(boardId))) fail('failed-precondition','負責人必須是允許指派且仍可存取此看板的有效會員；請取消無效的歷史指派');
+        if(targets.some(s=>!s.exists || !activeMember(s.data()) || s.data().assignable===false || !Array.isArray(s.data().accessboard) || !s.data().accessboard.includes(boardId))) fail('failed-precondition','負責人必須是允許指派且仍可存取此看板的有效會員；請取消無效的歷史指派');
         // Read the children in the same transaction so concurrent checklist assignments
         // cannot retain a person who is being removed from the parent card.
         const checklist=await tx.get(db.collection(`${ROOT}/boards/${boardId}/cards/${cardId}/checklist`));

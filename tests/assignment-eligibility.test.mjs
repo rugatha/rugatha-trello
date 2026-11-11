@@ -8,7 +8,7 @@ function setup(assigned=[],role='admin',accessboard=['b'],status='active',checkl
  const data=new Map([
   [root+'/memberLookup/owner@example.com',{memberId:'admin'}],
   [root+'/members/admin',{name:'Rugatha',role,status,assignable:false,accessboard}],
-  [root+'/members/worker',{name:'Worker',role:'viewer',status:'active',accessboard:['b']}],
+  [root+'/members/worker',{name:'Worker',role:'member',status:'active',accessboard:['b']}],
   [root+'/boards/b',{name:'Board'}],
   [root+'/boards/b/cards/c',{title:'Card',assigneeIds:assigned}],
  ...checklist.map(item=>[root+'/boards/b/cards/c/checklist/'+item.id,item]),
@@ -65,4 +65,17 @@ test('removing a card assignee clears only that person from checklist assignment
  assert.equal(children.length,1);
  assert.ok(children[0].path.endsWith("/checklist/b"));
  for(const child of children)assert.deepEqual(child.data,{assigneeId:''});
+});
+
+
+test('retired Viewer cannot read rosters or mention candidates through callables',async()=>{
+ const {service,writes}=setup([],'viewer');
+ await assert.rejects(service.displayMembers(auth,{}),e=>e.code==='permission-denied');
+ await assert.rejects(service.mentionMembers(auth,{boardId:'b',cardId:'c'}),e=>e.code==='permission-denied');
+ assert.equal(writes.length,0);
+});
+test('membership management rejects the retired Viewer role',async()=>{
+ const {service,writes}=setup();
+ await assert.rejects(service.saveMembership(auth,{requestId:randomUUID(),name:'Retired',email:'retired@example.com',role:'viewer',status:'pending',accessboard:['b']}),e=>e.code==='invalid-argument');
+ assert.equal(writes.length,0);
 });

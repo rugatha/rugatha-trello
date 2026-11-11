@@ -12,9 +12,13 @@ service cloud.firestore {
       return /databases/$(database)/documents/workspaces/$(w)/members/$(memberId(w));
     }
     function member(w) { return get(memberPath(w)).data; }
+    function validMember(w) {
+      let data = member(w);
+      return data.status == 'active' && data.role in ['admin', 'owner', 'editor', 'member'];
+    }
     function active(w) {
       return verified() && exists(lookupPath(w)) && exists(memberPath(w))
-        && member(w).status == 'active';
+        && validMember(w);
     }
     function boardAccess(w, b) {
       return active(w) && b in member(w).accessboard;

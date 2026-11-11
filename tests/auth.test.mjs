@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import fs from 'node:fs/promises';
 
-async function setup(member = {name:'會員名稱',status:'active',role:'viewer',accessboard:[]}, hooks = {}) {
+async function setup(member = {name:'會員名稱',status:'active',role:'member',accessboard:[]}, hooks = {}) {
   const elements=new Map(), writes=[], reads=[], listeners=[];
   let onAuth, fail=false;
   const element=key=>{
@@ -17,7 +17,6 @@ async function setup(member = {name:'會員名稱',status:'active',role:'viewer'
     getFunctions:()=>({}),httpsCallable:()=>async()=>({data:{members:[{id:'m',name:member?.name}]}}),
     initializeApp:()=>({}),getAuth:()=>auth,getFirestore:()=>({}),GoogleAuthProvider:class{setCustomParameters(parameters){if(hooks.provider)hooks.provider(parameters);}},
     onAuthStateChanged:(_,fn)=>onAuth=fn,signInWithPopup:async()=>{},
-    signInWithEmailAndPassword:async(_,email,password)=>{await hooks.passwordSignIn?.(email,password);},
     signOut:async()=>{auth.currentUser=null;await onAuth(null);},
     doc:(_, ...parts)=>parts.join('/'),collection:()=>({}),
     getDocFromServer:async path=>{
@@ -60,7 +59,7 @@ test('editing saves member name and roster without changing Google profile',asyn
   assert.equal(h.window.boardlyGoogleUser.displayName,'新名稱');
 });
 test('missing names prompt; failed writes stay open and preserve published name',async()=>{
-  const h=await setup({name:'',status:'active'});await h.login();
+  const h=await setup({name:'',role:'member',status:'active'});await h.login();
   assert.equal(h.element('#nameDialog').open,true);
   h.setFail();await h.save('名稱');
   assert.equal(h.element('#nameDialog').open,true);
@@ -124,9 +123,9 @@ const snapshot = (data, metadata = {}) => ({id:'m',exists:()=>data !== null,data
 test('membership changes publish current board access and role without a browser reload',async()=>{
   const member={name:'Member',status:'active',role:'editor',accessboard:['a','b']};
   const h=await setup(member);await h.login();
-  h.listeners[0].next(snapshot({...member,role:'viewer',accessboard:['b']}));
+  h.listeners[0].next(snapshot({...member,role:'member',accessboard:['b']}));
   assert.deepEqual(Array.from(h.window.boardlyGoogleUser.accessboard),['b']);
-  assert.equal(h.window.boardlyGoogleUser.workspaceRole,'viewer');
+  assert.equal(h.window.boardlyGoogleUser.workspaceRole,'member');
   h.listeners[0].next(snapshot(member));
   assert.deepEqual(Array.from(h.window.boardlyGoogleUser.accessboard),['a','b']);
 });
@@ -142,7 +141,7 @@ for(const kind of ['disabled','deleted','denied'])test('membership '+kind+' clea
 test('cached snapshots cannot restore obsolete membership permissions',async()=>{
   const h=await setup();await h.login();
   h.listeners[0].next(snapshot({status:'active',role:'admin'}, {fromCache:true}));
-  assert.equal(h.window.boardlyGoogleUser.workspaceRole,'viewer');
+  assert.equal(h.window.boardlyGoogleUser.workspaceRole,'member');
 });
 test('old member callbacks cannot replace a new account or show stale errors',async()=>{
   const h=await setup();await h.login('old');const old=h.listeners[0];await h.login('new');
@@ -169,7 +168,7 @@ test('pending name save cannot restore revoked membership',async()=>{
 test('name save finishing after a role update preserves new permissions',async()=>{
   const pending=deferred();const h=await setup(undefined,{updateDoc:()=>pending.promise});await h.login();
   h.window.boardlyGoogleAuth.editName();const save=h.save('Saved');
-  h.listeners[0].next(snapshot({name:'Saved',status:'active',role:'viewer',accessboard:['new']}));
+  h.listeners[0].next(snapshot({name:'Saved',status:'active',role:'member',accessboard:['new']}));
   pending.resolve();await save;
   assert.equal(h.window.boardlyGoogleUser.displayName,'Saved');
   assert.deepEqual(Array.from(h.window.boardlyGoogleUser.accessboard),['new']);
@@ -185,7 +184,7 @@ for (const theme of ['light','dark']) test('personal '+theme+' theme persists on
   await h.window.boardlyGoogleAuth.signOut();assert.equal(h.body.dataset.theme,'light');
 });
 test('theme failure restores saved preference and allows retry',async()=>{
-  const h=await setup({name:'Member',status:'active',theme:'dark'});await h.login();h.setFail();
+  const h=await setup({name:'Member',role:'member',status:'active',theme:'dark'});await h.login();h.setFail();
   h.element('#personalTheme').value='light';await h.element('#personalTheme').events.change();
   assert.equal(h.body.dataset.theme,'dark');assert.equal(h.element('#personalTheme').value,'dark');
   assert.equal(h.element('#personalTheme').disabled,false);assert.match(h.element('#themeStatus').textContent,/offline/);
@@ -203,7 +202,7 @@ for(const failure of [false,true])test('old theme '+(failure?'failure':'completi
   assert.equal(h.body.dataset.theme,'light');assert.equal(h.element('#themeStatus').textContent,'');assert.equal(h.element('#personalTheme').disabled,false);
 });
 test('theme snapshots sync and revoked membership resets preference',async()=>{
- const h=await setup();await h.login();h.listeners[0].next(snapshot({name:'Member',status:'active',role:'viewer',theme:'dark'}));
+ const h=await setup();await h.login();h.listeners[0].next(snapshot({name:'Member',status:'active',role:'member',theme:'dark'}));
  assert.equal(h.body.dataset.theme,'dark');h.listeners[0].next(snapshot(null));assert.equal(h.body.dataset.theme,'light');assert.equal(h.element('#personalTheme').disabled,true);
 });
 
@@ -231,7 +230,7 @@ for(const file of [{type:'image/svg+xml',size:100},{type:'image/png',size:6*1024
   assert.equal(h.writes.length,0);assert.match(h.element('#avatarStatus').textContent,/未儲存/);assert.equal(h.element('#avatarInput').disabled,false);
 });
 test('avatar failure keeps the previous image and permits retry',async()=>{
-  const avatar='data:image/jpeg;base64,b2xk';const h=await setup({name:'Member',status:'active',avatar});await h.login();h.setFail();
+  const avatar='data:image/jpeg;base64,b2xk';const h=await setup({name:'Member',role:'member',status:'active',avatar});await h.login();h.setFail();
   h.element('#avatarInput').files=[imageFile];await h.element('#avatarInput').events.change();
   assert.equal(h.window.boardlyGoogleUser.avatar,avatar);assert.equal(h.element('#avatarPreview').src,avatar);
   assert.match(h.element('#avatarStatus').textContent,/offline/);assert.equal(h.element('#avatarInput').disabled,false);
@@ -247,8 +246,8 @@ test('revocation while saving an avatar cannot restore membership',async()=>{
   const save=h.element('#removeAvatar').events.click();h.listeners[0].next(snapshot(null));pending.resolve();await save;
   assert.equal(h.window.boardlyGoogleUser.memberId,null);assert.equal(h.element('#avatarInput').disabled,true);
 });
-test('board order persists for viewers and survives another email login',async()=>{
-  const member={name:'Member',status:'active',role:'viewer',accessboard:['a','b']};const h=await setup(member);await h.login();
+test('board order persists for Members and survives another email login',async()=>{
+  const member={name:'Member',status:'active',role:'member',accessboard:['a','b']};const h=await setup(member);await h.login();
   assert.equal(await h.window.boardlyGoogleAuth.saveBoardOrder(['b','a']),true);
   assert.deepEqual(Array.from(h.writes[0].patch.boardOrder),['b','a']);
   await h.login('alternate');assert.deepEqual(Array.from(h.window.boardlyGoogleUser.boardOrder),['b','a']);
@@ -256,38 +255,33 @@ test('board order persists for viewers and survives another email login',async()
   assert.equal(h.writes.length,1);
 });
 test('failed board order write preserves saved order',async()=>{
-  const h=await setup({name:'Member',status:'active',accessboard:['a','b'],boardOrder:['a','b']});await h.login();h.setFail();
+  const h=await setup({name:'Member',role:'member',status:'active',accessboard:['a','b'],boardOrder:['a','b']});await h.login();h.setFail();
   await assert.rejects(h.window.boardlyGoogleAuth.saveBoardOrder(['b','a']),/offline/);
   assert.deepEqual(Array.from(h.window.boardlyGoogleUser.boardOrder),['a','b']);
 });
 test('old board order save cannot publish after sign out',async()=>{
-  const pending=deferred();const h=await setup({name:'Member',status:'active',accessboard:['a']},{updateDoc:()=>pending.promise});await h.login();
+  const pending=deferred();const h=await setup({name:'Member',role:'member',status:'active',accessboard:['a']},{updateDoc:()=>pending.promise});await h.login();
   const save=h.window.boardlyGoogleAuth.saveBoardOrder(['a']);await h.window.boardlyGoogleAuth.signOut();pending.resolve();
   assert.equal(await save,false);assert.equal(h.window.boardlyGoogleUser,null);
 });
 
-test('Viewer password login uses Firebase and clears password on success and failure',async()=>{
-  const calls=[];
-  const h=await setup(undefined,{passwordSignIn:(email,password)=>calls.push({email,password})});
-  h.element('#viewerSignIn').events.click();
-  assert.equal(h.element('#viewerDialog').open,true);
-  h.element('#viewerPassword').value='test-only-password';
-  await h.element('#viewerForm').events.submit({preventDefault(){}});
-  assert.deepEqual(calls,[{email:'viewer@rugatha-trello.invalid',password:'test-only-password'}]);
-  assert.equal(h.element('#viewerPassword').value,'');
-  assert.equal(h.element('#viewerDialog').open,false);
-  const failed=await setup(undefined,{passwordSignIn:()=>{throw Object.assign(Error('private details'),{code:'auth/invalid-credential'});}});
-  failed.element('#viewerSignIn').events.click();
-  failed.element('#viewerPassword').value='wrong-password';
-  await failed.element('#viewerForm').events.submit({preventDefault(){}});
-  assert.equal(failed.element('#viewerDialog').open,true);
-  assert.equal(failed.element('#viewerPassword').value,'');
-  assert.match(failed.element('#viewerError').textContent,/密碼錯誤/);
-  assert.equal(failed.element('#submitViewer').disabled,false);
-});
-test('Viewer publishes strict read-only membership and hides password login while signed in',async()=>{
-  const h=await setup({name:'Viewer',status:'active',role:'viewer',readOnly:true,accessboard:['board']});
+test('Member publishes strict read-only membership',async()=>{
+  const h=await setup({name:'Viewer',status:'active',role:'member',readOnly:true,accessboard:['board']});
   await h.login();
   assert.equal(h.window.boardlyGoogleUser.readOnly,true);
-  assert.equal(h.element('#viewerSignIn').hidden,true);
+});
+
+
+test('retired Viewer membership has no workspace access or preference writes',async()=>{
+  const h=await setup({name:'Retired',role:'viewer',status:'active',accessboard:['b']});
+  await h.login();
+  assert.equal(h.window.boardlyGoogleUser.memberId,null);
+  assert.equal(h.window.boardlyGoogleUser.workspaceRole,null);
+  await assert.rejects(h.window.boardlyGoogleAuth.saveBoardOrder(['b']),/尚未取得有效會員資格/);
+});
+test('changing an active Member to retired Viewer immediately clears membership',async()=>{
+  const h=await setup();await h.login();
+  h.listeners[0].next(snapshot({name:'Retired',role:'viewer',status:'active',accessboard:['b']}));
+  assert.equal(h.window.boardlyGoogleUser.memberId,null);
+  assert.equal(h.window.boardlyGoogleUser.workspaceRole,null);
 });

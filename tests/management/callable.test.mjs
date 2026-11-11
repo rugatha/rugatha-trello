@@ -18,7 +18,8 @@ const assignment=(patch={})=>({requestId:randomUUID(),boardId:'allowed',cardId:'
 before(async()=>{
  if(!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_AUTH_EMULATOR_HOST || !process.env.FIREBASE_STORAGE_EMULATOR_HOST || process.env.GCLOUD_PROJECT!==projectId)throw Error('Only run through test:management against demo Auth, Firestore and Storage emulators.');
  app=initializeApp({projectId});db=getFirestore(app);auth=getAuth(app);
- const roles=['admin','owner','editor','viewer','member','disabled','outsider','unverified','unapproved'];
+ // Historical fixture ID 'viewer' now represents a Member; retired Viewer is tested separately.
+const roles=['admin','owner','editor','viewer','member','disabled','outsider','unverified','unapproved'];
  for(const name of roles){
   const email=name+'@example.com';
   await auth.createUser({uid:name,email,password:'local-test-password',emailVerified:name!=='unverified'});
@@ -26,7 +27,7 @@ before(async()=>{
   tokens[name]=(await login.json()).idToken;
   if(name==='unapproved')continue;
   await db.doc(`${root}/memberLookup/${email}`).set({memberId:name});
-  await db.doc(`${root}/members/${name}`).set({name,role:['disabled','outsider','unverified'].includes(name)?'admin':name,status:name==='disabled'?'pending':'active',accessboard:name==='outsider'?[]:['allowed']});
+  await db.doc(`${root}/members/${name}`).set({name,role:name==='viewer'?'member':['disabled','outsider','unverified'].includes(name)?'admin':name,status:name==='disabled'?'pending':'active',accessboard:name==='outsider'?[]:['allowed']});
  }
  await db.doc(`${root}/boards/allowed`).set({name:'Allowed',archived:false});
  await db.doc(`${root}/boards/allowed/cards/card`).set({title:'Card',archived:false,assigneeIds:[],description:'Keep me',updatedBy:'admin'});
@@ -56,7 +57,7 @@ for(const who of ['admin','owner'])test(`${who} creates board, columns and grant
  assert.equal((await board.get()).data().createdBy,who);
  assert.equal((await board.collection('columns').get()).size,3);
  for(const member of [who,'viewer'])assert.ok((await db.doc(`${root}/members/${member}`).get()).data().accessboard.includes(result.boardId));
- assert.equal((await db.doc(`${root}/members/viewer`).get()).data().role,'viewer');
+ assert.equal((await db.doc(`${root}/members/viewer`).get()).data().role,'member');
  assert.deepEqual(await call('createManagedBoard',payload,who),result);
  assert.equal((await call('createManagedBoard',{...payload,name:'Changed'},who)).error,'ALREADY_EXISTS');
 });
@@ -111,7 +112,7 @@ test('simultaneous assignment edits commit one winner and reject the stale updat
  const winner=results.find(x=>!x.error);assert.deepEqual((await ref.get()).data().assigneeIds,winner.assigneeIds);
 });
 
-const invite=(patch={})=>({requestId:randomUUID(),name:'Invited member',email:randomUUID()+'@example.com',role:'viewer',status:'pending',accessboard:['allowed'],...patch});
+const invite=(patch={})=>({requestId:randomUUID(),name:'Invited member',email:randomUUID()+'@example.com',role:'member',status:'pending',accessboard:['allowed'],...patch});
 async function change(memberId,patch={},who='admin') {
  const data=(await db.doc(`${root}/members/${memberId}`).get()).data();
  return call('saveManagedMembership',{requestId:randomUUID(),memberId,expected:{role:data.role,status:data.status,accessboard:data.accessboard},role:data.role,status:data.status,accessboard:data.accessboard,...patch},who);
@@ -150,12 +151,12 @@ test('owner cannot elevate or edit managers and cannot grant inaccessible boards
 });
 test('last active admin cannot be disabled or demoted, even concurrently',async()=>{
  // Earlier fixtures deliberately include an admin with no board access.
- await db.doc(`${root}/members/outsider`).update({role:'viewer'});
- await db.doc(`${root}/members/unverified`).update({role:'viewer'});
+ await db.doc(`${root}/members/outsider`).update({role:'member'});
+ await db.doc(`${root}/members/unverified`).update({role:'member'});
  assert.equal((await change('admin',{status:'disabled'})).error,'FAILED_PRECONDITION');
- assert.equal((await change('admin',{role:'viewer'})).error,'FAILED_PRECONDITION');
+ assert.equal((await change('admin',{role:'member'})).error,'FAILED_PRECONDITION');
  await db.doc(`${root}/members/second-owner`).set({name:'Second admin',role:'admin',status:'active',accessboard:[]});
- const results=await Promise.all([change('admin',{role:'viewer'}),change('second-owner',{role:'viewer'})]);
+ const results=await Promise.all([change('admin',{role:'member'}),change('second-owner',{role:'member'})]);
  assert.equal(results.filter(r=>!r.error).length,1);
  const owners=await db.collection(`${root}/members`).where('role','==','admin').get();
  assert.equal(owners.docs.filter(d=>d.data().status==='active').length,1);
@@ -163,7 +164,7 @@ test('last active admin cannot be disabled or demoted, even concurrently',async(
 });
 test('stale membership edits fail without overwriting changes; malformed requests write nothing',async()=>{
  const created=await call('saveManagedMembership',invite()),memberId=created.memberId;
- const payload={requestId:randomUUID(),memberId,expected:{role:'viewer',status:'pending',accessboard:['allowed']},role:'editor',status:'active',accessboard:['allowed']};
+ const payload={requestId:randomUUID(),memberId,expected:{role:'member',status:'pending',accessboard:['allowed']},role:'editor',status:'active',accessboard:['allowed']};
  assert.ok(!(await call('saveManagedMembership',payload)).error);
  assert.deepEqual(await call('saveManagedMembership',payload),{memberId});
  assert.equal((await call('saveManagedMembership',{...payload,requestId:randomUUID(),role:'member'})).error,'ABORTED');
@@ -303,13 +304,13 @@ test('header eligibility matches assignment access and hides boards outside call
    picker.members.filter(m=>m.eligible).map(m=>m.id).sort());
 });
 
-test('new boards automatically grant active all-board Viewers without making them assignable',async()=>{
+test('new boards do not automatically grant shared Viewer access',async()=>{
   await db.doc(`${root}/members/shared-viewer`).set({name:'Viewer',role:'viewer',status:'active',accessboard:[],readOnly:true,allBoards:true,assignable:false});
   await db.doc(`${root}/members/disabled-viewer`).set({name:'Disabled',role:'viewer',status:'disabled',accessboard:[],allBoards:true});
   const result=await call('createManagedBoard',{...newBoard(),memberIds:[]});
   assert.ok(result.boardId,JSON.stringify(result));
   const viewer=(await db.doc(`${root}/members/shared-viewer`).get()).data();
-  assert.ok(viewer.accessboard.includes(result.boardId));
+  assert.deepEqual(viewer.accessboard,[]);
   assert.equal(viewer.role,'viewer');assert.equal(viewer.readOnly,true);assert.equal(viewer.assignable,false);
   assert.deepEqual((await db.doc(`${root}/members/disabled-viewer`).get()).data().accessboard,[]);
 });

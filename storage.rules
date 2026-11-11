@@ -11,7 +11,7 @@ service firebase.storage {
     }
     function access(w, b) {
       let m = membership(w).data;
-      return verified() && m.status == 'active' && b in m.accessboard;
+      return verified() && m.status == 'active' && m.role in ['admin', 'owner', 'editor', 'member'] && b in m.accessboard;
     }
     function uploadAccess(u, b) {
       let m = membership('main');

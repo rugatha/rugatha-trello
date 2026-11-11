@@ -4,7 +4,7 @@ const button = document.querySelector('#manageMembers');
 const dialog = document.querySelector('#membershipDialog');
 let generation = 0;
 let directory;
-const roleLabels={admin:'Admin（全站管理員）',owner:'Owner（看板管理者）',editor:'Editor',viewer:'Viewer',member:'Member'};
+const roleLabels={admin:'Admin（全站管理員）',owner:'Owner（看板管理者）',editor:'Editor',member:'Member'};
 const permitted = () => !!window.boardlyGoogleUser?.memberId && ['admin','owner'].includes(window.boardlyGoogleUser?.workspaceRole);
 const node = (tag, text) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; return el; };
 function reset() {
@@ -67,8 +67,8 @@ function edit(member,body) {
     el.value=value;fields[key]=el;form.append(label,el);
   }
   if(!member){field('name','顯示名稱','text',null,'');field('email','Google 帳號信箱','email',null,'');form.append(node('p','建立待核准邀請，不會寄送電子郵件。核准後，對方可使用此 Google 帳號登入。'));}
-  const roles=window.boardlyGoogleUser.workspaceRole==='admin'?['admin','owner','editor','viewer','member']:['editor','viewer','member'];
-  field('role','角色','select',roles.map(r=>[r,roleLabels[r]]),member?.role || 'viewer');
+  const roles=window.boardlyGoogleUser.workspaceRole==='admin'?['admin','owner','editor','member']:['editor','member'];
+  field('role','角色','select',roles.map(r=>[r,roleLabels[r]]),(member?.role === 'viewer' ? 'member' : member?.role) || 'member');
   if(member)field('status','會員狀態','select',[['pending','待核准'],['active','核准／啟用'],['disabled','停用']],member.status);
   const boards=node('fieldset');boards.append(node('legend','可存取看板'));
   for(const board of directory.boards){const label=node('label'),input=node('input');input.type='checkbox';input.value=board.id;input.checked=member?.accessboard.includes(board.id)||false;label.append(input,document.createTextNode(board.name+(board.archived?'（已封存）':'')));boards.append(label);}

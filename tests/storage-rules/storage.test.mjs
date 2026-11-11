@@ -13,6 +13,7 @@ const staging=(id,author='editor')=>`uploads/${author}/allowed/card/${id}/file.p
 const metadata=(id,author='editor',extra={})=>({contentType:'image/png',customMetadata:{uploadedBy:author,boardId:'allowed',cardId:'card',attachmentId:'upload-'+id},...extra});
 const context=(id,verified=true)=>env.authenticatedContext(id,{email:id+'@example.com',email_verified:verified});
 const storage=(id,verified=true)=>context(id,verified).storage();
+// Historical fixture ID 'viewer' now represents a Member; retired Viewer is tested separately.
 const roles=['admin','owner','editor','viewer','member'];
 before(async()=>{
   if(!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_STORAGE_EMULATOR_HOST) throw Error('Run npm run test:storage-rules.');
@@ -23,7 +24,7 @@ before(async()=>{
   await env.withSecurityRulesDisabled(async ctx=>{
     for(const id of [...roles,'disabled','outsider','revoked']){
       await setDoc(doc(ctx.firestore(),root+'/memberLookup/'+id+'@example.com'),{memberId:id});
-      await setDoc(doc(ctx.firestore(),root+'/members/'+id),{name:id,status:id==='disabled'?'disabled':'active',role:roles.includes(id)?id:'editor',accessboard:id==='outsider'?[]:['allowed']});
+      await setDoc(doc(ctx.firestore(),root+'/members/'+id),{name:id,status:id==='disabled'?'disabled':'active',role:id==='viewer'?'member':roles.includes(id)?id:'editor',accessboard:id==='outsider'?[]:['allowed']});
     }
     await setDoc(doc(ctx.firestore(),root+'/memberLookup/alternate@example.com'),{memberId:'editor'});
     await setDoc(doc(ctx.firestore(),root+'/boards/allowed/cards/card'),{title:'Card',archived:false});
@@ -98,4 +99,13 @@ test('staging files are private and final paths cannot be client-created',async(
  await assertFails(getBytes(ref(client,staging('limit'))));
  await assertFails(uploadBytes(ref(client,path('new-final')),new Uint8Array([1]),metadata('new-final')));
  await assertFails(uploadBytes(ref(client,staging('limit')),new Uint8Array([1]),metadata('limit')));
+});
+
+
+test('retired Viewer cannot download previously granted attachments',async()=>{
+ await env.withSecurityRulesDisabled(async c=>{
+  await setDoc(doc(c.firestore(),root+'/memberLookup/retired-viewer@example.com'),{memberId:'retired-viewer'});
+  await setDoc(doc(c.firestore(),root+'/members/retired-viewer'),{name:'Retired',role:'viewer',status:'active',accessboard:['allowed']});
+ });
+ await assertFails(getBytes(ref(storage('retired-viewer'),path())));
 });

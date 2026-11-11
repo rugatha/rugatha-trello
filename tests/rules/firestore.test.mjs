@@ -8,6 +8,7 @@ const projectId='demo-rugatha-trello';
 const root='workspaces/main';
 const board=root+'/boards/allowed';
 const card=board+'/cards/card';
+// Historical fixture ID 'viewer' now represents a Member; retired Viewer is tested separately.
 const roles=['admin','owner','editor','viewer','member'];
 let env;
 const dbFor=(id,verified=true)=>env.authenticatedContext(id,{email:id+'@example.com',email_verified:verified}).firestore();
@@ -30,7 +31,7 @@ before(async()=>{
     };
     for(const id of [...roles,'disabled','pending','outsider']){
       data[root+'/memberLookup/'+id+'@example.com']={memberId:id};
-      data[root+'/members/'+id]={id,name:id,role:roles.includes(id)?id:'editor',status:['disabled','pending'].includes(id)?id:'active',accessboard:id==='outsider'?[]:['allowed']};
+      data[root+'/members/'+id]={id,name:id,role:id==='viewer'?'member':roles.includes(id)?id:'editor',status:['disabled','pending'].includes(id)?id:'active',accessboard:id==='outsider'?[]:['allowed']};
       data[card+'/comments/'+id]={memberId:id,text:'Comment'};
     }
     for(const [path,value] of Object.entries(data))await setDoc(doc(db,path),value);
@@ -164,7 +165,7 @@ test('own membership listener receives revocation then fails closed on deactivat
   const id='live-membership',path=root+'/members/'+id;
   await env.withSecurityRulesDisabled(async context=>{
     await setDoc(doc(context.firestore(),root+'/memberLookup/'+id+'@example.com'),{memberId:id});
-    await setDoc(doc(context.firestore(),path),{name:'Live',status:'active',role:'viewer',accessboard:['allowed']});
+    await setDoc(doc(context.firestore(),path),{name:'Live',status:'active',role:'member',accessboard:['allowed']});
   });
   const events=[],waiting=[];
   const push=value=>waiting.length?waiting.shift()(value):events.push(value);
@@ -342,10 +343,10 @@ test('label editing is blocked after board archival or deletion starts',async()=
  }
 });
 
-test('strict Viewer can read all granted boards but cannot edit labels or assigned deadlines',async()=>{
+test('strict read-only Member can read all granted boards but cannot edit labels or assigned deadlines',async()=>{
   await env.withSecurityRulesDisabled(async c=>{
     await setDoc(doc(c.firestore(),root+'/memberLookup/strict-viewer@example.com'),{memberId:'strict-viewer'});
-    await setDoc(doc(c.firestore(),root+'/members/strict-viewer'),{name:'Viewer',status:'active',role:'viewer',readOnly:true,accessboard:['allowed','forbidden']});
+    await setDoc(doc(c.firestore(),root+'/members/strict-viewer'),{name:'Viewer',status:'active',role:'member',readOnly:true,accessboard:['allowed','forbidden']});
     await setDoc(doc(c.firestore(),board+'/cards/strict-card'),{title:'Read only',assigneeIds:['strict-viewer'],due:''});
   });
   const db=dbFor('strict-viewer');
@@ -457,4 +458,16 @@ test('owner can add and edit imported checklist items and persist their order',a
  await assertSucceeds(setDoc(doc(db,path),{text:'Imported',group:'Imported list',done:false,orderKey:'r:0/1'}));
  await assertSucceeds(updateDoc(doc(db,path),{text:'Edited by owner',orderKey:'r:1/1'}));
  const snapshot=await getDoc(doc(db,path));assert.equal(snapshot.data().text,'Edited by owner');
+});
+
+
+test('retired Viewer cannot read workspace content or update its membership',async()=>{
+ await env.withSecurityRulesDisabled(async c=>{
+  await setDoc(doc(c.firestore(),root+'/memberLookup/retired-viewer@example.com'),{memberId:'retired-viewer'});
+  await setDoc(doc(c.firestore(),root+'/members/retired-viewer'),{name:'Retired',role:'viewer',status:'active',accessboard:['allowed']});
+ });
+ const db=dbFor('retired-viewer');
+ for(const path of [root,board,card,root+'/members/retired-viewer'])await assertFails(getDoc(doc(db,path)));
+ await assertFails(getDocs(collection(db,board+'/cards')));
+ await assertFails(updateDoc(doc(db,root+'/members/retired-viewer'),{name:'Changed'}));
 });
