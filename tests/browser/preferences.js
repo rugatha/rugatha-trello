@@ -7,7 +7,7 @@ async function close(){d().querySelectorAll('dialog[open]').forEach(el=>el.close
 document.querySelector('#run').onclick=async()=>{
  out.textContent='測試中\n';count=0;
  try {
-  await close();await w().phase5Fixture.login('viewer');await tick();
+  await close();await w().phase5Fixture.login('member');await tick();
   check(!$('#sortBoards').disabled,'唯讀會員可排序自己的看板');
   $('#sortBoards').click();
   check($('#boardOrderDialog').open,'排序視窗開啟');

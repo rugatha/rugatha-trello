@@ -45,7 +45,7 @@ const emails=d=>(d.fields.emails?.arrayValue?.values||[]).map(v=>v.stringValue).
     const live=members.find(d=>d.name.split('/').at(-1)===id);assert(live,'Unknown member');
     assert.equal(name,live.fields.name.stringValue,'Name change requires separate identity review');
     assert.deepEqual(email?email.split(';').sort():[],emails(live),'Email change requires separate identity review');
-    assert(['owner','admin','editor','viewer','member'].includes(role),'Invalid role');
+    assert(['owner','admin','editor','member'].includes(role),'Invalid role');
     assert(['active','pending','disabled','unlinked'].includes(status),'Invalid status');
     assert(flags.every(v=>v==='0'||v==='1'),'Access flags must be 0 or 1');
     if(status==='unlinked')assert.equal(emails(live).length,0);

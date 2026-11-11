@@ -14,7 +14,7 @@ document.querySelector('#theme').onclick=()=>run('個人主題',async()=>{
  await login('admin','dark','alternate');check(d().body.dataset.theme==='dark','同一會員不同信箱沿用偏好');
  fixture().fail=true;await change('light');check(d().body.dataset.theme==='dark'&&$('#personalTheme').value==='dark','儲存失敗恢復已存主題');check($('#themeStatus').textContent.includes('測試離線')&&!$('#personalTheme').disabled,'失敗原因顯示並解除鎖定');await change('light');check(d().body.dataset.theme==='light','失敗後可重試');
  fixture().snapshot({theme:'dark'});await tick();check(d().body.dataset.theme==='dark','偏好訂閱即時同步');
- let release;fixture().hold=new Promise(r=>release=r);$('#personalTheme').value='light';$('#personalTheme').dispatchEvent(new (w().Event)('change'));await tick();await login('viewer','dark','new');release();fixture().hold=null;await tick();check(d().body.dataset.theme==='dark','舊帳號延遲完成不污染新帳號');
+ let release;fixture().hold=new Promise(r=>release=r);$('#personalTheme').value='light';$('#personalTheme').dispatchEvent(new (w().Event)('change'));await tick();await login('member','dark','new');release();fixture().hold=null;await tick();check(d().body.dataset.theme==='dark','舊帳號延遲完成不污染新帳號');
  await w().boardlyGoogleAuth.signOut();await tick();check(d().body.dataset.theme==='light'&&$('#personalTheme').disabled,'登出重設主題並停用控制');
  await login('pending');const n=fixture().writes.length;await change('dark');check(fixture().writes.length===n&&$('#personalTheme').disabled,'未核准會員無法寫入偏好');await login();await close();
 });
@@ -32,7 +32,7 @@ document.querySelector('#palette').onclick=()=>run('色彩對比',async()=>{
  fixture().boardColor='#455f56';await login();
 });
 document.querySelector('#permissions').onclick=()=>run('會員與權限',async()=>{
- for(const role of ['admin','owner','editor','viewer','member']){
+ for(const role of ['admin','owner','editor','member']){
   await login(role);const edit=['admin','owner','editor'].includes(role),manage=['admin','owner'].includes(role);
   check($('#quickCreate').disabled===!edit&&$('.card').draggable===edit,role+' 編輯與拖曳限制一致');check($('#addBoard').disabled===!manage,role+' 建立看板限制');
   $('.card').click();check($('#manageAssignees').disabled===!edit,role+' 負責人管理限制');check([...d().querySelectorAll('[data-assignee]')].every(el=>el.disabled),'指派勾選僅供閱讀');await close();

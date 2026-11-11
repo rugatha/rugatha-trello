@@ -1,3 +1,13 @@
+# Viewer 功能移除（2026-11-12）
+
+Viewer 角色、密碼登入入口與新看板自動授權已於版本 `9284088` 正式移除；前端、九個相關 Functions、Firestore 與 Storage 規則均已發布並核對。共用 Auth 帳號已停用，`shared-viewer` 會員已設為 disabled、清空看板授權並關閉 allBoards；歷史會員、指派與留言保留。
+
+舊 Viewer 建立工具已刪除，會員授權維護工具不再接受 Viewer。瀏覽器閱讀功能測試改用 Member。一次性撤權工具已完成用途，不納入維護程式；原始會員備份保留於私人維護目錄。
+
+以下為歷史建置紀錄，其中的建立工具與操作方式已停用。
+
+---
+
 # Viewer 密碼登入（2026-10-21）
 
 新增共用會員 `shared-viewer`，顯示名稱 Viewer。Google 登入保留；主頁及甘特圖的登入區新增「Viewer 密碼登入」，只需輸入密碼。密碼由 Firebase Authentication 驗證，未寫入前端、Git 或本機儲存設定。
